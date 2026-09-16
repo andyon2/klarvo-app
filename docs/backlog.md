@@ -121,9 +121,11 @@ in B-Sprache → neuer Canon → 9-14-Rebuild. OFFEN: Scope (nur HOLD vs. auch T
 ## Cross-Platform Drift — Sorte-2 (deferred, ADR-0016 Amendment 1 = accepted asymmetry → backlog, NOT hard won't-fix)
 
 Source: `docs/cross-platform-drift-audit.md` · routed by `sprint-change-proposal-2026-06-10.md`.
-These are pure feature-ports / marginal asymmetries — the ADR-0016 ROI rationale ("don't deepen the
-~2000-LOC duplicate for marginal benefit; v2 is the dedup answer") still holds. Listed so they are not
-re-filed as bugs and not lost. The fixed (Sorte-1) rows live in Epic 7 (`epics-cross-platform-parity.md`).
+These are pure feature-ports / marginal asymmetries. **The "v2 is the dedup answer" half of the ADR-0016
+rationale is RETIRED (Amendment 3, 2026-09-16): v1-ship is the only product, Android included.** Every row
+below now carries an explicit verdict — see "DECIDED 2026-09-16 — Parity-Linie neu gezogen" right after the
+table. Listed so they are not re-filed as bugs and not lost. The fixed (Sorte-1) rows live in Epic 7
+(`epics-cross-platform-parity.md`).
 
 | ID | Divergence | ADR-0016 | Class |
 |----|------------|----------|-------|
@@ -147,6 +149,43 @@ re-filed as bugs and not lost. The fixed (Sorte-1) rows live in Epic 7 (`epics-c
 
 > The dead-config cluster is NOT locked (7.7 superseded 2026-09-10). Product decision taken — see
 > "DECIDED 2026-09-11 — Desktop Advanced settings + AutoSend" below.
+
+### DECIDED 2026-09-16 — Parity-Linie neu gezogen (Andi, Zeile für Zeile) → ADR-0016 Amendment 3
+
+Source: Session 2026-09-16, every row verified against today's code (`android/kotlin-src`, `src-tauri`,
+React settings). Full table with code evidence in `docs/adr/0016-android-path-parity-strategy.md`,
+Amendment 3. **Nothing here is released to build** — "schließen" = candidate with a size, cut on Andi's go.
+
+| Row | Verdict | Size | Note |
+|---|---|---|---|
+| H12 + M7 provider fallback | **done** (Epic 12) | — | `KlarvoApi.cleanupFallbackCandidates` + `isRetryable` mirror. Struck. |
+| Recall #4 live preview | **done** (Epic 11) | — | Struck. |
+| M15 STT retry | **defused, struck** | — | 12-1 safety net + 12-2 re-process; mechanism differs, silent loss is gone. |
+| M6 WAV float | **struck** | — | latent. |
+| C2 whisper mode | **MUST, stage S** | S | Reclassified: the two Advanced fields (Threshold/Gain, `AdvancedSettingsPanel.tsx`) render on Android with no platform gate = "set value silently dies" class. S = hide on mobile. Stage M (Kotlin gain) only on its own go. Side finding: the on/off toggle renders NOWHERE since the drill-down — see "FOUND 2026-09-16 — Settings drill-down" below. |
+| H4 `outputLanguage` | **close** | S | Reclassified for the same reason (`LanguageContent.tsx`, no `isDesktop` gate). One translate sentence in `KlarvoApi.appendPromptExtensions`, twin of `llm/mod.rs`. |
+| M14 webhook | **open, coupled** | S | Andi's condition "field visible on mobile" is FALSE: `webhookUrl` has no UI field on ANY platform since the drill-down (`void localWebhookUrl`). Android port only after the desktop field is back. |
+| H16 OpenAI STT | **close** | S–M | Cheaper since ADR-0017: provider switch in `stt/groq_jni.rs`, Kotlin passes the key. |
+| H5 Anthropic cleanup | **stays asymmetry** | M | Field correctly hidden on mobile (7-9). |
+| H15 per-app profiles | **close** | M | Android: match on package name, not window title; `BankingGuard` already knows the foreground package. |
+| H8 mic selection | **stays asymmetry** | L | Control correctly hidden (`isDesktop`). |
+| L7 voice command | **stays asymmetry** | L | — |
+| H11 local cleanup prompt | **close as by-catch** | S | Call `appendPromptExtensions` in `KlarvoApi.cleanupLocal` when someone is in that file. |
+| M5 VAD mechanism | **stays asymmetry** | L | 7-2 aligned thresholds + highpass. |
+| Android auto-send (from 7-9) | **NO — decided** | — | No auto-send on Android. `performEnter` stays unused. No longer a "possible future story". |
+| 8-8 clipboard twin | **open until Epic 9 resumes** | S–M | — |
+| 9-6 keyboard collapse | **struck** | — | Parked since 2026-06-16; now final. Removed from sprint-status. |
+| 9-8 long-press popover | **build** | M | Unparked. Blocker "DEBUG_SET_STATE dead on HyperOS" was refuted 2026-08-12 (Story 11-6). |
+| 8-6 onboarding, 8-7 fidelity | **resume (desktop)** | M | Unparked. 8-6 needs the reachability pre-step (config-wipe state). |
+| 7-10 `copyToClipboard` no try/catch | **close** | S | Twin hygiene. |
+| 7-10 Q4 local `catch` pastes raw silently | **close** | S | Own bug. |
+| 7-6 empty-term guard `is_empty` vs `isNullOrBlank` | **close** | S | Hits Chat since 7-6. |
+| Dead desktop keys (`pasteDelayMs`, `logLevel`, `webhookHeaders`, `webhookTimeoutSecs`) | **per key, open** | S | Not as a batch. |
+
+**Cut shape (proposal, not decided):** the S rows (outputLanguage, local-prompt by-catch, three twin-hygiene
+items, hide whisper fields on mobile) fit ONE collecting story "Parity-Sweep 2026-09"; H15 and H16 are
+their own stories; 9-8, 8-6, 8-7 keep their story numbers. Prerequisite Andi named: a second drift-audit
+run (method of 2026-06-10) before the sweep is cut — not yet commissioned.
 
 ### DECIDED 2026-09-11 — Desktop Advanced settings + AutoSend: remove 14 dead keys, wire 4 model IDs (Andi)
 
@@ -335,8 +374,23 @@ findings are closed; the round-4 re-review left these, accepted as residual (And
 Found while pinning the 7-9 removal set (the record's "14" was a counting slip; 13 named keys are the set).
 Not removed in 7-9 (Andi, GATE 1): `pasteDelayMs` (Shortcuts "Paste Delay" row; `paste/mod.rs` hard-codes 50 ms),
 `logLevel` (Advanced → System select; no reader), `webhookHeaders` / `webhookTimeoutSecs` (no UI, no reader).
-Candidates for a later cleanup or wiring; decide per key, not as a batch. Android auto-send (M13 keys removed in
-7-9) stays a possible future story: the accessibility service still carries `performEnter` (ACTION_IME_ENTER).
+Candidates for a later cleanup or wiring; decide per key, not as a batch. ~~Android auto-send (M13 keys removed in
+7-9) stays a possible future story~~ — **DECIDED 2026-09-16 (Andi): NO auto-send on Android.** The accessibility
+service still carries `performEnter` (ACTION_IME_ENTER); it stays unused. Source: parity line review, ADR-0016 Amendment 3.
+
+### FOUND 2026-09-16 — Settings drill-down left five settings without a render site (desktop UI gap, not parity)
+
+Found while checking platform gates for the parity review. `SettingsPanel.tsx` keeps state for five settings and
+suppresses the unused-variable lint with `void …` under the comment *"not yet wired into the new drill-down
+render"*: **`autostart`, `whisperMode` (the on/off toggle), `webhookUrl`, `tursoUrl` (+ token), `voiceCommandEnabled`.**
+None of the `settings/*Content.tsx` sub-pages renders them (grep: zero hits for turso / autostart / voiceCommand /
+webhook outside `AboutContent` feedback). Introduced with the drill-down commit `47c2857`. Consequences today:
+- Whisper mode cannot be switched on from the UI on either platform, while its two Advanced fields (Threshold/Gain)
+  still render — orphaned inputs.
+- Webhook and Turso sync are configurable only by editing `config.json` by hand.
+- `settings/types.ts` still advertises the page as "Prompts, audio, webhooks, sync".
+Decide per setting: re-wire into the drill-down, or remove the key + its state (E4 class, same rule "per key,
+not as a batch"). Not decided. Couples to the M14 webhook row above.
 
 ### STORY-CANDIDATE — Dictionary shared across devices (Andi, 2026-09-10)
 
@@ -575,7 +629,13 @@ E9 + GATE-4) now **assume** this assertion exists — this story makes it real.
   gate can't be scripted, blocks 9-6/9-8. Replace with a HyperOS-survivable trigger. Tracked in the
   postmortem; listed here so it is not conflated with the structural-assertion story above.
 
-## Story 9-6 (keyboard-collapse via a11y service) — PARKED (obsolete)
+## Story 9-6 (keyboard-collapse via a11y service) — PARKED (obsolete) → **STRUCK 2026-09-16 (Andi)**
+
+> **2026-09-16:** Andi struck 9-6 for good (parity line review, ADR-0016 Amendment 3). The line is removed
+> from `sprint-status.yaml`; the epic-9 comment there records it. **9-8 is UNPARKED the same day** — the
+> blocker named below ("DEBUG_SET_STATE dead on HyperOS") was refuted on 2026-08-12 (Story 11-6 GATE-4:
+> the receiver only lacked its debug manifest in the regenerated `gen/android` tree). 9-8 is a build
+> candidate again; the routing hook no longer lists it as parked.
 
 Source: Andi's decision 2026-06-16 (this session). 9-6 was scoped to collapse the soft keyboard via the
 accessibility service before showing recording UI. With the new pop-up **preview window**, the preview
@@ -993,9 +1053,9 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 **Scope-Aufteilung:**
 - **✅ 8-2 Einstellungen / 8-5 Verlauf — gebaut** (re-port); **8-6 Onboarding — VERTAGT 2026-08-19, siehe eigener Punkt unten**. Referenz-Qualität laut `epic-8-fidelity-audit.md` (15.06.): 100 % Token-Treue, History „starker Match". 8-5: History lebt in `App.tsx`. **KORREKTUR 2026-08-18 (Story 8-5, am Baum geprüft): die frühere Angabe „lebt heute in `VoiceNotesPanel.tsx` (nicht mehr `App.tsx`)" war falsch** — Zustand, Suche, Liste und Leerzustand stehen sämtlich in `App.tsx`; `VoiceNotesPanel.tsx` ist ein anderes, im Header auskommentiertes Feature („Voice Notes"). 8-6: Testzustand nur nach Config-Wipe sichtbar → Erreichbarkeit als Vorlauf mitbauen (Verifikations-Symmetrie).
 - **❌ 8-3 FloatingBar / 8-4 Live-Preview — SUPERSEDED** durch native Overlays (Epic 10, `native_pill.rs`/`native_preview.rs`). Kein React-Port. Der nötige native Token-Nachzug in tiny-skia/GDI ist bereits separat gelistet (siehe „Epic 8-Abhängigkeit — native Overlays … in Rust/GDI nachziehen", oben) — das ist die richtige Heimat, nicht dieser Re-Skin.
-- **⏸ 8-7 Studio-Dark Fidelity-Pass — VERTAGT** (nicht „erstmal so"). Die 3–4 nicht-angewandten Affordances aus `epic-8-fidelity-audit.md`: Settings-Home Status-Dots, Datumsformat DE-kompakt in History, sowie die Pill-seitigen (Elevation/Amber-Ring/Stop-Hover) — letztere gehören ohnehin in die native Pille, nicht React. Eigene Story wenn die Basis-Flächen live sind.
+- **⏸ 8-7 Studio-Dark Fidelity-Pass — VERTAGT** → **REAKTIVIERT 2026-09-16 (Andi, Parity-Linien-Review, ADR-0016 Amendment 3; Kandidat, kein Schnitt).** Ursprünglich: (nicht „erstmal so"). Die 3–4 nicht-angewandten Affordances aus `epic-8-fidelity-audit.md`: Settings-Home Status-Dots, Datumsformat DE-kompakt in History, sowie die Pill-seitigen (Elevation/Amber-Ring/Stop-Hover) — letztere gehören ohnehin in die native Pille, nicht React. Eigene Story wenn die Basis-Flächen live sind.
 
-- **⏸ 8-6 Onboarding-Re-Skin — VERTAGT (Andi 2026-08-19).** Quelle: Session 2026-08-19, direkt nach dem 8-5-Merge (`51afb25`). Andi parkt die Story, bevor sie geschrieben ist. Der Grund liegt in der Verifikations-Symmetrie: der Onboarding-Testzustand wird erst nach einem Config-Wipe sichtbar, also braucht die Story einen Erreichbarkeits-Vorlauf, den 8-8 nicht braucht. Status bleibt `backlog` (BMAD kennt kein `suspended`); die Parkung trägt der Routing-Hook `_bmad/custom/bmad-sprint-status.toml`. **Reaktivieren, sobald 8-8 durch ist und Andi das Onboarding sehen will.**
+- **⏸ 8-6 Onboarding-Re-Skin — VERTAGT (Andi 2026-08-19)** → **REAKTIVIERT 2026-09-16 (Andi, Parity-Linien-Review, ADR-0016 Amendment 3; Kandidat, kein Schnitt; der Erreichbarkeits-Vorlauf bleibt Teil der Story).** Quelle: Session 2026-08-19, direkt nach dem 8-5-Merge (`51afb25`). Andi parkt die Story, bevor sie geschrieben ist. Der Grund liegt in der Verifikations-Symmetrie: der Onboarding-Testzustand wird erst nach einem Config-Wipe sichtbar, also braucht die Story einen Erreichbarkeits-Vorlauf, den 8-8 nicht braucht. Status bleibt `backlog` (BMAD kennt kein `suspended`); die Parkung trägt der Routing-Hook `_bmad/custom/bmad-sprint-status.toml`. **Reaktivieren, sobald 8-8 durch ist und Andi das Onboarding sehen will.**
 
 **Fahrweise:** je Fläche ein `bmad-story-conductor`-Lauf, nacheinander, mit Andis Real-Device-Smoke dazwischen (visuelle Epics NICHT unbeaufsichtigt durchfahren — Postmortem 2026-06-15). Vor Andis Blick: objektiver Chromium-Harness-Abgleich gegen das Mockup.
 

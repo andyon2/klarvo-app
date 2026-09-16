@@ -143,3 +143,74 @@ zusätzlich den Shared-STT-Vertrag.
 
 **Quellen:** `docs/dictation-quality-android-vs-desktop-2026-06-12.md`;
 `_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-12.md`; ADR-0017.
+
+---
+
+## Amendment 3 (2026-09-16) — Linie neu gezogen: v1 ist das einzige Produkt, die Asymmetrie-Liste bekommt Urteile
+
+> Ergänzt Decision + Amendment 1/2, ersetzt sie nicht. Die Klassen-Logik (Wächter / Kern-Output /
+> still verschluckte Config-Werte = Pflicht auf beiden Seiten; reiner Feature-Port = Backlog) bleibt.
+> Neu ist: (a) die Prämisse der Original-Rationale wird zurückgezogen, (b) jede Zeile der
+> akzeptierten Asymmetrie trägt jetzt ein explizites Urteil von Andi.
+
+**Auslöser:** Andis Gefühl „Android hinkt hinterher" (Session 2026-09-16), gegen den heutigen Code
+geprüft. Das Drift-Audit vom 2026-06-10 ist ein Schnappschuss und wurde nie wiederholt; seitdem
+liefen Epic 7 (Re-Cut), 8, 9, 10, 11, 12.
+
+**Prämisse zurückgezogen:** Die Original-Rationale sagt *„Die langfristige Antwort auf die
+Duplikation ist v2 — nicht weitere v1-Android-Investition."* v2 ist seit dem Pivot 2026-05-29
+Blueprint-Referenz, kein Bauziel. Damit hatte der Android-Rückstand kein Ablaufdatum und keinen
+Eigentümer. Ab jetzt gilt: **v1-ship ist das einzige Produkt, Android inklusive.** Ein Feature-Port
+wird nicht mehr mit „kommt in v2" abgelehnt, sondern pro Zeile nach Nutzen und Größe entschieden.
+
+**Drei Befunde, die die Juni-Liste ändern:**
+1. **Still erledigt:** DIV-06/H12 Provider-Fallback bei 429/5xx steht seit Epic 12 auch auf Android
+   (`KlarvoApi.cleanupFallbackCandidates`, `isRetryable`-Spiegel in `KlarvoOverlayService`).
+2. **Falsch klassifiziert:** C2 Whisper-Mode hat zwei Eingabefelder in den Advanced-Settings
+   (`AdvancedSettingsPanel.tsx`, Threshold + Gain) ohne Plattform-Weiche. Die React-Settings laufen
+   auch auf Android. Die Felder sind dort sichtbar und wirkungslos = Klasse „gesetzter Wert verpufft
+   still" aus Amendment 1 = Pflicht, nicht Asymmetrie. Gleiches gilt für DIV-07/H4 `outputLanguage`
+   (`LanguageContent.tsx`, kein `isDesktop`-Gate).
+3. **Billiger geworden:** DIV-13/H16 OpenAI als STT-Anbieter. Seit ADR-0017 baut Rust den
+   STT-Request für beide Plattformen (`stt/groq_jni.rs`). Ein Android-Port ist ein Provider-Schalter
+   im Rust-Kern, kein Kotlin-Nachbau.
+
+**Urteile (Andi, 2026-09-16) — Zeilen-IDs aus `docs/cross-platform-drift-audit.md`:**
+
+| Zeile | Urteil | Größe | Bemerkung |
+|---|---|---|---|
+| DIV-06/H12 Provider-Fallback | **erledigt** | — | Epic 12; aus der Liste gestrichen |
+| Recall#4 Live-Preview | **erledigt** | — | Epic 11 |
+| M15 STT-Retry-Asymmetrie | **entschärft, gestrichen** | — | 12-1 Safety-Net + 12-2 Re-Process; Mechanismus bleibt verschieden, stiller Verlust ist weg |
+| M6 WAV-Float | **gestrichen** | — | latent, beide Seiten PCM16 |
+| C2 Whisper-Mode | **Pflicht, Stufe S** | S | die zwei Advanced-Felder auf Mobile verstecken. Stufe M (Gain in Kotlin) nur auf eigene Freigabe. Befund am Rande: der Ein/Aus-Schalter hat seit dem Settings-Drill-Down auf KEINER Plattform eine Render-Stelle (`void localWhisperMode`) → Desktop-UI-Lücke, siehe Backlog |
+| DIV-07/H4 outputLanguage | **schließen** | S | ein Übersetzungs-Satz in `KlarvoApi.appendPromptExtensions`, Zwilling zu `llm/mod.rs` |
+| M14 Webhook | **bleibt offen, gekoppelt** | S | Bedingung „Feld auf Mobile sichtbar" ist FALSCH: `webhookUrl` hat seit dem Drill-Down auf keiner Plattform ein UI-Feld (`void localWebhookUrl`). Android-Port erst, wenn das Desktop-Feld zurück ist |
+| DIV-13/H16 OpenAI-STT | **schließen** | S–M | Provider-Schalter in Rust (`groq_jni.rs`), Kotlin reicht den Key durch |
+| H5 Anthropic-Cleanup | **bleibt Asymmetrie** | M | Feld auf Mobile korrekt versteckt (7-9); kein Schaden |
+| H15 Per-App-Profile | **schließen** | M | auf Android per Paket-Name statt Fenstertitel; `BankingGuard` kennt den Vordergrund bereits |
+| H8 Mikrofon-Wahl | **bleibt Asymmetrie** | L | Regler korrekt versteckt (`isDesktop`); Bluetooth-Routing ist ein anderes Problem |
+| DIV-10/L7 Command-Mode | **bleibt Asymmetrie** | L | — |
+| DIV-09/H11 Local-Cleanup-Prompt | **schließen als Beifang** | S | `appendPromptExtensions` in `KlarvoApi.cleanupLocal` aufrufen, sobald jemand dort arbeitet |
+| DIV-14/M5 VAD-Mechanismus | **bleibt Asymmetrie** | L | 7-2 hat Schwellen + Highpass angeglichen |
+| Auto-Send auf Android (aus 7-9) | **NEIN, entschieden** | — | kein Auto-Send auf Android. `performEnter` bleibt ungenutzt. Kein „possible future story" mehr |
+| 8-8-Zwilling Clipboard-Feedback | **offen bis Epic 9 weitergeht** | S–M | Backlog Epic 9 |
+| 9-6 Tastatur-Einklappen | **gestrichen** | — | war seit 2026-06-16 geparkt (Preview liegt über der Tastatur); jetzt endgültig |
+| 9-8 Long-Press-Menü | **umsetzen** | M | entparkt; der Blocker (DEBUG_SET_STATE „tot auf HyperOS") ist seit 2026-08-12 widerlegt |
+| 8-6 Onboarding, 8-7 Fidelity | **wieder aufnehmen (Desktop)** | M | entparkt; 8-6 braucht den Erreichbarkeits-Vorlauf (Config-Wipe-Zustand) |
+| 7-10 `copyToClipboard` ohne try/catch | **schließen** | S | Android sieht Clipboard-Fehler sonst nicht |
+| 7-10 Q4 lokaler `catch` fügt Rohtext still ein | **schließen** | S | eigener Bug |
+| 7-6 Leer-Term-Guard `is_empty` vs `isNullOrBlank` | **schließen** | S | trifft seit 7-6 auch Chat |
+| Tote Desktop-Keys (`pasteDelayMs`, `logLevel`, `webhookHeaders`, `webhookTimeoutSecs`) | **pro Key**, offen | S | nicht als Block |
+
+**Was „schließen" bedeutet:** Kandidat im Backlog mit Größe. **Kein** Bau ohne eigenen Schnitt und
+Andis Go. Die S-Zeilen (outputLanguage, Local-Prompt-Beifang, drei Zwillings-Hygiene-Punkte,
+Whisper-Felder verstecken) eignen sich als EINE Sammel-Story „Parity-Sweep 2026-09"; H15 und
+DIV-13 sind eigene Stories; 9-8, 8-6, 8-7 sind bestehende Story-Nummern.
+
+**Unverändert:** ADR-0017 (STT nur in Rust), das Golden-Vektor-Netz, die Klassen-Logik aus
+Amendment 1. Das Drift-Audit soll als zweiter Lauf wiederholt werden (Methode wie 2026-06-10),
+bevor die Sammel-Story geschnitten wird — Andis Punkt 1, noch nicht beauftragt.
+
+**Quellen:** Session 2026-09-16 (Andi, Zeile-für-Zeile-Entscheid); `docs/backlog.md` Abschnitt
+„DECIDED 2026-09-16 — Parity-Linie neu gezogen"; Code-Belege in den Zeilen oben.
