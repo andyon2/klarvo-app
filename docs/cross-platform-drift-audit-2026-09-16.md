@@ -245,3 +245,5 @@ Three verifier side-findings outside the divergence scope, worth one-line fixes:
 ## 10. Next step (not part of this document)
 
 This run measures. The line is drawn per row by Andi, as in Amendment 3: build / accept as asymmetry / strike. Suggested reading order for that session: §Headline → §1 → §2 → §6 (what changed since the last line) → §3. Every "settable on Android, dead there" row (D-H4, D-H12, D-H13, D-H14, D-H15, D-H16, D-H17, D-M17's two fields, D-L2, D-L3, D-L1's two fields) has a cheap S-shape alternative to a port: a platform gate on the control. Amendment 3's candidates H4, H15, H16 are confirmed unchanged; its Whisper-Mode verdict (hide the fields) is confirmed as the right shape (D-L1). Not in Amendment 3 and new for the line: D-C1/D-C2/D-H1/D-H2 (license), D-H3 (banking on Desktop), D-H7/D-H8/D-M9 (guard placement), D-H9/D-H10 (offline privacy), D-H18 (inert local cleanup), D-H19/D-H20 (silent loss / silent no-op).
+
+**Done 2026-09-17:** Andi drew the line per row → ADR-0016 Amendment 4 (`301d19d`).

@@ -195,6 +195,38 @@ Amendment-3 candidates H4/H15/H16 are confirmed unchanged; the Whisper-Mode "hid
 confirmed as the right shape. **Next act = Andi draws the line per row (→ ADR-0016 Amendment 4), then the sweep
 is cut.** Raw run evidence: `_bmad-output/planning-artifacts/drift-audit-run-2026-09-16/`.
 
+
+### DECIDED 2026-09-17 — Parity-Linie über Audit #2 (Andi, per Artefakt) → ADR-0016 Amendment 4
+
+Source: Andi answered the decision sheet `_bmad-output/planning-artifacts/drift-audit-run-2026-09-16/entscheidungsblatt-parity-linie.md`
+through its interactive artifact (answers in the artifact DB `sheet/parity-2026-09-16`, "Fertig" 2026-09-17).
+Full row table with form, direction, size and test symbol: `docs/adr/0016-android-path-parity-strategy.md`, Amendment 4.
+**Nothing here is released to build** — "close" = candidate with a size, cut on Andi's go.
+
+**Headline decisions:**
+- **G1 = a:** Desktop enforces the license in the dictation pipeline, like Android. Paywall on both sides (D-C1 close, M).
+  ONE free-tier definition (D-H1). **Still open:** free tier = Groq only (Android today) or DeepSeek + Groq (Desktop today).
+  Recommendation: DeepSeek + Groq (cleanup LLM is DeepSeek-primary by product decision). The software *license choice*
+  (BSL/PolyForm) and the publication question stay untouched ("Lizenzwahl OFFEN" below).
+- **G2 = a:** "Offline" = no byte leaves the device. Desktop-hotkey semantics become the norm; in-app button + Android follow (E2, S).
+- **G3a = a, G3b = a:** Android hides offline STT AND local cleanup (gates, S). Android has no local path for now.
+  Building local cleanup on Android (L) is a later, separate decision. D1 (failure never reported as success) stays mandatory.
+- **41 of 46 rows = proposal accepted. Five deviations:** B6 VAD hysteresis/hangover → close (was "stays asymmetry");
+  C4 `profiles[].language` → wire it (was "strike the promise"); C10 `previewBgBlur` → wire into the native overlay, M
+  (was "remove"; lifts the Epic-10 defer "Blur slider no-op"); D9 retry budget → Android 1 like Desktop (was asymmetry);
+  D11 "nothing recognized" → Android silent like Desktop (was asymmetry).
+- **Amendment-3 corrections:** H5 Anthropic fields DO render on Android → gate (C7); M5 VAD no longer an asymmetry
+  (three measured deltas only); 7-10 clipboard also on the Desktop side (D6); dead keys decided: `pasteDelayMs`/`logLevel`
+  controls removed (C9), `webhookHeaders`/`webhookTimeoutSecs` + four bubble/voice-notes keys removed from config (C11).
+- **H+ (Herstellbarkeit mitbauen)** ticked on 15 effective agent-only rows (A1, A4, A5, B3, C1, D2, D3, D6, D10, E1, F1,
+  F3, F4, F5, G-Fix): each story names, before build, how Andi reproduces the state on his device. D2/D3/D9/D10 need a
+  debug test provider (canned LLM/STT answers) as a precursor; without it those rows fall back to agent-only.
+
+**Cut shape (proposal, NOT decided):** precursor "Testanbieter" (S–M) → three sweeps by subsystem (guards + silent loss ·
+gates + config hygiene · license + sync) instead of one 38-row story → own stories G1a Desktop license gate (M, waits on
+the free-tier sub-question), B1 banking guard Desktop (M), C4 profiles Android + per-profile language (M + S), C10 blur
+native (M), D-H11 OpenAI STT (S–M). Candidates without release: C13 statistics port (M), G3b Android local cleanup (L).
+9-8, 8-6, 8-7 unchanged. sprint-status.yaml: no story changes status until the cut.
 ### DECIDED 2026-09-11 — Desktop Advanced settings + AutoSend: remove 14 dead keys, wire 4 model IDs (Andi)
 
 **Source:** Epic-7 relevance audit, `sprint-change-proposal-2026-09-10.md` (was OPEN-DECISION 2026-09-10).
@@ -550,6 +582,8 @@ slider in place (silent no-op) for now** — removing it would pull 10-2 into th
 Settings surface (scope creep), and VR3 notes real blur could return as a follow-up, in which case
 the slider regains meaning. If the no-op slider proves confusing, a small follow-up either (a) hides
 it while blur is dropped, or (b) re-implements blur natively. Not a 10-2 blocker.
+
+**DECIDED 2026-09-17 (Andi, ADR-0016 Amendment 4, row C10): option (b) — re-implement blur natively in `native_preview` (M). The slider stays until then. Own story candidate, not cut.**
 
 ## Epic 10 — Native-Overlay-Skalierung zu klein + Appearance-Wiring-Audit (EIGENE STORY — Andi 2026-06-28)
 
