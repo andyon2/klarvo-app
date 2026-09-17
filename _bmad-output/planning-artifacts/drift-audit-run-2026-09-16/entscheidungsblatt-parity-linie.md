@@ -3,6 +3,7 @@
 **Zweck:** Andi zieht die Linie je Zeile über `docs/cross-platform-drift-audit-2026-09-16.md`. Dieses Blatt
 übersetzt die 78 Audit-Zeilen in Entscheidungen. Es misst nicht neu. Jede Aussage hier steht mit
 Code-Beleg im Audit unter derselben `D-*`-ID.
+**Interaktive Fassung (Andi hakt ab):** https://claude.ai/code/artifact/fb5706a5-5b46-4050-8432-47b00c8c156a — Antworten liegen in der Artefakt-DB (`sheet/parity-2026-09-16`).
 **Ergebnis:** ADR-0016 **Amendment 4** (eigener Commit), dann `docs/backlog.md`, `sprint-status.yaml`,
 Routing-Hook. Gebaut wird nichts vor einem eigenen Schnitt und Andis Go.
 
