@@ -214,3 +214,170 @@ bevor die Sammel-Story geschnitten wird — Andis Punkt 1, noch nicht beauftragt
 
 **Quellen:** Session 2026-09-16 (Andi, Zeile-für-Zeile-Entscheid); `docs/backlog.md` Abschnitt
 „DECIDED 2026-09-16 — Parity-Linie neu gezogen"; Code-Belege in den Zeilen oben.
+
+## Amendment 4 (2026-09-17) — Linie über Audit #2: vier Grundsatzurteile, 46 Zeilenurteile, zwei Amendment-3-Asymmetrien aufgehoben
+
+> Ergänzt Decision + Amendment 1–3, ersetzt sie nicht. Die Klassen-Logik bleibt. Neu: (a) die Lizenz wird auf
+> beiden Seiten durchgesetzt, (b) „Offline" heißt „kein Byte verlässt das Gerät", (c) Android verliert vorerst
+> beide lokalen Pfade (Offline-STT, lokales Cleanup) per Gate, (d) M5 VAD ist keine Asymmetrie mehr.
+
+**Auslöser:** Audit #2 vom 2026-09-16 (`docs/cross-platform-drift-audit-2026-09-16.md`, 78 Zeilen, CRITICAL 2 ·
+HIGH 20 · MEDIUM 24 · LOW 32). Das Entscheidungsblatt
+`_bmad-output/planning-artifacts/drift-audit-run-2026-09-16/entscheidungsblatt-parity-linie.md` übersetzt die
+Audit-Zeilen in vier Grundsatzfragen + 46 Zeilen mit je einem Vorschlag. Andi hat es am 2026-09-17 über die
+interaktive Fassung beantwortet (Artefakt; Antworten in der Artefakt-DB `sheet/parity-2026-09-16`, „Fertig"
+2026-09-17 15:20 UTC): 41 Zeilen „Vorschlag übernommen", 5 Zeilen abweichend (B6, C4, C10, D9, D11), G1 ohne
+Vorschlag entschieden.
+
+**Was ein Urteil bedeutet:** wie in Amendment 3. **schließen** = Kandidat mit Größe, **kein Bau** ohne eigenen
+Schnitt und Andis Go. **Gate** = Regler auf Android verstecken **und** einen gespeicherten Wert beim Config-Load
+auf Android neutralisieren; das Ziel der Normalisierung nennt die Story-Spec — nie ein stiller Wechsel auf Cloud,
+wenn der Nutzer „lokal" gewählt hatte. **Port** = nachbauen. **Fix** = Bug ohne Produkturteil. **streichen** =
+Regler oder Key entfernen. **Asymmetrie** = bleibt, steht in dieser Liste. **H+** = Andi hat „Herstellbarkeit
+mitbauen" angekreuzt: die Story liefert einen Weg, den Testzustand auf seinem Gerät herzustellen
+(Verifikations-Symmetrie, Weg 1). Ohne H+ gilt bei 🤖-Zeilen „nur agent-verifiziert" (Weg 2, hiermit
+festgehalten).
+
+### Grundsatzurteile
+
+| Frage | Urteil | Folge |
+|---|---|---|
+| **G1 Lizenz** | **a) Desktop setzt die Lizenz in der Diktat-Pipeline durch, wie Android.** Paywall auf beiden Seiten. | D-C1 schließen (Desktop, M). D-H1: **eine** Free-Tier-Definition für beide Seiten. A5 + A6 schließen. **Offen — Unterfrage nicht beantwortet:** Free-Tier = nur Groq (Android heute) oder DeepSeek + Groq (Desktop heute)? Empfehlung: **DeepSeek + Groq**, weil das Cleanup-LLM per Produktentscheidung DeepSeek-primär ist; ein Free-Tier ohne DeepSeek zwingt jedes Free-Cleanup auf Groq. Unberührt: die Lizenz*wahl* (BSL/PolyForm) und die Veröffentlichungsfrage bleiben offen (Backlog „Lizenzwahl OFFEN"). |
+| **G2 Offline** | **a) Kein Byte verlässt das Gerät.** STT lokal ⇒ Cleanup lokal oder gar nicht. | Die Desktop-Hotkey-Semantik ist die Norm. E2: der Rust-In-App-Button und Android ziehen nach (S). |
+| **G3a Offline-STT auf Android** | **a) Verstecken (Gate S).** | B5, C2, D7, D8 entfallen. |
+| **G3b Lokales Cleanup auf Android** | **a) Jetzt verstecken (Gate S):** „Local (Offline)"-Cleanup + Modell-Manager auf Android weg. | Bau = eigene spätere Entscheidung (L: native Bibliothek, Build, Modellpfad). D1 bleibt unabhängig Pflicht. |
+
+Folge aus G3a + G3b: Android hat vorerst keinen lokalen Pfad. A1 und E1 bleiben trotzdem Pflicht, weil ein
+gespeicherter Wert `local` den versteckten Regler überlebt (siehe Gate-Definition oben).
+
+### Amendment-3-Urteile, die dieses Amendment ändert
+
+| Amendment 3 | Jetzt | Beleg |
+|---|---|---|
+| H5 Anthropic „bleibt Asymmetrie, Feld auf Mobile korrekt versteckt" | **Gate S** (C7). Key-Feld und Modell-Feld rendern auf Android ohne Verbraucher. | D-M17 |
+| M15 STT-Retry „stiller Verlust ist weg" | Rest-Verlust D-M8 (Aufnahme nach lokalem STT-Fehler ohne History-Eintrag, nach 7 Tagen gelöscht) **entfällt mit G3a** — kein lokales STT auf Android mehr. | D-M8 |
+| 7-10 `copyToClipboard` (Android) | **beidseitig** (D6): die Desktop-Pill sagt „In Clipboard" für Text, der nirgends ist. | D-M12 |
+| DIV-14/M5 VAD „bleibt Asymmetrie, L" | **schließen S** (B6, Andi: „beides gleichmachen"): Hysterese 0,5/0,35 und Hangover-Frame auf Android wie Desktop. Nur die drei gemessenen Deltas. Die volle Zustandsmaschinen-Parität (L) ist damit **nicht** wieder offen. | D-M10, D-L19, D-L21 |
+| Tote Desktop-Keys „pro Key, offen" | `pasteDelayMs`, `logLevel`: **Regler entfernen S** (C9). `webhookHeaders`, `webhookTimeoutSecs`: **aus der Config entfernen S** (C11). | D-L2, D-L3, D-L6 |
+| Epic-10-Defer „Blur-Slider bleibt No-op" (Backlog „Blur slider", 2026-06-27) | **aufgehoben:** `previewBgBlur` im nativen Overlay verdrahten, M (C10). | D-L4 |
+
+### Zeilenurteile (Andi, 2026-09-17)
+
+Zeilen-IDs aus dem Entscheidungsblatt, `D-*` aus Audit #2. Test: 📱 Andi am Android-Gerät · 🖥️ Andi am
+Windows-Rechner · 🤖 nur Agent · H+ Herstellbarkeit mitbauen. **abw.** = abweichend vom Vorschlag.
+
+**Block A — Lizenz-Nebenzeilen**
+
+| Zeile | Audit | Urteil | Form / Richtung | Größe | Test |
+|---|---|---|---|---|---|
+| A1 | D-C2 | schließen | Fix: Android nimmt `local` von der Lizenz-Überschreibung aus (nach G3b nur noch für gespeicherte Werte) | S | 🤖 H+ |
+| A2 | D-H2 | schließen | Gate: Anbieter-Regler mit `isPaid` sperren, die Sperre nennt die Anbieter | S | 📱 |
+| A3 | D-M23, D-L30, D-L7 | offen + Sofort-S | Fix: die beworbene Paywall-Liste auf existierende Features kürzen. Offen: Snippets, Cross-Device-Sync, Command-Mode haben keine UI — bauen oder aus der Paywall streichen? | S | 🖥️📱 |
+| A4 | D-L31, D-L32 | schließen | Fix (Sweep-Hygiene): Bibliotheks-Ladefehler ≠ „No API keys configured"; toten zweiten Lizenz-Einstieg entfernen | S | 🤖 H+ |
+| A5 | D-M19 | schließen (G1a) | Fix, Richtung Android: Trial-Beginn nicht aus `config.json` (Löschen = neue Trial) | S | 🤖 H+ |
+| A6 | D-L9 | schließen (G1a) | Fix: Desktop erkennt eine neu aktivierte Lizenz ohne Neustart | S | 🖥️ |
+
+**Block B — Wächter und Kern-Output**
+
+| Zeile | Audit | Urteil | Form / Richtung | Größe | Test |
+|---|---|---|---|---|---|
+| B1 | D-H3 | schließen | Port: Desktop Banking-/Passwort-Blocklist per Prozessname (M). Fix: Android speichert History/Turso erst nach dem Guard (S) | M + S | 🖥️📱 |
+| B2 | D-H5, D-H6, D-M9 | schließen | Fix in Rust `groq_jni.rs`, Richtung Desktop: Echo-/Fragment-Guard ohne Wörterbuch, Reihenfolge wie Desktop | S | 📱 (Wörterbuch „Klarvo, Kubernetes", sag „Klarvo und Kubernetes.") |
+| B3 | D-H7 | schließen | Fix: Ghost-Strip vor dem Guard **und** nach dem Cleanup, beide Seiten | S | 🤖 H+ |
+| B4 | D-H4 | schließen | Fix: Kotlin liest `advanced.sttPrompt*` und reicht sie durch; `customPrompt` geht nur ans LLM | S | 📱 (Preset „Technical", gleiches Audio) |
+| B5 | D-H8 | entfällt (G3a) | — | — | — (H+ ohne Gegenstand) |
+| B6 | D-M10, D-L19, D-L21 | **schließen, abw.** (Vorschlag: Asymmetrie) | Fix, Richtung Desktop (Andi: „beides gleichmachen"; Richtung = mein Vorschlag): Hysterese 0,5/0,35 + Hangover-Frame in Kotlin | S | 🤖 |
+
+**Block C — Regler auf Android sichtbar, dort tot**
+
+| Zeile | Audit | Urteil | Form / Richtung | Größe | Test |
+|---|---|---|---|---|---|
+| C1 | D-H12 | schließen | Port: Kotlin liest `sttModel` und reicht ihn an die JNI durch | S | 🤖 H+ |
+| C2 | D-H13 | Gate (G3a) | `localWhisperModel` auf Android weg | S | 📱 |
+| C3 | D-H14 | schließen (Amd 3) | Port: Übersetzungs-Satz in `KlarvoApi.appendPromptExtensions` | S | 📱 |
+| C4 | D-H15 | schließen | Port M (Amd 3, Paketname). **abw.:** `profiles[].language` **verdrahten** (S, beide Seiten) statt das Versprechen streichen | M + S | 📱 |
+| C5 | D-H16 | schließen | Fix: der Android-Stille-Slider wirkt | S | 📱 |
+| C6 | D-H17 | Gate (Amd 3) | Auto-Send-Schalter auf Android weg | S | 📱 |
+| C7 | D-M17 | Gate | Anthropic Key- + Modell-Feld auf Android weg | S | 📱 |
+| C8 | D-L1 | Gate (Amd 3) | zwei Whisper-Advanced-Felder auf Mobile weg | S | 📱 |
+| C9 | D-L2, D-L3 | streichen | `pasteDelayMs`- und `logLevel`-Regler auf beiden Seiten entfernen | S | 🖥️📱 |
+| C10 | D-L4 | **schließen, abw.** (Vorschlag: entfernen) | Port: `previewBgBlur` in `native_preview` verdrahten | M | 🖥️ |
+| C11 | D-L6 | streichen | Keys ohne Regler aus der Config: `voiceNotesHotkey`, `bubbleSize`, `bubbleOpacity`, `bubbleRecordingMode`, `webhookHeaders`, `webhookTimeoutSecs` | S | 🤖 |
+| C12 | D-L27 | schließen | Port: Android schreibt den Paketnamen aus dem a11y-Service in die History | S | 📱 |
+| C13 | D-M15 | Gate jetzt, Port Kandidat | Statistik-Panel auf Android weg (S); Port „Kotlin schreibt Usage-Zeilen" (M) als eigener Kandidat | S (+M) | 📱 |
+
+**Block D — Stiller Verlust / stilles Nichtstun**
+
+| Zeile | Audit | Urteil | Form / Richtung | Größe | Test |
+|---|---|---|---|---|---|
+| D1 | D-H18 | Gate (G3b) + Fix | Local-Cleanup + Modell-Manager auf Android weg. Unabhängig: Fehlschlag ⇒ Zwischenablage + Ursache, nie „Erfolg" | S | 📱 |
+| D2 | D-H19 | schließen | Fix, Zwilling zu Desktop: leere LLM-Antwort ⇒ kein Einfügen, kein „"-History-Eintrag | S | 🤖 H+ |
+| D3 | D-M16 | schließen | Fix: abgeschnittene LLM-Antwort ⇒ nicht einfügen | S | 🤖 H+ |
+| D4 | D-H20 | schließen | Fix, Richtung Desktop: kein fokussiertes Feld ⇒ „In Zwischenablage"-Hinweis statt Haken | S | 📱 |
+| D5 | D-M24 | schließen | Fix: Pill = Statuslicht (wie 7-10), kein Haken bei Cleanup-Fehler | S | 📱 |
+| D6 | D-M12 | schließen | Fix beidseitig: Android try/catch um Clipboard; Desktop-Pill sagt nicht „In Clipboard", wenn nichts drin ist | S | 🤖 H+ |
+| D7 | D-M8 | entfällt (G3a) | — | — | — (H+ ohne Gegenstand) |
+| D8 | D-M7 | entfällt (G3a) | — | — | — |
+| D9 | D-M5, D-M6 | **schließen beide, abw.** (Vorschlag: D-M6 Asymmetrie) | Fix, Richtung Desktop (Andi: „android an desktop anpassen"): leeres STT-Ergebnis als nicht wiederholbar markieren; Retry-Budget 1 wie Desktop | S | 🤖 |
+| D10 | D-M2 | schließen | Fix (Sweep): Fallback auch bei kaputter Anbieter-Antwort auf kurzes Diktat | S | 🤖 H+ |
+| D11 | D-M14 | **schließen, abw.** (Vorschlag: Asymmetrie) | Fix, Richtung Desktop (Andi: „Android auch stumm wie desktop"): kein Toast bei „nichts erkannt" | S | 📱 |
+| D12 | D-M13 | Asymmetrie | dokumentiert: „Erneut verarbeiten" auf Android läuft mit Desktop-Regeln | — | — (H+ ohne Gegenstand) |
+
+**Block E — Offline-Privatsphäre**
+
+| Zeile | Audit | Urteil | Form / Richtung | Größe | Test |
+|---|---|---|---|---|---|
+| E1 | D-H9 | schließen (Pflicht) | Fix: die Live-Preview lädt bei gespeichertem `local`-STT nichts hoch (nach G3a nur noch für gespeicherte Werte) | S | 🤖 H+ |
+| E2 | D-H10, D-M20, D-M21 | schließen (G2a) | Fix, Richtung Desktop-Hotkey: „Offline"-STT ⇒ Cleanup lokal oder keins. Gilt für den Rust-In-App-Button und für Android (dort nach G3a nur noch für gespeicherte Werte). Eine Regel statt drei | S | 🖥️ In-App-Button (Offline wählen, mit Füllwörtern diktieren: die „ähm" bleiben) |
+
+**Block F — Sync / History / Metriken**
+
+| Zeile | Audit | Urteil | Form / Richtung | Größe | Test |
+|---|---|---|---|---|---|
+| F1 | D-M3 | schließen | Fix: Android liest die Turso-Antwort, bevor es Zeilen als synchronisiert markiert | S | 🤖 H+ |
+| F2 | D-M4 | offen (an A3 gekoppelt) | Desktop pusht nur den Live-Eintrag und legt keine Tabelle an. Die Entscheidung folgt der Sync-Frage aus A3 | — | — (H+ ohne Gegenstand) |
+| F3 | D-L25 | schließen | Fix (Sweep): Android lehnt `http://`-Turso-URLs ab wie Desktop | S | 🤖 H+ |
+| F4 | D-L24 / D-L23, D-L26 | schließen / keine Aktion | D-L24 Datumsformat Fix (Sweep). D-L23 Pull-Richtung, D-L26 Ressourcen: nur dokumentiert | S | 🤖 H+ |
+| F5 | D-L28 / D-L29 | schließen / Asymmetrie | D-L28 nicht-atomare Schreiber Fix (Sweep, ADR-0015-Klasse). D-L29 Zähler-Bedeutung: Asymmetrie, dokumentiert | S | 🤖 H+ |
+
+**Block G — Zwillings-Hygiene**
+
+| Zeile | Urteil | Inhalt | Größe | Test |
+|---|---|---|---|---|
+| G-Fix | schließen (Sweep-Liste) | D-M1 Config-Load-Leiter (Richtung 12-1) · D-M11 unbekannter `cleanupStyle` ⇒ still Polished statt Config-Reset (Richtung Android) · D-M18 leer-vs-blank · D-M22 lokales Cleanup ohne Chunking (latent, wartet auf den G3b-Bau) · D-L5 deviceId · D-L10 Trim · D-L11 alphanumerisch · D-L12 HTTP-2xx · D-L13 Leer-Term-Guard (Amd 3) · D-L14 Sanitize-Passthrough · D-L15 Blank-Tabellen · D-L16 Clamp · D-L32 toter Einstieg · drei falsche Docstrings (Audit §8) | S | 🤖 H+ |
+| G-Dok | nur dokumentieren | D-L8 · D-L17 · D-L18 · D-L20 · D-L22 (unerreichbar oder nur Anzeige) | — | — (H+ ohne Gegenstand) |
+
+### Herstellbarkeit (H+) — was Andi für 🤖-Zeilen bestellt hat
+
+H+ steht an 20 Zeilen. Fünf haben keinen Gegenstand (B5, D7 entfallen; D12, F2, G-Dok bauen nichts). Für die
+übrigen 15 gilt: die Story nennt **vor dem Bauen** den Weg, wie Andi den Zustand auf seinem Gerät herstellt.
+Einteilung (Vorschlag, die Story-Spec entscheidet):
+- **Per Config oder Gerätezustand erreichbar, Nachweis in UI oder Log:** A1 (Lizenz raus, lokales Cleanup
+  gespeichert), A4 (Lizenz-Bibliothek entfernen), A5 (`config.json` löschen), B3 (bekannten Ghost-Satz ans
+  Ende diktieren), C1 (Modell wechseln, Log zeigt den Request), E1 (Netzmonitor oder Log bei gespeichertem
+  `local`).
+- **Brauchen einen Erzeuger:** D2, D3, D10 (leere, abgeschnittene, kaputte LLM-Antwort) → **ein**
+  Debug-Testanbieter, der eine konfigurierte Antwort liefert; deckt auch D9 (leeres STT-Ergebnis). D6
+  (Clipboard-Fehler) ist ohne Fehlerinjektion nicht herstellbar → Weg 2, wenn der Testanbieter das nicht
+  abdeckt. F1, F3, F4, F5 und der Turso-Teil von G-Fix brauchen eine erreichbare Turso-Datenbank plus Sicht
+  auf die Antwort (Log).
+
+### Schnitt (Vorschlag, nicht entschieden — Andis Go fehlt)
+
+1. **Vorläufer „Testanbieter"** (S–M): Debug-Anbieter für LLM und STT mit konfigurierter Antwort (leer,
+   abgeschnitten, kaputt, 429). Bedient H+ für D2, D3, D9, D10; ohne ihn gilt dort Weg 2.
+2. **Sammel-Stories nach Subsystem** statt einer Riesen-Story (38 S-Zeilen): **Sweep 1 Wächter + stiller
+   Verlust** (B2, B3, B4, B6, B1-Android-Teil, D2–D6, D9–D11, E1, E2) mit Golden-Vektoren für B2, B3, D2, D3 in
+   `test-fixtures/` und `Adr0017BoundaryGuardTest` erweitert · **Sweep 2 Gates + Config-Hygiene** (A2, C1, C2, C3,
+   C5–C9, C11, C12, C13-Gate, D1, G-Fix) · **Sweep 3 Lizenz + Sync** (A1, A3-Sofort, A4, A5, A6, F1, F3, F4, F5),
+   sinnvoll zusammen mit der G1a-Story.
+3. **Eigene Stories:** G1a Desktop-Lizenz-Gate + eine Free-Tier-Definition (M; wartet auf die Unterfrage) ·
+   B1 Banking-Guard Desktop (M) · C4 Profile Android + Sprache pro Profil (M + S) · C10 Blur im nativen
+   Overlay (M) · D-H11 OpenAI-STT via Rust (S–M, Amd 3) · Kandidaten ohne Freigabe: C13 Statistik-Port (M),
+   G3b Android Local-Cleanup bauen (L).
+4. **Bestehend, unverändert:** 9-8, 8-6, 8-7.
+
+**Sprint-Status:** keine Story wechselt den Status; Kandidaten entstehen erst mit dem Schnitt.
+
+**Quellen:** Artefakt-DB `sheet/parity-2026-09-16` (Version 2, done 2026-09-17); Entscheidungsblatt (Commit
+`258dcc8`); Audit #2 (Commit `12db145`); Code-Belege unter den `D-*`-IDs im Audit.
