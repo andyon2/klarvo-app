@@ -381,3 +381,12 @@ Einteilung (Vorschlag, die Story-Spec entscheidet):
 
 **Quellen:** Artefakt-DB `sheet/parity-2026-09-16` (Version 2, done 2026-09-17); Entscheidungsblatt (Commit
 `258dcc8`); Audit #2 (Commit `12db145`); Code-Belege unter den `D-*`-IDs im Audit.
+
+**Nachtrag 2026-09-17 (abends) — Unterfrage beantwortet, Schnitt freigegeben.** Andi: „J zu allem" auf die drei
+Fragen aus der Übergabe. (1) **Free-Tier = DeepSeek + Groq** auf beiden Seiten (G1a-DeepSeek, meine Empfehlung
+übernommen). Android weitet sein Free-Tier damit von „nur Groq" auf DeepSeek + Groq; die A2-Sperre nennt genau
+diese zwei Anbieter. (2) **Schnitt freigegeben wie vorgeschlagen** → **Epic 13 „Parity-Linie über Audit #2"**,
+Epic-File `_bmad-output/planning-artifacts/epics-parity-line-audit-2.md`, neun Stories 13-1 … 13-9 in
+`sprint-status.yaml` (alle `backlog`). Der Bau jeder Story ist ein eigenes Go. (3) Push der Amendment-4-Commits
+erfolgt. Nicht im Epic (Kandidaten ohne Freigabe): C13 Statistik-Port (M), G3b Android-Local-Cleanup (L), die
+Feature-Frage aus A3/F2 (Snippets, Cross-Device-Sync, Command-Mode).
