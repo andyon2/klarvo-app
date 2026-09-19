@@ -1,0 +1,41 @@
+# Projekt-Customization fuer bmad-build-auto (BMAD 6.13).
+# Uebernommen 2026-09-19 aus der Guardian-Referenz (teams/guardian/briefings/conductor-6.13/ref-impl/),
+# Smoke-Slots mit klarvo-Werten aus bmad-conductor.toml gefuellt. Die Datei fuellt nur
+# Schluessel, die customize.toml des Skills kennt: implementation_handoff und persistent_facts.
+# review_layers bleiben Default: die Story-Session ist ein Opus-Subagent (Weg B), die vier
+# Pruefer erben Opus (step-04: "same model capability as the current session").
+#
+# Merge-Regel (customize.toml): Strings ersetzen den Default, Listen haengen an. Der Default
+# von persistent_facts ist leer, also ist die Liste unten die ganze Liste.
+
+[workflow]
+
+# Schritt 3: die Implementierung laeuft als Opus-Subagent ueber das Agent-Tool. Der Prompt ist
+# der Skill-Default, nur der Start-Satz pinnt Tool und Modell. Kein Effort-Parameter: das
+# Agent-Tool kennt keinen (Handover Abschnitt 5, offen 1).
+implementation_handoff = """
+Launch a subagent through the Agent tool with `model: opus` and no prior conversation context, with this prompt:
+
+> Read {spec_file} fully and implement it — the spec is the sole source of truth. Load every file listed in its frontmatter `context:` before you start.
+>
+> When done, report what you changed, how you verified it, and anything left incomplete or risky.
+"""
+
+persistent_facts = [
+  # --- Smoke-Haltung (aus dem Conductor-Contract [smoke] / [visual_oracle]) ---
+  # klarvo-spezifisch; alle weiteren Facts sind generisch und unveraendert kopiert.
+  """Smoke posture for surface stories. klarvo has two unattended proxy surfaces; the binding detail is the conductor contract `_bmad/custom/bmad-conductor.toml` (`[smoke]`, `[smoke.desktop]`, `[visual_oracle]`). ANDROID: the headless Android emulator via `scripts/android-emulator.sh` (install with `--abi arm64-v8a`), driven by `scripts/android-smoke.sh` with `BMAD_CONDUCTOR=1` exported, which hard-rejects every non-emulator target; structure is asserted with `adb shell dumpsys window windows` from inside that script. DESKTOP: the real React surface in preview mode, driven by a throwaway puppeteer script (puppeteer is pinned in package.json) against `npm run preview` on port 1422 in real Chromium; states that cannot be reached get a throwaway edit that is reverted afterwards. Every smoke run leaves its evidence (script, log, capture) in `_bmad-output/implementation-artifacts/gate4-evidence/<story>/`. The real targets -- the Xiaomi/HyperOS phone and the Windows release build via `scripts/windows-build.sh` -- are never driven by an unattended run.""",
+
+  """Structural versus pixel. The proxy surface decides wiring, logic, structure and geometry: element presence per state, computed styles against canon tokens, bounding-box deltas, window counts and sizes. It does not decide pixels, font rasterization, OS text-scale drift or aesthetics. A structural assertion is the gate; a screenshot is evidence for the human, not a verdict.""",
+
+  """A proxy is not a design proof. A green preview, emulator or build result proves at most wiring, logic and structure. Whenever a result carries a number or the word green, state what the run exercised and what it did not (sites, states, platforms never driven) and which claim it proves. Never report proxy-green as a visual or design pass.""",
+
+  # --- Decisions-Regel (alter Conductor: decisions[] Ledger) ---
+  """Decisions ledger. Every technical choice made without a spec directive (library, pattern, naming, fallback behaviour, scope trimmed) is recorded under `## Auto Run Result` in a `### Decisions` list, one line each: what was chosen, the alternative, why. A design, UI, wording or product-intent choice the spec and canon do not pin is never decided here — it is an intent gap and halts the run.""",
+
+  # --- Baseline-Ausnahme (alter Conductor GATE 2: pre-existing red ist kein Trip) ---
+  """Baseline exception for verification. A check in `## Verification` that fails is only this story's failure if it passes at `baseline_revision`. Before halting on a red check, run the same check against `baseline_revision` (a `git worktree` at that revision, or `git stash` of the working changes). If it is red there too, record it under `## Auto Run Result` as pre-existing with the command and the baseline output, and continue; the halt condition `implementation verification failed` applies only to checks that the diff turns red. Never repair a pre-existing failure as part of this story.""",
+
+  # --- Response-State-Check (Epic-8-Lehre; wirkt in Schritt 2 fuer Volllauf-Stories ohne Checkpoint) ---
+  """Response-state check for surface stories. When the intent touches an interactive control, the spec's intent contract lists every response state of that control (at minimum idle, hover, pressed, focused, disabled and, where applicable, loading and error) with the canon source that defines it. A state the canon does not define is an intent gap: halt with the missing states named — do not invent a state.""",
+]
