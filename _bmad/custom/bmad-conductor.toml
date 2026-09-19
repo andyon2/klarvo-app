@@ -1,8 +1,13 @@
 # Conductor contract for THIS project.
 #
-# Read EXPLICITLY by the global bmad-epic-conductor / bmad-story-conductor skills
-# at activation. This is orchestration MECHANICS, not code-derived testing rules:
-# it lives here on purpose because (a) `bmad-generate-project-context` owns and may
+# Read EXPLICITLY by the global bmad-conductor skill (BMAD 6.13) at activation. Bis zur
+# 6.13-Migration (2026-09-19) hiess diese Datei bmad-epic-conductor.toml; die Bloecke [tea],
+# [workers] und [seats] sind dabei entfallen (git log zeigt sie). Modell+Effort stehen jetzt im
+# Agent bmad-story-session. Die Worker-Sperren (alte disallowed_tools) gehoeren NICHT in
+# .claude/settings.json: permissions.deny gilt dort fuer alle Sessions, auch fuer Andis interaktive
+# Arbeit mit adb/ssh. Geplanter Ort = PreToolUse-Hook im Agent bmad-story-session (Guardian, global);
+# Stand 2026-09-19 noch nicht gebaut -- bis dahin laufen Conductor-Worker OHNE Befehlssperren. This is orchestration MECHANICS, not code-derived testing rules:
+# it lives here on purpose because (a) `bmad-project-context` owns and may
 # regenerate `project-context.md` and cannot reproduce this policy from a code scan,
 # and (b) only the conductor reads it — the dev/review workers never needed it.
 # `_bmad/custom/` is never touched by the generator, so a dropped run-guard line
@@ -54,102 +59,6 @@ structural        = true   # the emulator IS a reliable STRUCTURAL oracle
 structural_method = "adb shell dumpsys window windows — assert overlay-window structure: count of APPLICATION_OVERLAY windows + their requested sizes / gravity / visibility (e.g. recording state = panel ~1080x525 bottom + idle bubble 162x162). A wrong window count/size is a real FAILED smoke, caught without a screenshot."
 pixel             = false  # NOT a pixel / aesthetic oracle
 pixel_note        = "stock Android (no HyperOS skin), software GPU, and system dialogs can force-hide overlays (mForceHideNonSystemOverlayWindow); on 2026-06-15 an emulator screenshot looked 'green' while the real Xiaomi was visibly broken. The pixel/aesthetic verdict is Andi's real-device gate, never an emulator screenshot."
-
-[tea]
-# DEFERRED INTENT MARKER — NOT wired. Both flags are OFF and the story-conductor does NOT
-# read them today (the 2026-06-26 wiring into the global skill was built, adversarially
-# reviewed, and REVERTED). This block only records the decision + what real wiring requires,
-# so the next session doesn't re-improvise it. See memory:
-# feedback_check_tea_and_retros_before_bmad_test_proposals.
-#
-# The idea: have the conductor ORCHESTRATE (never BE) the installed TEA skills —
-# bmad-testarch-atdd (red acceptance tests before dev) + bmad-testarch-trace (gate decision).
-# Sound in principle, but reverted because the build was broken-when-enabled AND mis-placed:
-#
-# WHY NOT NOW:
-#  - Klarvo's live work is the visual overhaul (Epic 8/9): atdd is weak there (no meaningful
-#    pre-test for "looks like the SOLL"; it HARD-HALTS for frontend stories with no framework)
-#    and GATE-4 smoke already rules. No CI ⇒ trace is an overridable LLM verdict, not a block.
-#  - Pre-building this into the SHARED, non-git-tracked global conductor skill = speculative
-#    optionality with no concrete consumer (violates code-simplicity + spirit of Epic-4's
-#    "don't touch the global conductor"). Wire it the day a logic epic actually needs it.
-#
-# WHAT REAL WIRING MUST FIRST SOLVE (found by the 2026-06-26 critics — solve these, with a
-# concrete logic story to test against, BEFORE editing the global skill):
-#  1. atdd→dev COMPOSITION: atdd writes scaffolds to _bmad-output/test-artifacts/ (an output
-#     dir), NOT the src/test tree; dev-story authors its own tests (Steps 5-6) and never runs
-#     atdd's. "red before dev, dev makes it green" is NOT automatic — the scaffolds must be
-#     ported into the real suite, or the value is nil.
-#  2. PLACEMENT: epic-conductor spawns each Phase-B story at startStage=dev (create ran in
-#     Phase A), so an atdd stage hung on the create->dev seam never fires in the autonomous
-#     night run. Anchor atdd to "no impl commit yet in baseRef..HEAD", not a stage label.
-#  3. FRAMEWORK FIRST: atdd hard-HALTS without an initialized test framework (TEA chain is
-#     test-design -> framework -> ci -> atdd). Klarvo has none; only pure Rust-backend stories
-#     pass its prereq on Cargo.toml.
-#  4. NO SELF-ATTESTED RED: don't have the atdd worker merely *claim* its tests run red
-#     (Epic-4 anti-pattern); the conductor/reviewer observes red itself.
-#  5. trace recording + trace-FAIL fix budget need their own channel/counter (don't abuse
-#     decisions[]; don't collide with maxFixRounds).
-# atdd       = false
-# trace_gate = false
-
-[workers]
-# The worker grant (story-conductor R6; Epic-8-Retro AI-6 / C2, 2026-09-03). Every headless
-# worker runs under this instead of --dangerously-skip-permissions. Deny wins over allow, so
-# Bash stays usable for build/test/git while the listed commands are refused. A denial reaches the
-# worker as a tool error; it may report it or try around it -- the post-worker transcript grep (R6)
-# catches the latter. The grant raises the bar; only the file tools are walled (--restricted).
-# Epic 8: two unattended fix workers ran apt-get on powerhouse for a gate dead since 8-1.
-# Verified 2026-09-03 with a headless haiku probe under exactly this grant: `git commit` ran; `apt-get` and
-# `sh -c apt-get` were denied; a Write outside the cwd was denied; a Bash redirect outside the cwd RAN.
-# So the file-tool boundary is mechanical, the Bash boundary is rule + post-worker transcript grep (R6).
-restricted         = true          # ignores host settings files; confines Read/Edit/Write to the cwd; removes tools not in `tools`
-tools              = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill", "Agent", "TodoWrite"]
-permission_prompts = "none"        # anything that would prompt is denied -- a headless worker has nobody to ask
-permission_mode  = "acceptEdits"
-allowed_tools    = ["Read", "Edit", "Write", "Glob", "Grep", "Skill", "Agent", "TodoWrite", "Bash"]
-disallowed_tools = ["Bash(sudo:*)", "Bash(apt:*)", "Bash(apt-get:*)", "Bash(dpkg:*)", "Bash(snap:*)", "Bash(pip:*)", "Bash(pip3:*)", "Bash(rustup:*)", "Bash(cargo install:*)", "Bash(npm install -g:*)", "Bash(adb:*)", "Bash(ssh:*)", "Bash(scp:*)", "Bash(scripts/windows-build.sh:*)", "Bash(bash scripts/windows-build.sh:*)", "Bash(sh scripts/windows-build.sh:*)", "Bash(sh -c:*)", "Bash(bash -c:*)"]
-# Workers never run the Windows build or ssh: [desktop_build] is the CONDUCTOR's GATE-4 step, not a
-# worker step. Deny rules match the outer command text only: a subprocess inside a script (adb inside
-# android-smoke.sh) is outside the rule surface -- that is what BMAD_CONDUCTOR=1 exists for -- and
-# `sh -c` / `bash -c` wrappers are denied because they would carry any command past the list.
-# SKILL-LIEFERUNG: `--restricted` entfernt JEDES user- und projekt-Skill aus dem Worker --
-# `Invoke the skill bmad-dev-story` scheitert dann mit `Unknown skill` und der Worker
-# improvisiert (belegt 2026-09-16, Story 7-6: fuenf von fuenf Workern lasen SKILL.md von Hand).
-# `--setting-sources` hilft NICHT. Der Fix steht im globalen bmad-story-conductor-Skill,
-# Abschnitt "Skill delivery under --restricted": ein ephemerer --plugin-dir-Shim mit
-# `skills` -> `.claude/skills` symlinked; die Skills heissen dann `projskills:<name>`.
-# Hier nichts duplizieren -- das Skill ist die SSOT dafuer.
-# Host mutation is forbidden (story-conductor R6): a gate that needs a tool the host lacks is `blocked`, never an install.
-# Dead gates (AI-3): a gate red across two consecutive stories is retired, not chased.
-# RETIRED 2026-09-03: `cargo check --target x86_64-pc-windows-gnu` -- dies at ort-sys since 8-1.
-# The Windows statement comes from [desktop_build] (windows-build.sh). No story DoD names it.
-
-[seats]
-# Per-seat model + effort for the story-conductor's headless workers (R5). Decided 2026-09-10.
-# Precedence in the skill: invocation override > this block > the skill's built-in default
-# (create/dev/fix = sonnet, review = opus, no effort flag). The eval harness (L0) keeps
-# overriding per combo; this block is the ALLTAG default for klarvo.
-#
-# WHY opus everywhere: the re-fix rounds came from the dev/fix seats, not from review.
-# 7-2 ran 3 fix rounds on Sonnet; every round-1 finding was a test that did not bind to
-# production, and the Sonnet fix worker's rework was superficial until the Opus reviewer
-# caught it. 8-5 = 3 rounds, 8-8 = 2 rounds. The harness research (Morpheus, "Harness
-# Engineering", teams/klarvo/yt-scout/B_y-2GUs928/report.html) puts Sonnet 5 in the lowest
-# class (leaf jobs) and Opus 5 in the work-job class -- same split.
-# WHY effort is explicit: --restricted ignores the settings files, so the global
-# effortLevel never reaches a worker; without --effort every seat runs at the CLI default.
-# WHY xhigh only on dev: xhigh costs ~1.4x high. Dev is the seat that writes the tests and
-# the binding; that is where a round is saved. Review runs 3 sub-reviewers inside one
-# process, so its effort multiplies by three -- high is enough for a judgment seat.
-# WHY no fable: Fable widens scope, rewrites whole files and treats prescriptive skill
-# steps as too narrow -- wrong fit for a deterministic BMAD worker. Fable is the conductor.
-# MEASURE before re-tuning: seat-costs.jsonl (written by the story-conductor after every
-# worker) carries model, effort, cost and tokens per seat and story.
-create = { model = "opus", effort = "high" }
-dev    = { model = "opus", effort = "xhigh" }
-fix    = { model = "opus", effort = "high" }
-review = { model = "opus", effort = "high" }
 
 [smoke.desktop]
 # Desktop proxy surface (AI-6 / F2) -- the machine gate every Epic-8 story ran, unrecorded until now.
