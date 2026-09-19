@@ -58,10 +58,11 @@ src-tauri/null
 _bmad/*
 !_bmad/custom/
 .claude/
+# BMAD 6.13: `npx skills add` legt die Skills kanonisch unter .agents/skills/ ab (Installer-Output
+# wie _bmad/*; wiederherstellbar aus dem getrackten skills-lock.json).
+.agents/
 shells/
 _bmad-output/runtime/
-_bmad-output/story-automator/
-.claude/.story-automator-active
 
 # Design handoff package (local only — contains screenshots with personal dictation content)
 design-handoff/
