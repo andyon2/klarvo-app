@@ -80,7 +80,11 @@ Row ids (A1 … G-Fix) and D-* ids are those of ADR-0016 Amendment 4 / audit #2.
 📱 Andi on the Android device · 🖥️ Andi on the Windows machine · 🤖 agent only · **H+** Andi
 ordered reproducibility. Sizes are Amendment-4 sizes.
 
-### Story 13-1 — Debug test provider in both twins (H+ enabler) · S–M
+## Epic 13: Parity line over audit #2
+
+### Story 13.1: Debug test provider, both twins
+
+**Key `13-1` — Debug test provider in both twins (H+ enabler) · S–M**
 
 **Rows served:** H+ on D2, D3, D9, D10 (and D6 if the mechanism can inject a clipboard failure).
 
@@ -103,7 +107,9 @@ So that Andi can provoke "empty answer", "truncated answer", "malformed answer",
 **Out of scope:** any change to real provider behaviour. **DoD:** tests green; 🖥️📱 Andi selects
 "empty answer" on each device and sees the current (pre-13-2) behaviour, which proves the enabler.
 
-### Story 13-2 — Parity sweep 1: guards, core output, silent loss · S rows
+### Story 13.2: Parity sweep: guards and silent loss
+
+**Key `13-2` — Parity sweep 1: guards, core output, silent loss · S rows**
 
 **Rows:** B2 (D-H5, D-H6, D-M9) · B3 (D-H7) · B4 (D-H4) · B6 (D-M10, D-L19, D-L21) · B1 Android
 part (D-H3: history/Turso only after the guard) · D2 (D-H19) · D3 (D-M16) · D4 (D-H20) · D5
@@ -146,7 +152,9 @@ it failed.
 **Out of scope:** the Desktop banking blocklist (13-6), any UI gate (13-3). **DoD:** JVM gate +
 `cargo test --lib` green with inversion evidence; 📱 rows above on Andi's Xiaomi; 🖥️ E2 on Windows.
 
-### Story 13-3 — Parity sweep 2: Android gates + config hygiene · S rows
+### Story 13.3: Parity sweep: Android gates and config hygiene
+
+**Key `13-3` — Parity sweep 2: Android gates + config hygiene · S rows**
 
 **Rows:** A2 (D-H2) · C1 (D-H12, port) · C2 (D-H13, gate = G3a) · C3 (D-H14) · C5 (D-H16) · C6
 (D-H17) · C7 (D-M17) · C8 (D-L1) · C9 (D-L2, D-L3, strike) · C11 (D-L6, strike) · C12 (D-L27,
@@ -185,7 +193,9 @@ So that a setting never silently dies and the two local paths cannot be reached 
 JVM gate + `cargo test --lib` + `npm` type-check green; 📱 Andi opens Settings on the Xiaomi and
 finds none of the gated controls; 🖥️📱 C9 controls gone on both.
 
-### Story 13-4 — Desktop license gate + one free-tier definition (G1a) · M + S
+### Story 13.4: Desktop license gate and one free tier
+
+**Key `13-4` — Desktop license gate + one free-tier definition (G1a) · M + S**
 
 **Rows:** D-C1 (M) · D-H1 (S) · the Command-gate key bug (`llm_priority` vs `llm_provider`).
 
@@ -209,7 +219,9 @@ So that the paywall means the same thing wherever Klarvo runs.
 **Out of scope:** the software license choice (BSL/PolyForm) and the publication question —
 untouched, see `docs/backlog.md` "Lizenzwahl OFFEN". Trial and activation rows (13-5).
 
-### Story 13-5 — Parity sweep 3: license side rows + sync hygiene · S rows
+### Story 13.5: Parity sweep: license rows and sync hygiene
+
+**Key `13-5` — Parity sweep 3: license side rows + sync hygiene · S rows**
 
 **Rows:** A1 (D-C2) · A3 immediate (D-M23, D-L30, D-L7) · A4 (D-L31, D-L32) · A5 (D-M19) · A6
 (D-L9) · F1 (D-M3) · F3 (D-L25) · F4 D-L24 · F5 D-L28. **Depends on 13-4** (A5, A6 semantics).
@@ -236,7 +248,9 @@ never claims success it did not verify.
 
 **Out of scope:** F2 (open, coupled to A3). **DoD:** tests green; 🖥️ A6 on Windows; 🖥️📱 A3.
 
-### Story 13-6 — Desktop banking/password guard by process name (B1) · M
+### Story 13.6: Desktop banking guard (process blocklist)
+
+**Key `13-6` — Desktop banking/password guard by process name (B1) · M**
 
 As a klarvo user on Windows,
 I want dictation into a banking or password-manager window to be blocked like on Android,
@@ -248,7 +262,9 @@ list and its source named in the spec; Rust tests for the decision; 🖥️ Andi
 blocklisted process and dictates ⇒ blocked with a visible status. **Out of scope:** the Android
 order fix (13-2).
 
-### Story 13-7 — Android per-app profiles + per-profile language (C4) · M + S
+### Story 13.7: Android per-app profiles and profile language
+
+**Key `13-7` — Android per-app profiles + per-profile language (C4) · M + S**
 
 As a klarvo user on Android,
 I want per-app profiles to fire by package name, and the language set on a profile to apply on
@@ -260,7 +276,9 @@ already knows it), not on a window title; `profiles[].language` is consumed by b
 (fixture-pinned); 📱 Andi sets a profile for one app with another language and dictates there.
 **Out of scope:** new profile fields.
 
-### Story 13-8 — `previewBgBlur` drives the native preview overlay (C10) · M
+### Story 13.8: Native preview blur wiring
+
+**Key `13-8` — `previewBgBlur` drives the native preview overlay (C10) · M**
 
 As a klarvo user on Windows,
 I want the blur slider to change the native preview overlay,
@@ -271,7 +289,9 @@ painted background (tiny-skia); ADR-0021 gets an amendment note (VR3 dropped blu
 natively); objective pixel metric before acceptance (`feedback_verify_surface_fix_with_objective_pixel_metric`);
 🖥️ Andi moves the slider and sees the overlay change. **Out of scope:** blur on Android.
 
-### Story 13-9 — OpenAI as STT provider via the Rust core (D-H11) · S–M
+### Story 13.9: OpenAI STT provider via Rust
+
+**Key `13-9` — OpenAI as STT provider via the Rust core (D-H11) · S–M**
 
 As a klarvo user on either platform,
 I want `sttProvider = openai` to transcribe with OpenAI,
