@@ -3,10 +3,13 @@
 # Read EXPLICITLY by the global bmad-conductor skill (BMAD 6.13) at activation. Bis zur
 # 6.13-Migration (2026-09-19) hiess diese Datei bmad-epic-conductor.toml; die Bloecke [tea],
 # [workers] und [seats] sind dabei entfallen (git log zeigt sie). Modell+Effort stehen jetzt im
-# Agent bmad-story-session. Die Worker-Sperren (alte disallowed_tools) gehoeren NICHT in
-# .claude/settings.json: permissions.deny gilt dort fuer alle Sessions, auch fuer Andis interaktive
-# Arbeit mit adb/ssh. Geplanter Ort = PreToolUse-Hook im Agent bmad-story-session (Guardian, global);
-# Stand 2026-09-19 noch nicht gebaut -- bis dahin laufen Conductor-Worker OHNE Befehlssperren. This is orchestration MECHANICS, not code-derived testing rules:
+# Agent bmad-story-session. Die Worker-Sperren (alte disallowed_tools) leben seit
+# 2026-09-19 als permissions.deny in .claude/settings.json (12 Regeln aus der Guardian-Referenz
+# settings-deny.json; gilt fuer ALLE Sessions im Projekt). adb/ssh/scp sind bewusst NICHT gesperrt,
+# weil Andis interaktive Arbeit sie braucht -- ein Story-Lauf kann sie also aufrufen (akzeptiertes
+# Restrisiko). .claude/ ist gitignored: auf einem neuen Rechner die Liste neu eintragen.
+#
+# This is orchestration MECHANICS, not code-derived testing rules:
 # it lives here on purpose because (a) `bmad-project-context` owns and may
 # regenerate `project-context.md` and cannot reproduce this policy from a code scan,
 # and (b) only the conductor reads it — the dev/review workers never needed it.
