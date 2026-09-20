@@ -1129,6 +1129,16 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 
 ---
 
+## [Gate-Lücke, medium] Kein geräte-freies Gate prüft die JNI-Signatur von `nativeTranscribe` (2026-09-20)
+
+**Quelle:** Story 13-1, Spec `deferred` (`spec-13-1-debug-test-provider-both-twins-2.md`). `GroqSttBridge.nativeTranscribe` (Kotlin, `GroqSttBridge.kt:59`) und `groq_jni.rs:202` (Rust) haben seit `e0da32a` 9 Parameter. Nichts vergleicht Anzahl und Reihenfolge. Eine einseitige Änderung oder eine veraltete `.so` bindet still falsch: der STT-Testanbieter fällt dann ohne Fehler und ohne Log-Zeile auf echtes Groq zurück. Schließen braucht einen adb-/Emulator-Schritt, der `nativeTranscribe` nach dem Rebuild einmal aufruft.
+
+## [Test-Schuld, low] Das Test-Modul von `groq_jni.rs` ist nie gelaufen, eine Erwartung ist falsch (2026-09-20)
+
+**Quelle:** Story 13-1, Spec `deferred`. `src-tauri/src/stt/groq_jni.rs::tests` ist android-gated und kompiliert weder unter `cargo test --lib` noch auf Android. Entgated wird `test_panic_safety_is_hallucination_unusual_inputs` rot (`is_hallucination("\0")` ist false). Erwartung aus Story 7-3, kein Produkt-Defekt.
+
+---
+
 ## Story 11-6 GATE-4 — Nebenbefunde (2026-08-11, alle bewusst AUSSERHALB 11-6 gehalten)
 
 **Quelle:** GATE-4-Lauf Story 11-6 auf powerhouse (`gate4-evidence/11-6/verdict.md`, Abschnitte
