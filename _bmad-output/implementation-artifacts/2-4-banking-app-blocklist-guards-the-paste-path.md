@@ -233,7 +233,7 @@ _No blocking issues encountered._
 - `src-tauri/gen/android/app/src/main/java/com/klarvo/voice/BankingGuard.kt` (new — byte-identical mirror)
 - `src-tauri/gen/android/app/src/main/java/com/klarvo/voice/KlarvoOverlayService.kt` (modified — byte-identical mirror)
 - `src-tauri/gen/android/app/src/test/java/com/klarvo/voice/BankingGuardTest.kt` (new — byte-identical mirror)
-- `_bmad-output/implementation-artifacts/2-4-banking-app-blocklist-guards-the-paste-path-not-just-the-bubble.md` (story file — status + tasks updated)
+- `_bmad-output/implementation-artifacts/2-4-banking-app-blocklist-guards-the-paste-path.md` (story file — status + tasks updated)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (story 2-4 set to review)
 
 ## Change Log

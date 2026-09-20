@@ -45,32 +45,44 @@
 # - quick-dev-track findings (ROB-03/06/07/08/10, TEST-06..10, low-sev polish, contested) are NOT
 #   pre-populated here. They land in THIS same ledger via bmad-quick-dev's sync-sprint-status step.
 
-generated: 2026-05-30
-last_updated: 2026-09-17
+# NOTES PER EPIC (moved here 2026-09-20: the generator keeps this header, but drops comments inside development_status)
+# ====================================================================================================================
+# Epic 1 — Config & State Persistence Hardening [gated ADR-0015]
+# Epic 2 — Android Security Guardians [gated ADR-0016] (surface-class: smoke-test DoD)
+# Epic 3 — Test Integrity: Close the False-Safety Islands
+# Epic 4 — God-File Depth Refactor (behavior-preserving)
+# Epic 5 — Live-Cleanup-Preview (FIRST FEATURE EPIC) [L3 feature route; surface-class smoke-test DoD]
+# Epic 7 — Cross-Platform Parity — RE-CUT 2026-09-10 (sprint-change-proposal-2026-09-10.md): 7-5/7-7 superseded by 7-8; done 2026-09-10 with 7-6 parked on M12 (Evidenz: epic-7-retro-2026-09-10.md); reopened 2026-09-16 for the 7-6 cut (M12 decided 2026-09-10), re-closed 2026-09-16 after 7-6 done (Andis GATE-4 gruen auf fdf0db4); Retro bleibt epic-7-retro-2026-09-10.md, keine zweite
+# Epic 8 — Desktop Studio-Dark [L3 visual; surface smoke DoD] — RE-SCOPED 2026-07-06, 8-6 vertagt 2026-08-19; 8-6 + 8-7 REAKTIVIERT 2026-09-16 als Kandidaten (Andi, ADR-0016 Amendment 3), Epic bleibt done bis zum Schnitt (scope+rationale: docs/backlog.md "Epic 8 Re-Scope")
+# Epic 9 — Android Visual Overhaul + Bubble-Interaktion [L3; ADR-Vorlauf: Bubble View+Canvas vs ComposeView] — 9-6 GESTRICHEN 2026-09-16 (Andi; Zeile entfernt, Beleg docs/backlog.md "Story 9-6"), 9-8 entparkt = einzige offene Story
+# Epic 10 — Native Desktop Overlays [L3 architecture-migration; surface-class smoke DoD] — branch feat/native-desktop-overlays, supersedes ADR-0020
+# Epic 11 — Cross-Platform Live-Preview [L3 feature] — done 2026-08-17 (Evidenz: epic-11-retro-2026-08-17.md); kein 11-5 (Nummernlücke)
+# Epic 12 — Cloud-Resilienz [L3 feature] — done 2026-07-06 (Evidenz: epic-12-retro-2026-07-06.md); 12-3 deferred
+# Epic 13 — Parity-Linie über Audit #2 [L3 brownfield; ADR-0016 Amendment 4] — Schnitt 2026-09-17 (Andi); Epic-File epics.md Part 9; Bau je Story = eigenes Go
+
+generated: '2026-05-30'
+last_updated: '2026-09-20'
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
 development_status:
-  # Epic 1 — Config & State Persistence Hardening [gated ADR-0015]
   epic-1: done
   1-1-atomic-state-file-writes-via-a-shared-save-atomic-helper: done
   1-2-backup-on-corrupt-recovery-in-load-config: done
   1-3-single-writer-serialization-for-state-file-saves: done
-  1-4-hardened-config-migration-pre-migration-backup-error-propagation: done
+  1-4-hardened-config-migration-backup-and-error-propagation: done
   1-5-migration-ladder-regression-test-history-db-open-db: done
   epic-1-retrospective: done
 
-  # Epic 2 — Android Security Guardians [gated ADR-0016] (surface-class: smoke-test DoD)
   epic-2: done
   2-1-port-the-hallucination-filter-to-android: done
   2-2-min-length-silence-pre-filter-before-the-groq-stt-call: done
   2-3-sanitize-paste-text-on-all-android-paths: done
-  2-4-banking-app-blocklist-guards-the-paste-path-not-just-the-bubble: done
+  2-4-banking-app-blocklist-guards-the-paste-path: done
   epic-2-retrospective: done
 
-  # Epic 3 — Test Integrity: Close the False-Safety Islands
   epic-3: done
   3-1-spec-test-the-real-silero-auto-stop-path: done
   3-2-execute-the-real-feedback-pi-privacy-gate-in-test: done
@@ -78,32 +90,30 @@ development_status:
   3-4-independent-system-prompt-leak-detection-spec: done
   epic-3-retrospective: done
 
-  # Epic 4 — God-File Depth Refactor (behavior-preserving)
   epic-4: done
-  4-1-isolate-the-load-config-core-into-a-tested-migrate-and-normalize: done
+  4-1-isolate-the-load-config-core-into-migrate-and-normalize: done
   4-2-tighten-pipeline-rs-contracts-demote-test-only-pub-surface: done
   4-3-single-sanctioned-config-write-path-save-config-locked: done
   epic-4-retrospective: done
 
-  # Epic 5 — Live-Cleanup-Preview (FIRST FEATURE EPIC) [L3 feature route; surface-class smoke-test DoD]
   epic-5: done
   5-1-backend-pause-triggered-delta-flush-for-toggle-hold: done
   5-2-frontend-auto-expand-preview-panel: done
   5-3-settings-opt-in-preview-toggle-and-preview-pause-slider: done
   5-4-config-send-stop-pause-consolidation: done
-  epic-5-retrospective: done
-  5-7-preview-flush-hardening-stale-chunk-guard-and-backpressure: done
   5-5-settings-preview-display-form-presets: done
+  5-7-preview-flush-hardening-stale-chunk-guard-and-backpressure: done
+  epic-5-retrospective: done
+
   epic-6: done
   6-1-scaffold-the-standalone-preview-window: done
   6-2-move-live-preview-into-the-window-css-grow-scale-geometry: done
-  6-3-font-size-axis-preview-font-size-config-settings-picker-k-scaling: done
+  6-3-font-size-axis-config-settings-picker-k-scaling: done
   6-4-couple-the-preview-to-pill-drag: done
   6-5-pill-fully-static-and-cleanup: done
   6-6-preview-box-appearance-customization: done
   epic-6-retrospective: done
 
-  # Epic 7 — Cross-Platform Parity — RE-CUT 2026-09-10 (sprint-change-proposal-2026-09-10.md): 7-5/7-7 superseded by 7-8; done 2026-09-10 with 7-6 parked on M12 (Evidenz: epic-7-retro-2026-09-10.md); reopened 2026-09-16 for the 7-6 cut (M12 decided 2026-09-10), re-closed 2026-09-16 after 7-6 done (Andis GATE-4 gruen auf fdf0db4); Retro bleibt epic-7-retro-2026-09-10.md, keine zweite
   epic-7: done
   7-1-android-chunking-parity-core-output: done
   7-2-android-live-auto-stop-vad-gate-parity: done
@@ -114,7 +124,6 @@ development_status:
   7-10-cleanup-failure-raw-text-clipboard-only: done
   epic-7-retrospective: done
 
-  # Epic 8 — Desktop Studio-Dark [L3 visual; surface smoke DoD] — RE-SCOPED 2026-07-06, 8-6 vertagt 2026-08-19; 8-6 + 8-7 REAKTIVIERT 2026-09-16 als Kandidaten (Andi, ADR-0016 Amendment 3), Epic bleibt done bis zum Schnitt (scope+rationale: docs/backlog.md "Epic 8 Re-Scope")
   epic-8: done
   8-1-token-and-type-foundation: done
   8-2-settings-form-system-home-and-sub-pages: done
@@ -126,7 +135,6 @@ development_status:
   8-8-action-feedback-copy-and-delete: done
   epic-8-retrospective: done
 
-  # Epic 9 — Android Visual Overhaul + Bubble-Interaktion [L3; ADR-Vorlauf: Bubble View+Canvas vs ComposeView] — 9-6 GESTRICHEN 2026-09-16 (Andi; Zeile entfernt, Beleg docs/backlog.md "Story 9-6"), 9-8 entparkt = einzige offene Story
   epic-9: in-progress
   9-1-adr-android-bubble-rendering-tech: done
   9-2-android-token-theme-source-and-fonts: done
@@ -146,7 +154,6 @@ development_status:
   9-16-revert-non-hold-recording-to-compact-cluster: done
   epic-9-retrospective: done
 
-  # Epic 10 — Native Desktop Overlays [L3 architecture-migration; surface-class smoke DoD] — branch feat/native-desktop-overlays, supersedes ADR-0020
   epic-10: done
   10-1-native-pill-overlay: done
   10-2-native-preview-overlay: done
@@ -154,7 +161,6 @@ development_status:
   10-4-native-overlay-dpi-scaling-and-appearance-wiring: done
   epic-10-retrospective: done
 
-  # Epic 11 — Cross-Platform Live-Preview [L3 feature] — done 2026-08-17 (Evidenz: epic-11-retro-2026-08-17.md); kein 11-5 (Nummernlücke)
   epic-11: done
   11-1-android-live-preview-feasibility-benchmark: done
   11-2-android-live-preview-port: done
@@ -163,14 +169,12 @@ development_status:
   11-6-line-spacing-appearance-setting: done
   epic-11-retrospective: done
 
-  # Epic 12 — Cloud-Resilienz [L3 feature] — done 2026-07-06 (Evidenz: epic-12-retro-2026-07-06.md); 12-3 deferred
   epic-12: done
   12-1-robust-fallback-ladder-and-pillbar-status: done
   12-2-audio-retry-history: done
   12-3-provider-comparison: backlog
   epic-12-retrospective: done
 
-  # Epic 13 — Parity-Linie über Audit #2 [L3 brownfield; ADR-0016 Amendment 4] — Schnitt 2026-09-17 (Andi); Epic-File epics-parity-line-audit-2.md; Bau je Story = eigenes Go
   epic-13: backlog
   13-1-debug-test-provider-both-twins: backlog
   13-2-parity-sweep-guards-and-silent-loss: backlog
