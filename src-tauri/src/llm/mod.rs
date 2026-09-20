@@ -1389,9 +1389,14 @@ pub(crate) fn debug_llm_canned_wire(scenario: &str) -> Option<(u16, &'static str
 ///
 /// The provider ignores `raw_text`, `style`, `dictionary_terms` and
 /// `custom_prompt` entirely — the scenario alone decides the answer, so a
-/// reproduction is deterministic regardless of what was dictated. Note that
-/// `chunked_cleanup` calls the provider once **per chunk** above 400 chars, so
-/// the canned answer is returned per chunk, not per dictation.
+/// reproduction is deterministic regardless of *what* was dictated **once the
+/// provider is reached at all**. Two callers decide whether it is:
+/// - [`chunked_cleanup`] returns letter/digit-free input verbatim via
+///   [`is_trivial_chunk`] before any provider is called, so a punctuation-only
+///   dictation never reaches this code (same guard in the Kotlin twin
+///   `KlarvoApi.cleanupChunked`);
+/// - above `CHUNK_THRESHOLD` the provider is called once **per chunk**, so the
+///   canned answer comes back per chunk, not per dictation.
 pub struct DebugCleanup {
     scenario: String,
 }
@@ -1427,7 +1432,19 @@ impl DebugCleanup {
                 // the connection failure into `LlmError::Request`, the same
                 // variant a DNS/timeout/connection-refused failure produces in
                 // production.
-                let response = reqwest::Client::new()
+                //
+                // Same builder as every shipped provider in this file, so a host
+                // that DROPs rather than REFUSEs loopback:1 fails in 15s instead
+                // of hanging the pipeline (and `cargo test --lib`) forever. Plus
+                // `.no_proxy()`: with `HTTP_PROXY` set, reqwest would otherwise
+                // route this probe through the proxy and the "no byte leaves the
+                // device" claim on `DEBUG_TRANSPORT_URL` would be false.
+                let response = reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(15))
+                    .timeout(std::time::Duration::from_secs(30))
+                    .no_proxy()
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new())
                     .post(DEBUG_TRANSPORT_URL)
                     .send()
                     .await?;
@@ -3326,6 +3343,143 @@ mod tests {
             assert!(
                 from_fixture.contains(&DEBUG_PROVIDER_NAME),
                 "{id}: the row must be able to select the debug provider at all"
+            );
+        }
+    }
+
+    /// Reads a file from the repo root. Panics loudly — a tripwire that cannot
+    /// find its subject must fail, never skip.
+    fn read_repo_file(rel: &str) -> String {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let path = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("workspace root")
+            .join(rel);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Cannot read {}: {e}", path.display()))
+    }
+
+    /// Extracts the double-quoted string literals of a `const <name> = [ … ];`
+    /// array from TypeScript source. Every failure mode panics with the reason.
+    fn ts_string_array(src: &str, name: &str, file: &str) -> Vec<String> {
+        let needle = format!("const {name} = [");
+        let start = src.find(&needle).unwrap_or_else(|| {
+            panic!("{file}: `const {name} = [` not found — renamed, reformatted or deleted")
+        });
+        let body_start = start + needle.len();
+        let end = body_start
+            + src[body_start..].find("];").unwrap_or_else(|| {
+                panic!("{file}: `const {name}` has no closing `];`")
+            });
+        let mut out = Vec::new();
+        let mut rest = &src[body_start..end];
+        while let Some(q) = rest.find('"') {
+            let after = &rest[q + 1..];
+            let close = after
+                .find('"')
+                .unwrap_or_else(|| panic!("{file}: unterminated string literal in `{name}`"));
+            out.push(after[..close].to_string());
+            rest = &after[close + 1..];
+        }
+        assert!(
+            !out.is_empty(),
+            "{file}: `{name}` parsed as empty — the extractor is broken, not the array"
+        );
+        out
+    }
+
+    /// Source-text tripwire over the React surface.
+    ///
+    /// The four option arrays in `AdvancedSettingsPanel.tsx` and the two
+    /// `"debug"` guards in `SettingsPanel.tsx` are load-bearing but pinned by
+    /// nothing a recurring gate runs: `npm run build` only type-checks
+    /// `string[]`, the JVM gate never sees TypeScript, and the sole DOM↔fixture
+    /// reader is a throwaway puppeteer harness that no script, gradle task or CI
+    /// invokes. Measured before writing this: deleting `"debug"` from
+    /// `VALID_LLM_PROVIDERS` reddens three tests, deleting it from
+    /// `LLM_PROVIDER_OPTIONS` reddened none — and the enabler silently becomes
+    /// unselectable.
+    ///
+    /// Same technique as `Adr0017BoundaryGuardTest`: read the production source
+    /// as text and assert on it.
+    ///
+    /// Inversion (verified RED at writing time): removing `"debug"` from
+    /// `LLM_PROVIDER_OPTIONS`, or dropping either `"debug"` guard in
+    /// `SettingsPanel.tsx`, fails here.
+    #[test]
+    fn spec_react_option_arrays_and_debug_guards_are_pinned_to_rust() {
+        const ADV: &str = "src/components/AdvancedSettingsPanel.tsx";
+        const PANEL: &str = "src/components/SettingsPanel.tsx";
+        let adv = read_repo_file(ADV);
+        let panel = read_repo_file(PANEL);
+
+        // (1) The two provider rows offer exactly the config allowlists.
+        let llm_providers = ts_string_array(&adv, "LLM_PROVIDER_OPTIONS", ADV);
+        let llm_providers: Vec<&str> = llm_providers.iter().map(String::as_str).collect();
+        assert_eq!(
+            llm_providers,
+            crate::config::VALID_LLM_PROVIDERS,
+            "{ADV}: LLM_PROVIDER_OPTIONS must equal VALID_LLM_PROVIDERS"
+        );
+        let stt_providers = ts_string_array(&adv, "STT_PROVIDER_OPTIONS", ADV);
+        let stt_providers: Vec<&str> = stt_providers.iter().map(String::as_str).collect();
+        assert_eq!(
+            stt_providers,
+            crate::config::VALID_STT_PROVIDERS,
+            "{ADV}: STT_PROVIDER_OPTIONS must equal VALID_STT_PROVIDERS"
+        );
+
+        // (2) The two scenario rows offer exactly the fixture's scenario sets.
+        let vectors = load_debug_vectors();
+        let fixture_llm: Vec<&str> = vectors
+            .iter()
+            .filter(|v| v["surface"].as_str() == Some("llm"))
+            .map(|v| v["scenario"].as_str().expect("scenario"))
+            .collect();
+        let fixture_stt: Vec<&str> = vectors
+            .iter()
+            .filter(|v| {
+                v["surface"].as_str() == Some("stt")
+                    && v["wire"]["kind"].as_str() != Some("not_offered")
+            })
+            .map(|v| v["scenario"].as_str().expect("scenario"))
+            .collect();
+
+        let llm_scenarios = ts_string_array(&adv, "DEBUG_LLM_SCENARIOS", ADV);
+        let llm_scenarios: Vec<&str> = llm_scenarios.iter().map(String::as_str).collect();
+        assert_eq!(
+            llm_scenarios, fixture_llm,
+            "{ADV}: DEBUG_LLM_SCENARIOS must equal the fixture's llm scenario set"
+        );
+
+        // `DEBUG_STT_SCENARIOS` is derived, not listed. Pin the derivation itself,
+        // then evaluate it — otherwise a changed filter would go unnoticed.
+        let derivation =
+            "const DEBUG_STT_SCENARIOS = DEBUG_LLM_SCENARIOS.filter((s) => s !== \"truncated\");";
+        assert!(
+            adv.contains(derivation),
+            "{ADV}: DEBUG_STT_SCENARIOS is no longer derived as `{derivation}` — \
+             the STT row's option list is now unpinned"
+        );
+        let stt_scenarios: Vec<&str> = llm_scenarios
+            .iter()
+            .copied()
+            .filter(|s| *s != "truncated")
+            .collect();
+        assert_eq!(
+            stt_scenarios, fixture_stt,
+            "{ADV}: the derived DEBUG_STT_SCENARIOS must equal the fixture's stt scenario set"
+        );
+
+        // (3) Both places that would otherwise overwrite a stored `debug`.
+        for guard in [
+            format!("llmProv !== \"{DEBUG_PROVIDER_NAME}\""),
+            format!("prev === \"{DEBUG_PROVIDER_NAME}\""),
+        ] {
+            assert!(
+                panel.contains(&guard),
+                "{PANEL}: the guard `{guard}` is gone — a stored `{DEBUG_PROVIDER_NAME}` \
+                 is rewritten to a keyed provider and the enabler cannot stay switched on"
             );
         }
     }

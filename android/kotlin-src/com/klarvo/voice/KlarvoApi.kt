@@ -223,6 +223,41 @@ object KlarvoApi {
     }
 
     /**
+     * The debug branch of [cleanup], extracted (story 13-1) so a plain-JUnit test
+     * can drive the COMPOSITION [debugCannedWire] → [mapCleanupResponse], not just
+     * the two halves separately. Rust closed the mirror-image hole with
+     * `stt::groq_jni::select_stt_provider`.
+     *
+     * Returns `null` for every non-debug provider — that `null` is what keeps the
+     * real HTTP path in [cleanup] unchanged, and it is asserted by a test, so the
+     * branch cannot quietly start swallowing real providers.
+     *
+     * The provider's own [LlmProviderInfo.url] is deliberately never touched here:
+     * for the debug provider it is `""`, and `URL("")` throws a
+     * MalformedURLException, which is an IOException carrying no `HTTP nnn` and
+     * would therefore look retryable to
+     * `KlarvoOverlayService.isRetryableCleanupFailure`.
+     *
+     * The scenario alone decides the answer, so a reproduction is deterministic
+     * regardless of *what* was dictated — **once this code is reached at all**.
+     * [cleanupChunked] returns letter/digit-free input verbatim via
+     * [isTrivialChunk] before [cleanup] is ever called, so a punctuation-only
+     * dictation never gets here (same guard in the Rust twin `chunked_cleanup`);
+     * and above [CHUNK_THRESHOLD] the canned answer comes back once per chunk,
+     * not once per dictation.
+     *
+     * Logging stays in the caller (the [mapCleanupResponse] technique): this
+     * function must stay drivable without `android.util.Log`, which throws
+     * "not mocked" outside Robolectric.
+     */
+    internal fun debugCleanupOrNull(provider: LlmProviderInfo): String? {
+        if (provider.providerName != DEBUG_PROVIDER_NAME) return null
+        val wire = debugCannedWire(provider.debugScenario)
+            ?: return debugTransportRequest(provider.model)
+        return mapCleanupResponse(wire.first, wire.second, provider.model)
+    }
+
+    /**
      * Resolves the effective cleanup model from a raw `advanced.llmModel*`
      * override.
      *
@@ -1269,19 +1304,18 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
         val systemPrompt = appendPromptExtensions(basePrompt, dictionaryTerms, customInstructions)
 
         // Story 13-1: the DEBUG test provider short-circuits here, BEFORE any URL
-        // is built, and feeds a canned (status, body) pair through the very same
-        // [mapCleanupResponse] the real providers use below. Injecting at the
-        // wire rather than at the return value is the whole point: the defect
-        // story 13-2 fixes lives in the mapping, so a pre-baked result would
-        // bypass the code under test. The prompt above is built and discarded --
-        // the scenario alone decides the answer, so a reproduction is
-        // deterministic regardless of what was dictated.
+        // is built. The decision itself lives in [debugCleanupOrNull] so a
+        // plain-JUnit test can drive it; only the log line stays here, the same
+        // way [mapCleanupResponse] was extracted with its caller keeping the
+        // logging. Moving this below `URL(provider.url)` would NOT be harmless:
+        // the debug provider's `url` is "", so `URL("")` throws a
+        // MalformedURLException -- an IOException with no `HTTP nnn` -- and
+        // KlarvoOverlayService.isRetryableCleanupFailure would fire the fallback
+        // ladder into the user's real DeepSeek key.
         if (provider.providerName == DEBUG_PROVIDER_NAME) {
             KlarvoLogger.i(TAG, "[debug-provider] LLM cleanup scenario=${provider.debugScenario}")
-            val wire = debugCannedWire(provider.debugScenario)
-                ?: return debugTransportRequest(provider.model)
-            return mapCleanupResponse(wire.first, wire.second, provider.model)
         }
+        debugCleanupOrNull(provider)?.let { return it }
 
         val url = URL(provider.url)
         val conn = url.openConnection() as HttpURLConnection

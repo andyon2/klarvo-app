@@ -50,9 +50,10 @@ import java.util.concurrent.Future
  * Covers: the seven `surface: "llm"` vectors, on the JVM, through the Kotlin
  * production seams named above; BOTH Android halves of drift row D10 / D-M2
  * (the silent single-call path and the rewrapped chunked path, through the real
- * [KlarvoApi.collectChunkResults]); the config-parse seam; the reachability of
- * the `"debug"` arm in `resolveLlmProvider`; and its absence from the cleanup
- * fallback ladder.
+ * [KlarvoApi.collectChunkResults]); the COMPOSITION [KlarvoApi.debugCleanupOrNull]
+ * that [KlarvoApi.cleanup] takes before it builds a URL, including its `null` for
+ * every real provider; the config-parse seam; the reachability of the `"debug"`
+ * arm in `resolveLlmProvider`; and its absence from the cleanup fallback ladder.
  *
  * Does NOT cover:
  * - the two `surface: "provider-options"` vectors. They pin the option lists of
@@ -71,8 +72,9 @@ import java.util.concurrent.Future
  *   port; only the "there is no canned wire for it" half is checked here.
  * - the Rust side (each half reads this fixture; neither can prove the other).
  * - [KlarvoApi.cleanup] itself end to end: it logs through `KlarvoLogger` →
- *   `android.util.Log`, which throws "not mocked" outside Robolectric. The two
- *   seams the debug branch composes are driven directly instead.
+ *   `android.util.Log`, which throws "not mocked" outside Robolectric. Its debug
+ *   branch is driven through [KlarvoApi.debugCleanupOrNull], which is that branch
+ *   minus the one log line; the real HTTP path below it is not exercised here.
  * - `readConfig`'s file I/O and its license gate. The gate is why the debug
  *   provider only resolves on a licensed/trial device (story 13-4 owns it).
  * - `KlarvoOverlayService.isRetryableCleanupFailure` (private) and therefore
@@ -340,6 +342,68 @@ class DebugProviderScenarioTest {
             executor.shutdown()
         }
     }
+
+    /**
+     * The COMPOSITION, not the two halves separately: [KlarvoApi.debugCleanupOrNull]
+     * is the branch [KlarvoApi.cleanup] takes before it builds a URL, and without
+     * this test nothing executes it — moving the branch below `URL(provider.url)`
+     * would keep every gate green while `URL("")` threw a MalformedURLException
+     * (an IOException with no `HTTP nnn`) and the fallback ladder fired into the
+     * user's real DeepSeek key.
+     *
+     * Three cases: the benign scenario, one error scenario, and — the
+     * discriminating half — a NON-debug provider, which must come back `null` so
+     * the real HTTP path below it still runs.
+     */
+    @Test
+    fun debugCleanupOrNull_answersForTheDebugProviderAndOnlyForIt() {
+        val ok = vector("DEBUG-LLM-OK-001")
+        assertEquals(
+            "the ok scenario must come back through the composed branch",
+            ok.getJSONObject("kotlin").getString("text"),
+            KlarvoApi.debugCleanupOrNull(debugProvider("ok"))
+        )
+
+        // One error scenario, through the same composition: a 429 must still
+        // arrive as the IOException the retry regex reads.
+        val e = assertThrows(IOException::class.java) {
+            KlarvoApi.debugCleanupOrNull(debugProvider("http429"))
+        }
+        assertTrue(
+            "the composed branch must keep the HTTP status: ${e.message}",
+            Regex("HTTP 429").containsMatchIn(e.message ?: "")
+        )
+
+        // Discriminating half: every real provider must fall through to the HTTP
+        // path. Without this, a branch that swallowed all providers would pass.
+        for (name in listOf("deepseek", "openai", "groq", "openrouter", "anthropic", "", "Debug")) {
+            assertNull(
+                "provider '$name' must fall through to the real HTTP path",
+                KlarvoApi.debugCleanupOrNull(
+                    LlmProviderInfo(
+                        url = "https://api.deepseek.com/chat/completions",
+                        model = KlarvoApi.DEFAULT_MODEL_DEEPSEEK,
+                        apiKey = "ds-key",
+                        providerName = name,
+                        debugScenario = "empty"
+                    )
+                )
+            )
+        }
+    }
+
+    /**
+     * The debug provider as `resolveLlmProvider` builds it: empty url, empty key.
+     * The empty url is deliberate — it is what makes the branch's placement in
+     * [KlarvoApi.cleanup] load-bearing.
+     */
+    private fun debugProvider(scenario: String) = LlmProviderInfo(
+        url = "",
+        model = KlarvoApi.DEBUG_MODEL,
+        apiKey = "",
+        providerName = KlarvoApi.DEBUG_PROVIDER_NAME,
+        debugScenario = scenario
+    )
 
     @Test
     fun http429IsAnIoExceptionCarryingTheStatusTheRetryRegexReads() {

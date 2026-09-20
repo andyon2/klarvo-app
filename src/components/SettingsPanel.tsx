@@ -491,7 +491,12 @@ export function SettingsPanel({
         (hasGroq && "groq") ||
         (hasOpenrouter && "openrouter") ||
         "deepseek";
-      setLocalLlmProvider(fallback);
+      // Story 13-1: same guard as the re-seed effect above. RecordingAudioContent
+      // calls this from the cloud STT *Model* picker as well as the Cloud/Offline
+      // toggle, so without it, touching either silently destroys a selected
+      // llmProvider = "debug". Functional form: no extra dependency, no stale
+      // closure over localLlmProvider.
+      setLocalLlmProvider((prev) => (prev === "debug" ? prev : fallback));
     }
   }, [loadedSettings]);
 

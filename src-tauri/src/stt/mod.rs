@@ -560,7 +560,19 @@ impl SttProvider for DebugStt {
                 // `transport`: a real request that cannot succeed. The `?` turns
                 // the connection failure into `SttError::Request`, the same
                 // variant a real transport failure produces.
-                let response = reqwest::Client::new()
+                //
+                // Same builder as `WhisperStt::new` above, so a host that DROPs
+                // rather than REFUSEs loopback:1 fails in 15s instead of hanging
+                // the pipeline (and `cargo test --lib`) forever. Plus
+                // `.no_proxy()`: with `HTTP_PROXY` set, reqwest would otherwise
+                // route this probe through the proxy and the "no byte leaves the
+                // device" claim on `DEBUG_TRANSPORT_URL` would be false.
+                let response = reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(15))
+                    .timeout(std::time::Duration::from_secs(30))
+                    .no_proxy()
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new())
                     .post(crate::llm::DEBUG_TRANSPORT_URL)
                     .send()
                     .await?;
