@@ -1119,6 +1119,14 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 
 **Fix (klein, aber eigener Scope):** `.focus-klarvo` → `.focus-klarvo:focus-visible` (oder die Nutzung auf einen `:focus`-Modifier umstellen). ACHTUNG: `focus-klarvo` wird surface-übergreifend genutzt (Bar, Preview, Onboarding, Settings) — der Fix berührt die geteilte Token-Schicht und braucht einen eigenen Smoke über alle Flächen. Darum **eigene Story / Teil von 8-7**, nicht in 8-2 geschmuggelt.
 
+**Wiedergefunden 2026-09-20 (Story 13-1, Spec `deferred`):** betrifft auch KToggle (`FormControls.tsx:40`), KSelect (l.361), KSegmented (l.463). 13-1 behebt ihn nicht (Vorbestands-Regel).
+
+---
+
+## [Defekt, vorbestehend] Advanced → System: Log-Level-Zeile nutzt ein rohes `<select>` statt `KSelect` (2026-09-20)
+
+**Quelle:** Story 13-1, Spec-Frontmatter `deferred` (`spec-13-1-debug-test-provider-both-twins.md`), severity low. `src/components/AdvancedSettingsPanel.tsx:397` stammt aus der Zeit vor dem Control-System von Story 8.2. Kandidat für 8-7 (Fidelity-Pass).
+
 ---
 
 ## Story 11-6 GATE-4 — Nebenbefunde (2026-08-11, alle bewusst AUSSERHALB 11-6 gehalten)
