@@ -1,0 +1,2634 @@
+diff --git a/android/kotlin-src/com/klarvo/voice/GroqSttBridge.kt b/android/kotlin-src/com/klarvo/voice/GroqSttBridge.kt
+index 9284758..4d7e7c2 100644
+--- a/android/kotlin-src/com/klarvo/voice/GroqSttBridge.kt
++++ b/android/kotlin-src/com/klarvo/voice/GroqSttBridge.kt
+@@ -45,6 +45,14 @@ object GroqSttBridge {
+      * @param customPrompt     User custom STT hint (or empty).
+      * @param sttModel         Groq model name (e.g. "whisper-large-v3-turbo").
+      * @param temperature      Whisper sampling temperature (0.0 = deterministic).
++     * @param sttProvider      `config.sttProvider`, passed through verbatim. The
++     *                         Rust side decides what it means; Kotlin carries the
++     *                         value and nothing else (ADR-0017 -- STT request and
++     *                         guard logic live only in the shared Rust core).
++     * @param debugSttScenario `config.debugSttScenario`, passed through verbatim.
++     *                         Only read on the Rust side, and only when
++     *                         `sttProvider == "debug"` (story 13-1). Ignored
++     *                         otherwise.
+      * @return Transcribed text, or an error code string (see class-level doc).
+      */
+     @JvmStatic
+@@ -55,7 +63,9 @@ object GroqSttBridge {
+         dictionaryTerms: String,
+         customPrompt: String,
+         sttModel: String,
+-        temperature: Float
++        temperature: Float,
++        sttProvider: String,
++        debugSttScenario: String
+     ): String
+ 
+     /**
+diff --git a/android/kotlin-src/com/klarvo/voice/KlarvoApi.kt b/android/kotlin-src/com/klarvo/voice/KlarvoApi.kt
+index 7afe5e1..ea4ebc1 100755
+--- a/android/kotlin-src/com/klarvo/voice/KlarvoApi.kt
++++ b/android/kotlin-src/com/klarvo/voice/KlarvoApi.kt
+@@ -29,7 +29,12 @@ data class LlmProviderInfo(
+     // must exclude THIS name (not the configured one) when asking for a
+     // further fallback after a runtime failure, or they can end up retrying
+     // the same substitute provider that just failed.
+-    val providerName: String
++    val providerName: String,
++    // Story 13-1: which canned wire response the DEBUG test provider returns.
++    // Empty for every real provider -- only [KlarvoApi.cleanup]'s debug branch
++    // reads it, and only when providerName == "debug". Appended last because
++    // this is a positionally-constructed data class.
++    val debugScenario: String = ""
+ )
+ 
+ /**
+@@ -83,6 +88,127 @@ object KlarvoApi {
+     const val DEFAULT_MODEL_OPENAI = "gpt-4o-mini"
+     const val DEFAULT_MODEL_GROQ = "llama-3.3-70b-versatile"
+ 
++    // --- Debug test provider (story 13-1) ---
++    //
++    // The `llmProvider` / `sttProvider` config value that selects the debug
++    // provider. Rust↔Kotlin TWIN of `llm::DEBUG_PROVIDER_NAME`. It is NEVER a
++    // default, NEVER a member of [cleanupFallbackCandidates], and never offered
++    // by the normal provider picker; it exists so drift rows D2/D-H19,
++    // D3/D-M16, D9 and D10/D-M2 are reproducible on a real device without
++    // standing up a fake API.
++    //
++    // Reachability note (recorded, not fixed here): [readConfig]'s license gate
++    // rewrites `llmProvider` to "groq" when the device is neither licensed nor
++    // in trial, so the debug provider only resolves on a licensed/trial device.
++    // Story 13-4 owns that gate.
++    internal const val DEBUG_PROVIDER_NAME = "debug"
++
++    // Model ID reported for a debug run, so `klarvo.log` cannot name
++    // `deepseek-chat` for a run that never touched DeepSeek. Twin of
++    // `llm::DebugCleanup::DEFAULT_MODEL`.
++    internal const val DEBUG_MODEL = "debug"
++
++    // The benign scenario. Twin of Rust's `default_debug_scenario()`.
++    internal const val DEBUG_SCENARIO_DEFAULT = "ok"
++
++    // Endpoint the `transport` scenario talks to: the loopback discard port.
++    // Nothing listens there, so the request fails to connect and yields a
++    // GENUINE IOException through the real client. Loopback only -- no byte
++    // leaves the device. Twin of `llm::DEBUG_TRANSPORT_URL`.
++    internal const val DEBUG_TRANSPORT_URL = "http://127.0.0.1:1/"
++
++    /**
++     * The canned `(status, body)` pair for a debug LLM scenario, or `null` for
++     * `transport` ("no response at all" -- the caller performs the loopback
++     * request described on [DEBUG_TRANSPORT_URL] instead).
++     *
++     * An unrecognised scenario resolves like `ok`, matching the Rust twin's
++     * fail-soft `_ =>` arm.
++     *
++     * Rust↔Kotlin TWIN of `llm::debug_llm_canned_wire`. The bodies must stay
++     * byte-identical: they are pinned on both sides by
++     * `test-fixtures/debug-provider-scenario-vectors.json`, because the whole
++     * point of the debug provider is that the SAME wire bytes go through each
++     * twin's own mapping and the divergence stays visible.
++     */
++    internal fun debugCannedWire(scenario: String): Pair<Int, String>? = when (scenario) {
++        "empty" -> 200 to """{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}"""
++        "truncated" -> 200 to """{"choices":[{"message":{"content":"Debug provider canned answer that was cut"},"finish_reason":"length"}]}"""
++        // "body without choices": a well-formed envelope carrying no choice.
++        "malformed" -> 200 to """{"choices":[]}"""
++        "http429" -> 429 to """{"error":{"message":"Debug provider: simulated rate limit"}}"""
++        "http5xx" -> 503 to """{"error":{"message":"Debug provider: simulated server error"}}"""
++        "transport" -> null
++        // "ok" and any unrecognised value
++        else -> 200 to """{"choices":[{"message":{"content":"Debug provider canned answer."},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}"""
++    }
++
++    /**
++     * The response→result half of [cleanup], extracted verbatim (story 13-1,
++     * behaviour-preserving) so a plain-JUnit test can drive the REAL mapping and
++     * so [cleanup]'s debug branch can feed it a canned `(status, body)` pair.
++     *
++     * This is the mapping story 13-2 is about, and it is deliberately NOT the
++     * same as the Rust twin's:
++     * - an empty `content` is returned as `""` (Rust: `ResponseFormat`) -- drift
++     *   row D2 / D-H19,
++     * - `finish_reason` is never inspected, so a truncated answer is returned as
++     *   the half sentence (Rust: `OutputTruncated`) -- drift row D3 / D-M16,
++     * - a body with no usable choice throws a bare [org.json.JSONException],
++     *   which is NOT an IOException, so the caller's cleanup-fallback ladder
++     *   never runs on the single-call path -- drift row D10 / D-M2.
++     *
++     * Those three are recorded as expected divergences in
++     * `test-fixtures/debug-provider-scenario-vectors.json`. Do not "fix" them
++     * here: story 13-2 owns the fix and needs them observable first.
++     *
++     * @throws IOException on a non-200 status (message carries `HTTP <code>`,
++     *   which `KlarvoOverlayService.isRetryableCleanupFailure` regex-matches).
++     * @throws org.json.JSONException on a body without a usable choice.
++     */
++    internal fun mapCleanupResponse(responseCode: Int, body: String, model: String): String {
++        if (responseCode != 200) {
++            throw IOException("LLM cleanup failed ($model): HTTP $responseCode -- $body")
++        }
++        val json = JSONObject(body)
++        val rawContent = json
++            .getJSONArray("choices")
++            .getJSONObject(0)
++            .getJSONObject("message")
++            .getString("content")
++            .trim()
++        return sanitizeLlmOutput(rawContent)
++    }
++
++    /**
++     * The `transport` scenario: a REAL request to the loopback discard port.
++     *
++     * A synthetic transport failure would have to be a hand-thrown exception,
++     * which proves nothing about the client; this produces the genuine article
++     * through the same `HttpURLConnection` path production uses. The resulting
++     * message carries no `HTTP <code>`, so
++     * `KlarvoOverlayService.isRetryableCleanupFailure` finds no status and
++     * treats it as retryable -- the twin of `LlmError::Request`.
++     */
++    private fun debugTransportRequest(model: String): String {
++        val conn = URL(DEBUG_TRANSPORT_URL).openConnection() as HttpURLConnection
++        conn.requestMethod = "POST"
++        conn.connectTimeout = 2_000
++        conn.readTimeout = 2_000
++        conn.doOutput = true
++        // Nothing listens on the discard port, so this already throws.
++        conn.outputStream.use { it.write(ByteArray(0)) }
++        // Unreachable in practice. If something DID answer, map it through the
++        // same path rather than inventing an outcome.
++        val code = conn.responseCode
++        val responseBody = if (code == 200) {
++            conn.inputStream.bufferedReader().readText()
++        } else {
++            conn.errorStream?.bufferedReader()?.readText() ?: "unknown error"
++        }
++        return mapCleanupResponse(code, responseBody, model)
++    }
++
+     /**
+      * Resolves the effective cleanup model from a raw `advanced.llmModel*`
+      * override.
+@@ -223,7 +349,15 @@ object KlarvoApi {
+         // provider (drift row H5) — llmModelAnthropic is Desktop-only.
+         val llmModelDeepseek: String = "",
+         val llmModelOpenai: String = "",
+-        val llmModelGroq: String = ""
++        val llmModelGroq: String = "",
++        // Story 13-1: "advanced.debugLlmScenario" / "advanced.debugSttScenario".
++        // Inert unless the matching provider is "debug". Appended at the tail on
++        // purpose: [readConfig] builds Config(...) POSITIONALLY, so new fields go
++        // last. The STT value is NOT consumed by any Kotlin logic -- it is passed
++        // straight through to GroqSttBridge.nativeTranscribe, because STT is
++        // shared Rust core (ADR-0017) and Kotlin only carries the config value.
++        val debugLlmScenario: String = DEBUG_SCENARIO_DEFAULT,
++        val debugSttScenario: String = DEBUG_SCENARIO_DEFAULT
+     )
+ 
+     /**
+@@ -259,6 +393,22 @@ object KlarvoApi {
+                 apiKey = config.openrouterApiKey,
+                 providerName = "openrouter"
+             ) else null
++            // Story 13-1: the debug test provider. Needs no API key, so it is
++            // resolved UNCONDITIONALLY -- a key check here would drop through to
++            // the fallback ladder and silently turn a debug run into a real
++            // DeepSeek call. The `url` stays empty on purpose: [cleanup] returns
++            // before it would build a URL from it.
++            //
++            // Without this explicit arm the `else ->` below maps "debug" to
++            // DeepSeek, which is exactly the silent substitution this story
++            // exists to avoid.
++            DEBUG_PROVIDER_NAME -> LlmProviderInfo(
++                url    = "",
++                model  = DEBUG_MODEL,
++                apiKey = "",
++                providerName = DEBUG_PROVIDER_NAME,
++                debugScenario = config.debugLlmScenario
++            )
+             else -> if (config.deepseekApiKey.isNotBlank()) LlmProviderInfo(
+                 url    = DEEPSEEK_CHAT_URL,
+                 model  = effectiveCleanupModel(config.llmModelDeepseek, DEFAULT_MODEL_DEEPSEEK),
+@@ -430,6 +580,32 @@ object KlarvoApi {
+         return advanced.opt(key) as? String ?: ""
+     }
+ 
++    /**
++     * Pure `advanced.debugLlmScenario` / `advanced.debugSttScenario` parse
++     * (story 13-1). Same shape and the same reason as [parseLlmModelOverride]
++     * and [parseMinRecordingMs]: a JVM unit test drives the REAL `org.json` path
++     * against a real `config.json` string instead of asserting a hand-built
++     * [Config] against itself. A misspelled key here would make the whole debug
++     * mechanism silently inert while the UI reported green.
++     *
++     * `key` is the camelCase key under `advanced` (Rust serializes
++     * `AdvancedSettings` with `rename_all = "camelCase"`). An absent `advanced`
++     * object, an absent key, a non-String value and a blank string all yield
++     * [DEBUG_SCENARIO_DEFAULT].
++     *
++     * Blank→default is the Kotlin end of a deliberate agreement rather than a
++     * literal mirror: Rust's serde `default` only fires for an ABSENT key, so a
++     * stored `""` stays `""` there — and `llm::debug_llm_canned_wire("")` falls
++     * into the same fail-soft `_ =>` arm as `"ok"`. Both platforms therefore
++     * behave as `ok` for a blank value; only the intermediate representation
++     * differs.
++     */
++    internal fun parseDebugScenario(json: JSONObject, key: String): String {
++        val advanced = json.optJSONObject("advanced") ?: return DEBUG_SCENARIO_DEFAULT
++        val value = advanced.opt(key) as? String ?: return DEBUG_SCENARIO_DEFAULT
++        return value.ifBlank { DEBUG_SCENARIO_DEFAULT }
++    }
++
+     /**
+      * Reads config.json from the app's data directory.
+      * Tauri's app_data_dir() resolves to dataDir, not filesDir.
+@@ -495,6 +671,10 @@ object KlarvoApi {
+             val llmModelDeepseek = parseLlmModelOverride(json, "llmModelDeepseek")
+             val llmModelOpenai = parseLlmModelOverride(json, "llmModelOpenai")
+             val llmModelGroq = parseLlmModelOverride(json, "llmModelGroq")
++            // Story 13-1: which canned answer the debug providers return. Inert
++            // unless llmProvider / sttProvider is "debug".
++            val debugLlmScenario = parseDebugScenario(json, "debugLlmScenario")
++            val debugSttScenario = parseDebugScenario(json, "debugSttScenario")
+             // Dictionary terms live in dictionary.json, NOT in config.json.
+             // config.json never contains a dictionaryTerms key -- the Rust backend
+             // manages them in a separate file. We read that file directly here.
+@@ -592,7 +772,8 @@ object KlarvoApi {
+                 previewTextColor, previewBgColor, previewBgBlur,
+                 previewBorderColor, previewBorderWidth, previewBorderRadius,
+                 previewFontFamily, previewFontSize, previewLineSpacing,
+-                llmModelDeepseek, llmModelOpenai, llmModelGroq
++                llmModelDeepseek, llmModelOpenai, llmModelGroq,
++                debugLlmScenario, debugSttScenario
+             )
+         } catch (e: Exception) {
+             null
+@@ -1074,6 +1255,21 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
+ 
+         val systemPrompt = appendPromptExtensions(basePrompt, dictionaryTerms, customInstructions)
+ 
++        // Story 13-1: the DEBUG test provider short-circuits here, BEFORE any URL
++        // is built, and feeds a canned (status, body) pair through the very same
++        // [mapCleanupResponse] the real providers use below. Injecting at the
++        // wire rather than at the return value is the whole point: the defect
++        // story 13-2 fixes lives in the mapping, so a pre-baked result would
++        // bypass the code under test. The prompt above is built and discarded --
++        // the scenario alone decides the answer, so a reproduction is
++        // deterministic regardless of what was dictated.
++        if (provider.providerName == DEBUG_PROVIDER_NAME) {
++            KlarvoLogger.i(TAG, "[debug-provider] LLM cleanup scenario=${provider.debugScenario}")
++            val wire = debugCannedWire(provider.debugScenario)
++                ?: return debugTransportRequest(provider.model)
++            return mapCleanupResponse(wire.first, wire.second, provider.model)
++        }
++
+         val url = URL(provider.url)
+         val conn = url.openConnection() as HttpURLConnection
+ 
+@@ -1108,21 +1304,14 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
+         val responseCode = conn.responseCode
+         if (responseCode != 200) {
+             val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "unknown error"
+-            throw IOException("LLM cleanup failed (${provider.model}): HTTP $responseCode -- $errorBody")
++            return mapCleanupResponse(responseCode, errorBody, provider.model)
+         }
+ 
+         val responseText = conn.inputStream.bufferedReader().readText()
+-        val json = JSONObject(responseText)
+         // Note: conn.disconnect() intentionally omitted -- HttpURLConnection reuses
+         // the TCP+TLS connection via Keep-Alive pooling when disconnect() is not called.
+         // Calling disconnect() forces a new TCP+TLS handshake on every request (+200-500ms).
+-        val rawContent = json
+-            .getJSONArray("choices")
+-            .getJSONObject(0)
+-            .getJSONObject("message")
+-            .getString("content")
+-            .trim()
+-        return sanitizeLlmOutput(rawContent)
++        return mapCleanupResponse(responseCode, responseText, provider.model)
+     }
+ 
+     // --- Chunked cleanup ---
+diff --git a/android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt b/android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt
+index 392c871..7d4874f 100755
+--- a/android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt
++++ b/android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt
+@@ -1766,7 +1766,9 @@ class KlarvoOverlayService : Service() {
+                     "whisper-large-v3-turbo",
+                     config.dictionaryTerms,
+                     config.customPrompt,
+-                    null // preview chunks are display-only -- no pending-WAV backup needed
++                    null, // preview chunks are display-only -- no pending-WAV backup needed
++                    config.sttProvider,
++                    config.debugSttScenario
+                 )
+                 if (text.isBlank()) return@execute
+                 if (GroqSttBridge.nativeIsHallucination(text)) {
+@@ -2075,7 +2077,9 @@ class KlarvoOverlayService : Service() {
+                         "whisper-large-v3-turbo", // H9: model comes from Rust config (sttModel not yet in Android AppConfig; default parity)
+                         config.dictionaryTerms,
+                         config.customPrompt,
+-                        pendingWavFile
++                        pendingWavFile,
++                        config.sttProvider,
++                        config.debugSttScenario
+                     )
+                 } catch (sttEx: IOException) {
+                     // AC3: automatic local-Whisper safety net after Groq's retries are
+@@ -2723,7 +2727,9 @@ class KlarvoOverlayService : Service() {
+         sttModel: String,
+         dictionaryTerms: String,
+         customPrompt: String,
+-        pendingWavFile: File?
++        pendingWavFile: File?,
++        sttProvider: String,
++        debugSttScenario: String
+     ): String {
+         val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
+         val retryDelaysMs = listOf(2_000L, 5_000L)
+@@ -2737,7 +2743,14 @@ class KlarvoOverlayService : Service() {
+                 dictionaryTerms = dictionaryTerms,
+                 customPrompt = customPrompt,
+                 sttModel = sttModel,
+-                temperature = 0.0f
++                temperature = 0.0f,
++                // Story 13-1: both values are carried through UNINSPECTED. The
++                // Rust core decides whether "debug" means anything -- ADR-0017
++                // keeps every STT request and guard decision out of Kotlin, and
++                // a canned transcript forged here would produce the __ERROR_*
++                // sentinels instead of the real code emitting them.
++                sttProvider = sttProvider,
++                debugSttScenario = debugSttScenario
+             )
+ 
+             when {
+diff --git a/android/kotlin-test/com/klarvo/voice/DebugProviderScenarioTest.kt b/android/kotlin-test/com/klarvo/voice/DebugProviderScenarioTest.kt
+new file mode 100644
+index 0000000..658ae9a
+--- /dev/null
++++ b/android/kotlin-test/com/klarvo/voice/DebugProviderScenarioTest.kt
+@@ -0,0 +1,450 @@
++package com.klarvo.voice
++
++import org.json.JSONArray
++import org.json.JSONException
++import org.json.JSONObject
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertThrows
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import java.io.File
++import java.io.IOException
++
++/**
++ * Story 13-1 — debug test provider, Kotlin half.
++ *
++ * Reads the SAME file as the Rust halves (`llm::tests::spec_debug_llm_*` in
++ * src-tauri/src/llm/mod.rs and `stt::tests::spec_debug_stt_*` in
++ * src-tauri/src/stt/mod.rs): `test-fixtures/debug-provider-scenario-vectors.json`
++ * at the repo root.
++ *
++ * ## Why this test exists at all
++ * The debug provider is an ENABLER: story 13-2 needs four audit rows
++ * (D2/D-H19 empty answer, D3/D-M16 truncated answer, D9 empty STT result,
++ * D10/D-M2 malformed answer) reproducible on a real device. The mechanism only
++ * works if the SAME canned wire bytes go through each twin's own mapping — so
++ * this half locks two things: the bytes [KlarvoApi.debugCannedWire] puts on the
++ * wire, and the verdict [KlarvoApi.mapCleanupResponse] returns for them.
++ *
++ * Three of those verdicts are DELIBERATE DIVERGENCES from the Rust twin and are
++ * asserted as such below. They are defects story 13-2 fixes; this story only
++ * makes them observable. A future change that "fixes" one here must change the
++ * fixture's `expected_divergence` entry and the Rust half in the same commit.
++ *
++ * ## Discipline
++ * Every assertion binds to a PRODUCTION symbol ([KlarvoApi.debugCannedWire],
++ * [KlarvoApi.mapCleanupResponse], [KlarvoApi.parseDebugScenario],
++ * [KlarvoApi.resolveLlmProvider], [KlarvoApi.resolveFallbackLlmProvider]) and
++ * compares it to the FIXTURE literal — never to another production symbol,
++ * which would agree no matter what both said. Uses `org.json`'s THROWING
++ * accessors so a typo'd or missing fixture key fails loudly instead of passing
++ * vacuously (the 7-2 round-3 R3-P2 defect).
++ *
++ * ## What this covers — and what it does NOT
++ * Covers: the seven `surface: "llm"` vectors, on the JVM, through the Kotlin
++ * production seams named above; the config-parse seam; the reachability of the
++ * `"debug"` arm in `resolveLlmProvider`; and its absence from the cleanup
++ * fallback ladder.
++ *
++ * Does NOT cover:
++ * - the seven `surface: "stt"` vectors. They are n/a on Android BY
++ *   CONSTRUCTION, not by oversight: ADR-0017 makes the STT request and its
++ *   guards shared Rust core, consumed over `GroqSttBridge.nativeTranscribe`, so
++ *   there is no Kotlin STT mapping to assert against. They are skipped by
++ *   `surface`, and [sttVectorsDeclareThemselvesNotApplicableOnAndroid] proves
++ *   each one says so rather than being silently dropped.
++ * - the `transport` scenario's actual request. [KlarvoApi.cleanup]'s debug
++ *   branch performs a real `HttpURLConnection` call to the loopback discard
++ *   port; only the "there is no canned wire for it" half is checked here.
++ * - the Rust side (each half reads this fixture; neither can prove the other).
++ * - [KlarvoApi.cleanup] itself end to end: it logs through `KlarvoLogger` →
++ *   `android.util.Log`, which throws "not mocked" outside Robolectric. The two
++ *   seams the debug branch composes are driven directly instead.
++ * - `readConfig`'s file I/O and its license gate. The gate is why the debug
++ *   provider only resolves on a licensed/trial device (story 13-4 owns it).
++ * - `KlarvoOverlayService.isRetryableCleanupFailure` (private) and therefore
++ *   whether the fallback ladder really fires — only the message SHAPE its regex
++ *   keys on is asserted here.
++ * - anything on a real device.
++ */
++class DebugProviderScenarioTest {
++
++    // -----------------------------------------------------------------------
++    // Fixture plumbing
++    // -----------------------------------------------------------------------
++
++    private fun loadFixture(): Map<String, JSONObject> {
++        val cwd = File(System.getProperty("user.dir") ?: ".")
++        val name = "test-fixtures/debug-provider-scenario-vectors.json"
++        val candidates = listOf(
++            cwd.resolve("../../../../$name"), // gen/android/app/ to repo root
++            cwd.resolve(name),
++            cwd.resolve("../$name"),
++            cwd.resolve("../../../$name"),
++        )
++        val found = candidates.firstOrNull { it.canonicalFile.exists() }
++            ?: error(
++                "Cannot find $name. Tried:" +
++                    candidates.joinToString("") { System.lineSeparator() + "  " + it.canonicalPath } +
++                    System.lineSeparator() + "CWD=" + cwd.canonicalPath
++            )
++        val arr = JSONArray(found.readText())
++        val byId = LinkedHashMap<String, JSONObject>()
++        for (i in 0 until arr.length()) {
++            val o = arr.getJSONObject(i)
++            byId[o.getString("id")] = o
++        }
++        return byId
++    }
++
++    /** Throwing lookup: an unknown id must fail loudly, not silently skip the assertion. */
++    private fun vector(id: String): JSONObject =
++        loadFixture()[id] ?: error("fixture has no vector with id=$id")
++
++    private fun llmVectors(): List<JSONObject> =
++        loadFixture().values.filter { it.getString("surface") == "llm" }
++
++    // -----------------------------------------------------------------------
++    // (a) the canned wire bytes — the shared contract with the Rust twin
++    // -----------------------------------------------------------------------
++
++    /**
++     * The bytes are the whole point: if the two twins canned different bodies, the
++     * "same wire, two mappings" premise collapses and the reproduction proves
++     * nothing about the drift.
++     */
++    @Test
++    fun cannedWireBytesMatchTheFixtureForEveryLlmScenario() {
++        var checked = 0
++        for (v in llmVectors()) {
++            val id = v.getString("id")
++            val scenario = v.getString("scenario")
++            val wire = v.getJSONObject("wire")
++            when (val kind = wire.getString("kind")) {
++                "canned" -> {
++                    val actual = KlarvoApi.debugCannedWire(scenario)
++                    assertNotNull("$id: $scenario must produce a canned wire", actual)
++                    assertEquals("$id: canned status", wire.getInt("status"), actual!!.first)
++                    assertEquals("$id: canned body", wire.getString("body"), actual.second)
++                }
++                "loopback" -> {
++                    assertNull(
++                        "$id: $scenario must have NO canned wire (it performs a real loopback request)",
++                        KlarvoApi.debugCannedWire(scenario)
++                    )
++                    assertEquals(
++                        "$id: loopback URL",
++                        wire.getString("url"),
++                        KlarvoApi.DEBUG_TRANSPORT_URL
++                    )
++                }
++                else -> error("$id: unknown wire.kind $kind")
++            }
++            checked++
++        }
++        assertEquals("all seven LLM scenarios must be covered", 7, checked)
++    }
++
++    /**
++     * An unrecognised scenario must resolve like `ok` (fail-soft), matching the
++     * Rust twin's `_ =>` arm — a stored value from a newer build must never
++     * produce an invented outcome.
++     */
++    @Test
++    fun unknownScenarioFallsBackToOk() {
++        assertEquals(
++            KlarvoApi.debugCannedWire("ok"),
++            KlarvoApi.debugCannedWire("no-such-scenario")
++        )
++        // `truncated` IS offered on the LLM side, so it must NOT collapse to ok.
++        assertTrue(KlarvoApi.debugCannedWire("truncated") != KlarvoApi.debugCannedWire("ok"))
++    }
++
++    // -----------------------------------------------------------------------
++    // (b) the Kotlin mapping's verdict — including the three divergences
++    // -----------------------------------------------------------------------
++
++    /** Drives the real mapping for one canned vector and asserts the fixture's Kotlin column. */
++    private fun assertKotlinVerdict(id: String) {
++        val v = vector(id)
++        assertEquals("$id is not an llm vector", "llm", v.getString("surface"))
++        val wire = v.getJSONObject("wire")
++        if (wire.getString("kind") != "canned") {
++            error("$id: only canned vectors have a drivable Kotlin verdict")
++        }
++        val status = wire.getInt("status")
++        val body = wire.getString("body")
++        val expected = v.getJSONObject("kotlin")
++
++        when (val outcome = expected.getString("outcome")) {
++            "ok" -> assertEquals(
++                "$id: Kotlin mapping result",
++                expected.getString("text"),
++                KlarvoApi.mapCleanupResponse(status, body, KlarvoApi.DEBUG_MODEL)
++            )
++            "throws" -> when (val thrown = expected.getString("throws")) {
++                "IOException" -> {
++                    val e = assertThrows(IOException::class.java) {
++                        KlarvoApi.mapCleanupResponse(status, body, KlarvoApi.DEBUG_MODEL)
++                    }
++                    val needle = expected.optString("message_contains", "")
++                    if (needle.isNotEmpty()) {
++                        assertTrue(
++                            "$id: message ${e.message} must contain $needle",
++                            e.message!!.contains(needle)
++                        )
++                    }
++                }
++                "JSONException" -> assertThrows(JSONException::class.java) {
++                    KlarvoApi.mapCleanupResponse(status, body, KlarvoApi.DEBUG_MODEL)
++                }
++                else -> error("$id: unknown kotlin.throws $thrown")
++            }
++            else -> error("$id: unknown kotlin.outcome $outcome")
++        }
++    }
++
++    @Test
++    fun okScenarioReturnsTheCannedAnswer() {
++        assertKotlinVerdict("DEBUG-LLM-OK-001")
++    }
++
++    /**
++     * DIVERGENCE (drift row D2 / D-H19), asserted on purpose: Rust rejects an
++     * empty answer with `LlmError::ResponseFormat`; Kotlin returns `""`, which
++     * today is pasted into the focused field and stored as the dictation. Story
++     * 13-2 closes this; until then the fixture records it and this test keeps it
++     * visible instead of letting it be "fixed" by accident.
++     */
++    @Test
++    fun emptyAnswerIsReturnedAsAnEmptyString_divergesFromRust() {
++        assertKotlinVerdict("DEBUG-LLM-EMPTY-001")
++        assertTrue(
++            "the fixture must record this as an expected divergence",
++            vector("DEBUG-LLM-EMPTY-001").getString("expected_divergence").contains("D-H19")
++        )
++    }
++
++    /**
++     * DIVERGENCE (drift row D3 / D-M16): Kotlin never inspects `finish_reason`,
++     * so a truncated answer is returned as the half sentence. Rust maps it to
++     * `LlmError::OutputTruncated`.
++     */
++    @Test
++    fun truncatedAnswerIsReturnedAsThePartialText_divergesFromRust() {
++        assertKotlinVerdict("DEBUG-LLM-TRUNCATED-001")
++        assertTrue(
++            "the fixture must record this as an expected divergence",
++            vector("DEBUG-LLM-TRUNCATED-001").getString("expected_divergence").contains("D-M16")
++        )
++    }
++
++    /**
++     * DIVERGENCE (drift row D10 / D-M2, Android half): a body with no usable
++     * choice throws a bare [JSONException], which is NOT an [IOException] — so
++     * `KlarvoOverlayService`'s cleanup-fallback ladder never runs on the
++     * single-call (<400 byte) path.
++     */
++    @Test
++    fun malformedAnswerThrowsAJsonException_notAnIoException() {
++        assertKotlinVerdict("DEBUG-LLM-MALFORMED-001")
++        // The discriminating half: it really is NOT an IOException. Without this
++        // the assertion above would also pass if JSONException were one.
++        assertFalse(
++            "a JSONException must not be an IOException, or the ladder would fire and D-M2 would not reproduce",
++            IOException::class.java.isAssignableFrom(JSONException::class.java)
++        )
++    }
++
++    @Test
++    fun http429IsAnIoExceptionCarryingTheStatusTheRetryRegexReads() {
++        assertKotlinVerdict("DEBUG-LLM-HTTP429-001")
++    }
++
++    @Test
++    fun http5xxIsAnIoExceptionCarryingTheStatusTheRetryRegexReads() {
++        assertKotlinVerdict("DEBUG-LLM-HTTP5XX-001")
++    }
++
++    /**
++     * The `transport` scenario's shape claim: whatever it throws must carry NO
++     * `HTTP <code>`, or `isRetryableCleanupFailure`'s regex would read a status
++     * and stop treating it as retryable. The request itself is not made here
++     * (see the class KDoc); what is checked is that the ONLY thing that puts
++     * that literal into a message is the non-200 branch of the mapping.
++     */
++    @Test
++    fun transportScenarioHasNoCannedWireAndNoStatusInItsMessage() {
++        val v = vector("DEBUG-LLM-TRANSPORT-001")
++        assertTrue(
++            "the fixture must state that the message carries no HTTP status",
++            v.getJSONObject("kotlin").getBoolean("message_excludes_http_status")
++        )
++        assertNull(KlarvoApi.debugCannedWire("transport"))
++
++        // Every 200 mapping result is free of the literal the regex keys on …
++        val httpStatus = Regex("HTTP \\d{3}")
++        val ok = KlarvoApi.debugCannedWire("ok")!!
++        assertFalse(httpStatus.containsMatchIn(KlarvoApi.mapCleanupResponse(ok.first, ok.second, KlarvoApi.DEBUG_MODEL)))
++        // … and only the non-200 branch introduces it.
++        val rateLimited = KlarvoApi.debugCannedWire("http429")!!
++        val e = assertThrows(IOException::class.java) {
++            KlarvoApi.mapCleanupResponse(rateLimited.first, rateLimited.second, KlarvoApi.DEBUG_MODEL)
++        }
++        assertTrue(httpStatus.containsMatchIn(e.message!!))
++    }
++
++    // -----------------------------------------------------------------------
++    // The STT half is n/a on Android — stated, not silently skipped
++    // -----------------------------------------------------------------------
++
++    /**
++     * ADR-0017 keeps the STT request and its guards in the shared Rust core, so
++     * there is no Kotlin mapping for the STT vectors to assert against. This
++     * test proves each one SAYS so, which is what turns "skipped" into
++     * "deliberately not applicable" (the `TwinConstantsVectorsTest`
++     * skip-by-id precedent).
++     */
++    @Test
++    fun sttVectorsDeclareThemselvesNotApplicableOnAndroid() {
++        val stt = loadFixture().values.filter { it.getString("surface") == "stt" }
++        assertEquals("the fixture must carry seven STT vectors", 7, stt.size)
++        for (v in stt) {
++            val id = v.getString("id")
++            val kotlin = v.getJSONObject("kotlin")
++            assertEquals("$id: STT has no Kotlin twin", "n/a", kotlin.getString("outcome"))
++            assertTrue(
++                "$id: must say WHY it is n/a",
++                kotlin.getString("note").contains("ADR-0017")
++            )
++        }
++    }
++
++    // -----------------------------------------------------------------------
++    // Config parse + reachability
++    // -----------------------------------------------------------------------
++
++    /**
++     * The JSON half: a real `config.json` string goes through the production
++     * `org.json` seam. A misspelled key here would make the whole debug
++     * mechanism silently inert while the UI reported green.
++     */
++    @Test
++    fun jsonParse_debugScenario_readsNestedAdvancedKeys() {
++        val json = JSONObject(
++            """{"advanced":{"debugLlmScenario":"truncated","debugSttScenario":"http429"}}"""
++        )
++        assertEquals("truncated", KlarvoApi.parseDebugScenario(json, "debugLlmScenario"))
++        assertEquals("http429", KlarvoApi.parseDebugScenario(json, "debugSttScenario"))
++    }
++
++    @Test
++    fun jsonParse_debugScenario_defaultsToOkWhenAbsentBlankOrWrongType() {
++        assertEquals(
++            KlarvoApi.DEBUG_SCENARIO_DEFAULT,
++            KlarvoApi.parseDebugScenario(JSONObject("{}"), "debugLlmScenario")
++        )
++        assertEquals(
++            KlarvoApi.DEBUG_SCENARIO_DEFAULT,
++            KlarvoApi.parseDebugScenario(JSONObject("""{"advanced":{"minRecordingMs":750}}"""), "debugLlmScenario")
++        )
++        assertEquals(
++            KlarvoApi.DEBUG_SCENARIO_DEFAULT,
++            KlarvoApi.parseDebugScenario(JSONObject("""{"advanced":{"debugLlmScenario":"   "}}"""), "debugLlmScenario")
++        )
++        // A non-String value must not be coerced (the parseLlmModelOverride P8 rule).
++        for (bad in listOf("42", "true", "null", """{"a":1}""", "[1,2]")) {
++            assertEquals(
++                "a non-string debugLlmScenario ($bad) must fall back to the default",
++                KlarvoApi.DEBUG_SCENARIO_DEFAULT,
++                KlarvoApi.parseDebugScenario(
++                    JSONObject("""{"advanced":{"debugLlmScenario":$bad}}"""),
++                    "debugLlmScenario"
++                )
++            )
++        }
++    }
++
++    /**
++     * `llmProvider = "debug"` must reach the debug provider UNCONDITIONALLY —
++     * no API key check. Without the explicit arm, `resolveLlmProvider`'s
++     * `else ->` maps it to DeepSeek, which is the silent substitution this
++     * story exists to avoid.
++     */
++    @Test
++    fun resolveLlmProvider_debugArmIsReachableWithoutAnyApiKey() {
++        val cfg = baseConfig().copy(
++            llmProvider = KlarvoApi.DEBUG_PROVIDER_NAME,
++            debugLlmScenario = "empty"
++        )
++        val resolved = KlarvoApi.resolveLlmProvider(cfg)
++        assertNotNull("the debug provider must resolve without a key", resolved)
++        assertEquals(KlarvoApi.DEBUG_PROVIDER_NAME, resolved!!.providerName)
++        assertEquals(KlarvoApi.DEBUG_MODEL, resolved.model)
++        assertEquals("the configured scenario must reach the provider", "empty", resolved.debugScenario)
++
++        // Discriminating half: with a DeepSeek key present, a silent fall-through
++        // to the `else ->` arm would still return a usable provider and hide
++        // itself — so assert the name is NOT deepseek.
++        val withKey = cfg.copy(deepseekApiKey = "ds-key")
++        assertEquals(
++            KlarvoApi.DEBUG_PROVIDER_NAME,
++            KlarvoApi.resolveLlmProvider(withKey)!!.providerName
++        )
++    }
++
++    /**
++     * The debug provider must never appear in the cleanup fallback ladder
++     * (deepseek → openai → openrouter), so a debug 429/5xx fires the PRODUCTION
++     * ladder and the debug provider can never rescue itself.
++     */
++    @Test
++    fun debugIsNeverACleanupFallbackCandidate() {
++        val cfg = baseConfig().copy(
++            llmProvider = KlarvoApi.DEBUG_PROVIDER_NAME,
++            deepseekApiKey = "ds-key",
++            openaiApiKey = "sk-openai",
++            openrouterApiKey = "sk-or"
++        )
++        for (excluding in listOf("debug", "deepseek", "openai", "openrouter", "")) {
++            val fallback = KlarvoApi.resolveFallbackLlmProvider(cfg, excluding)
++            if (fallback != null) {
++                assertFalse(
++                    "excluding=$excluding: debug must never be the selected fallback",
++                    fallback.providerName == KlarvoApi.DEBUG_PROVIDER_NAME
++                )
++            }
++        }
++        assertEquals(
++            "the production ladder starts at DeepSeek",
++            "deepseek",
++            KlarvoApi.resolveFallbackLlmProvider(cfg, "debug")!!.providerName
++        )
++
++        // Discriminating half: with NO real key at all there is no candidate —
++        // a `debug` entry in the ladder would make this non-null.
++        val debugOnly = baseConfig().copy(llmProvider = KlarvoApi.DEBUG_PROVIDER_NAME)
++        assertNull(
++            "the debug provider must not be able to nominate itself",
++            KlarvoApi.resolveFallbackLlmProvider(debugOnly, "debug")
++        )
++    }
++
++    /**
++     * Minimal [KlarvoApi.Config]: only the seven positional fields the data
++     * class requires. Everything else keeps its declared default, including the
++     * two story-13-1 fields appended last.
++     */
++    private fun baseConfig() = KlarvoApi.Config(
++        groqApiKey = "",
++        deepseekApiKey = "",
++        language = "de",
++        cleanupStyle = "polished",
++        tursoUrl = "",
++        tursoToken = "",
++        deviceId = ""
++    )
++}
+diff --git a/src-tauri/src/commands/settings.rs b/src-tauri/src/commands/settings.rs
+index 5bb24ec..d9bc04c 100755
+--- a/src-tauri/src/commands/settings.rs
++++ b/src-tauri/src/commands/settings.rs
+@@ -723,6 +723,12 @@ fn cleanup_provider_reload_needed(
+         || previous.llm_model_openai != next.llm_model_openai
+         || previous.llm_model_groq != next.llm_model_groq
+         || previous.llm_model_anthropic != next.llm_model_anthropic
++        // Story 13-1: `DebugCleanup` is built with its scenario baked in, so a
++        // scenario change has to rebuild the provider or the next dictation
++        // still replays the old canned answer. Only ever true for a debug run
++        // (the field never changes otherwise), so the GGUF-reload guard above
++        // keeps its protection.
++        || previous.debug_llm_scenario != next.debug_llm_scenario
+ }
+ 
+ /// Rebuilds `slot`'s cleanup provider from `new_cfg` when
+@@ -2349,4 +2355,59 @@ mod tests {
+             }
+         }
+     }
++
++    /// Story 13-1: `DebugCleanup` is constructed with its scenario baked in, so
++    /// a scenario change has to rebuild the provider — otherwise picking a new
++    /// scenario in Advanced → System silently replays the previous canned answer
++    /// until the app restarts, and the H+ reproduction path lies.
++    ///
++    /// PINS: a changed `debugLlmScenario` alone triggers the rebuild, and the
++    /// rebuilt provider answers with the NEW scenario. DOES NOT PIN: the STT
++    /// side — `save_advanced_settings` never rebuilds the STT slot, so a changed
++    /// `debugSttScenario` takes effect on the next `save_settings` or app
++    /// restart (recorded, not fixed here).
++    #[test]
++    fn spec_debug_llm_scenario_change_rebuilds_the_cleanup_provider() {
++        let base = AppConfig {
++            llm_provider: "debug".to_string(),
++            ..AppConfig::default()
++        };
++        let mut changed = base.clone();
++        changed.advanced.debug_llm_scenario = "empty".to_string();
++
++        assert!(
++            cleanup_provider_reload_needed(
++                &base.advanced,
++                &changed.advanced,
++                &changed.llm_provider
++            ),
++            "a changed debugLlmScenario must rebuild the cleanup provider"
++        );
++
++        // Discriminating half: an unchanged scenario must NOT trigger a rebuild,
++        // so the assertion above cannot pass by always returning true.
++        assert!(
++            !cleanup_provider_reload_needed(&base.advanced, &base.advanced, &base.llm_provider),
++            "an unchanged advanced block must not rebuild the cleanup provider"
++        );
++
++        // …and the rebuild really installs the new scenario.
++        let slot: std::sync::RwLock<Arc<dyn crate::llm::CleanupProvider>> =
++            std::sync::RwLock::new(crate::pipeline::resolve_cleanup_provider(&base));
++        let swapped = hot_reload_cleanup_provider(&slot, &base.advanced, &changed)
++            .expect("swap must succeed");
++        assert!(swapped, "the swap must have happened");
++        let rebuilt = slot.read().expect("slot").clone();
++        let err = tauri::async_runtime::block_on(rebuilt.cleanup(
++            "text",
++            CleanupStyle::Polished,
++            None,
++            None,
++        ))
++        .expect_err("the empty scenario must produce an error after the swap");
++        assert!(
++            matches!(err, crate::llm::LlmError::ResponseFormat(_)),
++            "the NEW scenario must be live after the swap, got {err:?}"
++        );
++    }
+ }
+diff --git a/src-tauri/src/config/mod.rs b/src-tauri/src/config/mod.rs
+index abc39da..29af39f 100755
+--- a/src-tauri/src/config/mod.rs
++++ b/src-tauri/src/config/mod.rs
+@@ -122,6 +122,19 @@ pub struct AdvancedSettings {
+     /// backend behavior. Off by default.
+     #[serde(default = "default_expert_mode")]
+     pub expert_mode: bool,
++
++    // --- Debug test provider (story 13-1) ---
++    /// Which canned wire response the `debug` LLM cleanup provider returns.
++    /// One of `ok` (the default), `empty`, `truncated`, `malformed`, `http429`,
++    /// `http5xx`, `transport`. Inert unless `llm_provider == "debug"`.
++    #[serde(default = "default_debug_scenario")]
++    pub debug_llm_scenario: String,
++
++    /// Which canned wire response the `debug` STT provider returns. Same set as
++    /// [`AdvancedSettings::debug_llm_scenario`] **minus `truncated`** (`SttError`
++    /// has no truncation variant). Inert unless `stt_provider == "debug"`.
++    #[serde(default = "default_debug_scenario")]
++    pub debug_stt_scenario: String,
+ }
+ 
+ fn default_stt_prompt_de() -> String {
+@@ -172,6 +185,12 @@ fn default_expert_mode() -> bool {
+     false
+ }
+ 
++/// Story 13-1: the debug providers default to the benign `ok` scenario, so a
++/// config that carries neither key behaves exactly as before.
++fn default_debug_scenario() -> String {
++    "ok".to_string()
++}
++
+ impl Default for AdvancedSettings {
+     fn default() -> Self {
+         AdvancedSettings {
+@@ -192,6 +211,8 @@ impl Default for AdvancedSettings {
+             log_level: default_log_level(),
+             ui_scale: default_ui_scale(),
+             expert_mode: default_expert_mode(),
++            debug_llm_scenario: default_debug_scenario(),
++            debug_stt_scenario: default_debug_scenario(),
+         }
+     }
+ }
+@@ -1175,9 +1196,14 @@ fn migration_save_warning(
+ // use them without re-declaring inside a function body.
+ // ---------------------------------------------------------------------------
+ 
+-pub(crate) const VALID_STT_PROVIDERS: &[&str] = &["groq", "openai", "local"];
++// `"debug"` (story 13-1) is on both lists on purpose: without it,
++// `migrate_and_normalize` rewrites a stored `"debug"` to the default at load and
++// the next save persists the rewrite, so the debug provider could never survive
++// a restart. Being on the allowlist does NOT make it selectable in the UI — it
++// is absent from every provider picker and from both fallback candidate lists.
++pub(crate) const VALID_STT_PROVIDERS: &[&str] = &["groq", "openai", "local", "debug"];
+ pub(crate) const VALID_LLM_PROVIDERS: &[&str] =
+-    &["deepseek", "openai", "anthropic", "groq", "openrouter"];
++    &["deepseek", "openai", "anthropic", "groq", "openrouter", "debug"];
+ 
+ // ---------------------------------------------------------------------------
+ // MigrationWrite — a pending disk write produced by migrate_and_normalize.
+@@ -1796,6 +1822,87 @@ mod tests {
+         assert_eq!(out.llm_provider, "deepseek", "unknown llm_provider must fall back to default");
+     }
+ 
++    // --- Story 13-1: the `debug` provider survives the allowlist ---
++
++    /// AC: `llmProvider`/`sttProvider` = `"debug"` must survive a settings save
++    /// and an app restart. `migrate_and_normalize` is what a restart runs, and
++    /// without `"debug"` on both allowlists it rewrites the value to the default
++    /// — which the next save then persists, so the debug provider could never be
++    /// selected for longer than one session.
++    ///
++    /// Inversion (verified RED at writing time): remove `"debug"` from either
++    /// allowlist and the corresponding assertion below reports `groq` /
++    /// `deepseek`.
++    #[test]
++    fn spec_debug_provider_survives_normalization() {
++        let mut cfg = AppConfig::default();
++        cfg.stt_provider = "debug".to_string();
++        cfg.llm_provider = "debug".to_string();
++        // A Groq key suppresses the Groq-Llama pre-rule and the auto-fallback,
++        // both of which key on `llm_provider == "deepseek"` / an empty key.
++        cfg.groq_api_key = "gsk-key".to_string();
++
++        let mut warnings = Vec::new();
++        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
++
++        assert_eq!(out.stt_provider, "debug", "stt_provider must survive normalization");
++        assert_eq!(out.llm_provider, "debug", "llm_provider must survive normalization");
++    }
++
++    /// The key-less debug provider must not trip the "chosen provider has no API
++    /// key" auto-fallback, which would silently swap it for whichever real
++    /// provider happens to carry a key.
++    #[test]
++    fn spec_debug_llm_provider_is_not_auto_switched_for_a_missing_key() {
++        let mut cfg = AppConfig::default();
++        cfg.llm_provider = "debug".to_string();
++        cfg.deepseek_api_key = "ds-key".to_string();
++        cfg.openai_api_key = "sk-openai".to_string();
++
++        let mut warnings = Vec::new();
++        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
++
++        assert_eq!(
++            out.llm_provider, "debug",
++            "the debug provider needs no key and must not be auto-switched away"
++        );
++    }
++
++    /// Both scenario keys default to `"ok"` when absent, so a config file
++    /// written before this story loads unchanged in behaviour.
++    #[test]
++    fn spec_debug_scenarios_default_to_ok_when_absent() {
++        let parsed: AdvancedSettings = serde_json::from_str("{}")
++            .expect("an advanced block without the debug keys must still parse");
++        assert_eq!(parsed.debug_llm_scenario, "ok");
++        assert_eq!(parsed.debug_stt_scenario, "ok");
++        assert_eq!(AdvancedSettings::default().debug_llm_scenario, "ok");
++        assert_eq!(AdvancedSettings::default().debug_stt_scenario, "ok");
++    }
++
++    /// The two keys are serialized camelCase, like every other `AdvancedSettings`
++    /// field — a snake_case key in `config.json` would be silently ignored
++    /// (there is no `deny_unknown_fields`) and the setting would be inert while
++    /// the UI reported green.
++    #[test]
++    fn spec_debug_scenario_keys_are_camel_case() {
++        let adv = AdvancedSettings {
++            debug_llm_scenario: "empty".to_string(),
++            debug_stt_scenario: "http429".to_string(),
++            ..AdvancedSettings::default()
++        };
++        let json = serde_json::to_string(&adv).expect("serialize");
++        assert!(json.contains(r#""debugLlmScenario":"empty""#), "got {json}");
++        assert!(json.contains(r#""debugSttScenario":"http429""#), "got {json}");
++        assert!(!json.contains("debug_llm_scenario"));
++
++        let back: AdvancedSettings =
++            serde_json::from_str(r#"{"debugLlmScenario":"malformed","debugSttScenario":"transport"}"#)
++                .expect("camelCase keys must deserialize");
++        assert_eq!(back.debug_llm_scenario, "malformed");
++        assert_eq!(back.debug_stt_scenario, "transport");
++    }
++
+     // --- Groq-Llama auto-switch ---
+ 
+     /// Groq-Llama auto-switch fires when STT=groq, Groq key present, no DeepSeek key.
+@@ -3311,6 +3418,10 @@ mod tests {
+                 log_level: "debug".to_string(),
+                 ui_scale: "large".to_string(),
+                 expert_mode: true,
++                // Story 13-1: non-default values so the roundtrip proves the
++                // keys persist rather than being re-defaulted on load.
++                debug_llm_scenario: "truncated".to_string(),
++                debug_stt_scenario: "http429".to_string(),
+             },
+ 
+             local_whisper_model: "base-q5_1".to_string(),
+diff --git a/src-tauri/src/llm/mod.rs b/src-tauri/src/llm/mod.rs
+index 34ba2bc..e40f48c 100755
+--- a/src-tauri/src/llm/mod.rs
++++ b/src-tauri/src/llm/mod.rs
+@@ -599,6 +599,17 @@ impl OpenAiCompatibleCleanup {
+     }
+ 
+     /// Sends a `ChatRequest` to the endpoint and parses the response.
++    ///
++    /// The response→`Result` half lives in [`map_chat_error_status`] and
++    /// [`map_chat_success`] so `DebugCleanup` can drive the *same* mapping from
++    /// a canned `(status, body)` pair (story 13-1). This method still parses the
++    /// success body with `response.json()`, NOT `serde_json::from_str`, because
++    /// the two produce different `LlmError` variants for an undecodable body —
++    /// `reqwest` yields a decode error that `#[from]` turns into
++    /// `LlmError::Request`, which `pipeline::is_retryable_llm_error` treats as
++    /// retryable (audit row D-M2). Routing the live path through
++    /// [`map_chat_response`] would silently turn that into a non-retryable
++    /// `ResponseFormat` and remove the provider fallback for a garbled answer.
+     async fn send_request(&self, body: &ChatRequest<'_>) -> Result<CleanupResult, LlmError> {
+         let response = self
+             .client
+@@ -613,45 +624,78 @@ impl OpenAiCompatibleCleanup {
+         if !status.is_success() {
+             let status_code = status.as_u16();
+             let body_text = response.text().await.unwrap_or_default();
+-            let message = serde_json::from_str::<ApiErrorResponse>(&body_text)
+-                .map(|e| e.error.message)
+-                .unwrap_or(body_text);
+-            return Err(LlmError::ApiError {
+-                status: status_code,
+-                message,
+-            });
++            return Err(map_chat_error_status(status_code, &body_text));
+         }
+ 
+         let api_response: ChatResponse = response.json().await?;
++        map_chat_success(api_response)
++    }
++}
+ 
+-        let (prompt_tokens, completion_tokens) = api_response
+-            .usage
+-            .map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens)))
+-            .unwrap_or((None, None));
++// ---------------------------------------------------------------------------
++// Response → Result mapping (shared by the real providers and DebugCleanup)
++// ---------------------------------------------------------------------------
+ 
+-        let choice = api_response
+-            .choices
+-            .into_iter()
+-            .next()
+-            .ok_or_else(|| LlmError::ResponseFormat("No choices in response".to_string()))?;
++/// Maps a non-2xx OpenAI-compatible response to [`LlmError::ApiError`],
++/// preferring the API's own `error.message` and falling back to the raw body.
++///
++/// Extracted verbatim from `OpenAiCompatibleCleanup::send_request` (story 13-1,
++/// behaviour-preserving) so the debug provider can reach it with a canned body.
++fn map_chat_error_status(status: u16, body: &str) -> LlmError {
++    let message = serde_json::from_str::<ApiErrorResponse>(body)
++        .map(|e| e.error.message)
++        .unwrap_or_else(|_| body.to_string());
++    LlmError::ApiError { status, message }
++}
+ 
+-        if choice.finish_reason.as_deref() == Some("length") {
+-            return Err(LlmError::OutputTruncated);
+-        }
++/// Maps a decoded 2xx chat response to a [`CleanupResult`].
++///
++/// Extracted verbatim from `OpenAiCompatibleCleanup::send_request` (story 13-1,
++/// behaviour-preserving). This is the mapping story 13-2 is about: it is where
++/// an empty `content` becomes an error and where `finish_reason == "length"` is
++/// detected at all — the Kotlin twin (`KlarvoApi.cleanup`) does neither.
++fn map_chat_success(api_response: ChatResponse) -> Result<CleanupResult, LlmError> {
++    let (prompt_tokens, completion_tokens) = api_response
++        .usage
++        .map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens)))
++        .unwrap_or((None, None));
+ 
+-        let content = choice.message.content;
+-        if content.is_empty() {
+-            return Err(LlmError::ResponseFormat(
+-                "Empty content in response".to_string(),
+-            ));
+-        }
++    let choice = api_response
++        .choices
++        .into_iter()
++        .next()
++        .ok_or_else(|| LlmError::ResponseFormat("No choices in response".to_string()))?;
+ 
+-        Ok(CleanupResult {
+-            text: content,
+-            prompt_tokens,
+-            completion_tokens,
+-        })
++    if choice.finish_reason.as_deref() == Some("length") {
++        return Err(LlmError::OutputTruncated);
+     }
++
++    let content = choice.message.content;
++    if content.is_empty() {
++        return Err(LlmError::ResponseFormat(
++            "Empty content in response".to_string(),
++        ));
++    }
++
++    Ok(CleanupResult {
++        text: content,
++        prompt_tokens,
++        completion_tokens,
++    })
++}
++
++/// Wire-level mapping of an OpenAI-compatible chat response: `(status, body)`
++/// in, `Result<CleanupResult, LlmError>` out.
++///
++/// This is what [`DebugCleanup`] feeds its canned responses through, so a debug
++/// run exercises the real mapping instead of a pre-baked `Result`.
++pub(crate) fn map_chat_response(status: u16, body: &str) -> Result<CleanupResult, LlmError> {
++    if !(200..300).contains(&status) {
++        return Err(map_chat_error_status(status, body));
++    }
++    let api_response: ChatResponse = serde_json::from_str(body)
++        .map_err(|e| LlmError::ResponseFormat(format!("Cannot parse chat response: {e}")))?;
++    map_chat_success(api_response)
+ }
+ 
+ #[async_trait::async_trait]
+@@ -1256,6 +1300,167 @@ impl CleanupProvider for AnthropicCleanup {
+     }
+ }
+ 
++// ---------------------------------------------------------------------------
++// DebugCleanup -- canned wire responses for reproducing provider anomalies
++// (Story 13-1, the H+ enabler for drift rows D2/D-H19, D3/D-M16, D10/D-M2)
++// ---------------------------------------------------------------------------
++
++/// The `llm_provider` / `stt_provider` config value that selects the debug
++/// provider. Never a default, never a fallback candidate, and never offered by
++/// the normal provider picker.
++pub const DEBUG_PROVIDER_NAME: &str = "debug";
++
++/// Endpoint the `transport` scenario talks to: the loopback discard port.
++///
++/// `reqwest::Error` has no public constructor, so a *synthetic*
++/// `LlmError::Request` is impossible without adding an enum variant (which would
++/// touch every `match` over `LlmError`/`SttError` plus both `is_retryable_*`).
++/// A real request to `127.0.0.1:1` produces a genuine transport error through
++/// the real client code and keeps every byte on the device.
++pub(crate) const DEBUG_TRANSPORT_URL: &str = "http://127.0.0.1:1/";
++
++/// The canned `(status, body)` pair for a debug LLM scenario.
++///
++/// `None` means "no response at all" — the caller performs the loopback request
++/// described on [`DEBUG_TRANSPORT_URL`] instead.
++///
++/// An unrecognised scenario resolves like `"ok"`, matching the fail-soft rule
++/// every other provider-name/table lookup in this module follows.
++///
++/// The bodies are the single source of truth shared with the Kotlin twin
++/// through `test-fixtures/debug-provider-scenario-vectors.json`.
++pub(crate) fn debug_llm_canned_wire(scenario: &str) -> Option<(u16, &'static str)> {
++    match scenario {
++        // 200 + a well-formed answer. `usage` is present so the token-accounting
++        // half of the mapping is exercised too.
++        "empty" => Some((
++            200,
++            r#"{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}"#,
++        )),
++        "truncated" => Some((
++            200,
++            r#"{"choices":[{"message":{"content":"Debug provider canned answer that was cut"},"finish_reason":"length"}]}"#,
++        )),
++        // "body without choices": a well-formed envelope carrying no choice.
++        // Deliberately NOT a body that fails to deserialize — see the note in
++        // the fixture: an undecodable body maps to `LlmError::Request` on the
++        // live path (retryable, audit row D-M2) and the debug provider must not
++        // claim otherwise.
++        "malformed" => Some((200, r#"{"choices":[]}"#)),
++        "http429" => Some((
++            429,
++            r#"{"error":{"message":"Debug provider: simulated rate limit"}}"#,
++        )),
++        "http5xx" => Some((
++            503,
++            r#"{"error":{"message":"Debug provider: simulated server error"}}"#,
++        )),
++        "transport" => None,
++        // "ok" and any unrecognised value
++        _ => Some((
++            200,
++            r#"{"choices":[{"message":{"content":"Debug provider canned answer."},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}"#,
++        )),
++    }
++}
++
++/// A cleanup provider that never talks to a real LLM: it yields the canned wire
++/// response selected by `advanced.debugLlmScenario` and lets the *real* mapping
++/// ([`map_chat_response`]) decide the outcome.
++///
++/// Why the wire and not the trait: the defect story 13-2 fixes lives in the
++/// mapping (Kotlin returns `""` for an empty answer and never inspects
++/// `finish_reason`; Rust errors on both). A pre-mapped `Result` would bypass
++/// exactly the code under test.
++///
++/// The provider ignores `raw_text`, `style`, `dictionary_terms` and
++/// `custom_prompt` entirely — the scenario alone decides the answer, so a
++/// reproduction is deterministic regardless of what was dictated. Note that
++/// `chunked_cleanup` calls the provider once **per chunk** above 400 chars, so
++/// the canned answer is returned per chunk, not per dictation.
++pub struct DebugCleanup {
++    scenario: String,
++}
++
++impl DebugCleanup {
++    /// Model ID reported by [`CleanupProvider::model`] — what `Klarvo.log` names
++    /// for a debug run. The scenario is logged separately on each call.
++    pub const DEFAULT_MODEL: &'static str = "debug";
++
++    pub fn new(scenario: impl Into<String>) -> Self {
++        DebugCleanup {
++            scenario: scenario.into(),
++        }
++    }
++
++    /// Runs the canned wire response through the real mapping.
++    async fn canned(&self) -> Result<CleanupResult, LlmError> {
++        log::info!(
++            "[llm] DEBUG cleanup provider active: scenario={}",
++            self.scenario
++        );
++        match debug_llm_canned_wire(&self.scenario) {
++            Some((status, body)) => map_chat_response(status, body),
++            None => {
++                // `transport`: a real request that cannot succeed. The `?` turns
++                // the connection failure into `LlmError::Request`, the same
++                // variant a DNS/timeout/connection-refused failure produces in
++                // production.
++                let response = reqwest::Client::new()
++                    .post(DEBUG_TRANSPORT_URL)
++                    .send()
++                    .await?;
++                // Unreachable in practice (nothing listens on the discard port);
++                // if something did, map it through the same path rather than
++                // inventing an outcome.
++                let status = response.status().as_u16();
++                let body = response.text().await?;
++                map_chat_response(status, &body)
++            }
++        }
++    }
++}
++
++#[async_trait::async_trait]
++impl CleanupProvider for DebugCleanup {
++    fn model(&self) -> &str {
++        Self::DEFAULT_MODEL
++    }
++
++    async fn cleanup(
++        &self,
++        _raw_text: &str,
++        _style: CleanupStyle,
++        _dictionary_terms: Option<&str>,
++        _custom_prompt: Option<&str>,
++    ) -> Result<CleanupResult, LlmError> {
++        self.canned().await
++    }
++
++    async fn cleanup_with_translation(
++        &self,
++        _raw_text: &str,
++        _style: CleanupStyle,
++        _dictionary_terms: Option<&str>,
++        _custom_prompt: Option<&str>,
++        _output_language: Option<&str>,
++    ) -> Result<CleanupResult, LlmError> {
++        self.canned().await
++    }
++
++    async fn rewrite(
++        &self,
++        _selected_text: &str,
++        _voice_command: &str,
++    ) -> Result<CleanupResult, LlmError> {
++        self.canned().await
++    }
++
++    async fn reformat(&self, _text: &str, _format: &str) -> Result<CleanupResult, LlmError> {
++        self.canned().await
++    }
++}
++
+ // ---------------------------------------------------------------------------
+ // Cleanup model resolution (Story 7.9)
+ // ---------------------------------------------------------------------------
+@@ -1316,6 +1521,11 @@ pub fn effective_cleanup_model(provider: &str, override_raw: &str) -> String {
+         "openai" => OpenAiCleanup::DEFAULT_MODEL,
+         "groq" => GroqCleanup::DEFAULT_MODEL,
+         "anthropic" => AnthropicCleanup::DEFAULT_MODEL,
++        // Story 13-1: without this arm the debug provider falls into the
++        // catch-all and this table reports `deepseek-chat` for a run that never
++        // touches DeepSeek — a wrong model ID in `Klarvo.log` and in anything
++        // that later asks this function what `"debug"` resolves to.
++        DEBUG_PROVIDER_NAME => DebugCleanup::DEFAULT_MODEL,
+         // "deepseek" and any unrecognised value
+         _ => DeepSeekCleanup::DEFAULT_MODEL,
+     }
+@@ -2705,4 +2915,295 @@ mod tests {
+         // The per-entry consistency check above stays: a flag that stops matching
+         // its own columns still fails loudly.
+     }
++
++    // -----------------------------------------------------------------------
++    // Story 13-1 — debug test provider (LLM half)
++    //
++    // Driven by test-fixtures/debug-provider-scenario-vectors.json (repo root) —
++    // the SAME fixture the Kotlin twin's `DebugProviderScenarioTest` reads and
++    // the same file `stt/mod.rs`'s `spec_debug_stt_*` tests read for the STT
++    // half. Every assertion compares a PRODUCTION seam
++    // (`debug_llm_canned_wire`, `DebugCleanup::cleanup`) against the FIXTURE
++    // literal — never against another production symbol, which would agree no
++    // matter what both said.
++    // -----------------------------------------------------------------------
++
++    fn load_debug_vectors() -> Vec<serde_json::Value> {
++        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
++        let path = std::path::Path::new(&manifest_dir)
++            .parent()
++            .expect("workspace root")
++            .join("test-fixtures/debug-provider-scenario-vectors.json");
++        let content = std::fs::read_to_string(&path)
++            .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
++        serde_json::from_str(&content)
++            .expect("debug-provider-scenario-vectors.json must be a JSON array")
++    }
++
++    /// Throwing lookup — a missing id must fail loudly, never skip the assertion
++    /// (the vacuous-default defect recorded as 7-2 R3-P2).
++    fn debug_vector(vectors: &[serde_json::Value], id: &str) -> serde_json::Value {
++        vectors
++            .iter()
++            .find(|v| v["id"].as_str() == Some(id))
++            .unwrap_or_else(|| panic!("fixture has no vector with id={id}"))
++            .clone()
++    }
++
++    /// The fixture's symbolic error name for an `LlmError`. Exhaustive on
++    /// purpose: a new variant must be named here, not silently bucketed.
++    fn llm_error_name(e: &LlmError) -> &'static str {
++        match e {
++            LlmError::Request(_) => "Request",
++            LlmError::ApiError { .. } => "ApiError",
++            LlmError::ResponseFormat(_) => "ResponseFormat",
++            LlmError::EmptyInput => "EmptyInput",
++            LlmError::OutputTruncated => "OutputTruncated",
++            LlmError::ModelNotFound(_) => "ModelNotFound",
++            LlmError::InferenceError(_) => "InferenceError",
++        }
++    }
++
++    /// Drives the REAL provider for one fixture vector and asserts both halves:
++    /// the canned bytes it puts on the wire, and the verdict the real mapping
++    /// returns for them.
++    async fn assert_llm_vector(id: &str) {
++        let vectors = load_debug_vectors();
++        let v = debug_vector(&vectors, id);
++        assert_eq!(v["surface"].as_str(), Some("llm"), "{id} is not an llm vector");
++        let scenario = v["scenario"].as_str().expect("scenario");
++
++        // (a) the canned wire bytes, against the fixture literal.
++        let wire = &v["wire"];
++        match wire["kind"].as_str().expect("wire.kind") {
++            "canned" => {
++                let (status, body) = debug_llm_canned_wire(scenario)
++                    .unwrap_or_else(|| panic!("{id}: {scenario} must produce a canned wire"));
++                assert_eq!(
++                    u64::from(status),
++                    wire["status"].as_u64().expect("wire.status"),
++                    "{id}: canned status must match the fixture"
++                );
++                assert_eq!(
++                    body,
++                    wire["body"].as_str().expect("wire.body"),
++                    "{id}: canned body must match the fixture"
++                );
++            }
++            "loopback" => {
++                assert!(
++                    debug_llm_canned_wire(scenario).is_none(),
++                    "{id}: {scenario} must have NO canned wire (it performs a real loopback request)"
++                );
++                assert_eq!(
++                    DEBUG_TRANSPORT_URL,
++                    wire["url"].as_str().expect("wire.url"),
++                    "{id}: loopback URL must match the fixture"
++                );
++            }
++            other => panic!("{id}: unknown wire.kind {other}"),
++        }
++
++        // (b) the verdict the REAL mapping returns, against the fixture literal.
++        let provider = DebugCleanup::new(scenario);
++        let result = provider
++            .cleanup("some dictated text", CleanupStyle::Polished, None, None)
++            .await;
++        let expected = &v["rust"];
++        match expected["outcome"].as_str().expect("rust.outcome") {
++            "ok" => {
++                let r = result.unwrap_or_else(|e| panic!("{id}: expected Ok, got {e:?}"));
++                assert_eq!(
++                    r.text,
++                    expected["text"].as_str().expect("rust.text"),
++                    "{id}: canned text must match the fixture"
++                );
++            }
++            "error" => {
++                let e = match result {
++                    Err(e) => e,
++                    Ok(r) => panic!("{id}: expected an error, got Ok({:?})", r.text),
++                };
++                assert_eq!(
++                    llm_error_name(&e),
++                    expected["error"].as_str().expect("rust.error"),
++                    "{id}: error variant must match the fixture (got {e:?})"
++                );
++                if let Some(status) = expected["error_status"].as_u64() {
++                    match &e {
++                        LlmError::ApiError { status: got, .. } => {
++                            assert_eq!(u64::from(*got), status, "{id}: HTTP status must match")
++                        }
++                        other => panic!("{id}: error_status stated but variant is {other:?}"),
++                    }
++                }
++                if let Some(needle) = expected["message_contains"].as_str() {
++                    let msg = e.to_string();
++                    assert!(
++                        msg.contains(needle),
++                        "{id}: error message {msg:?} must contain {needle:?}"
++                    );
++                }
++            }
++            other => panic!("{id}: unknown rust.outcome {other}"),
++        }
++    }
++
++    #[test]
++    fn spec_debug_fixture_is_complete_and_self_describing() {
++        let vectors = load_debug_vectors();
++        let expected = [
++            "DEBUG-LLM-OK-001",
++            "DEBUG-LLM-EMPTY-001",
++            "DEBUG-LLM-TRUNCATED-001",
++            "DEBUG-LLM-MALFORMED-001",
++            "DEBUG-LLM-HTTP429-001",
++            "DEBUG-LLM-HTTP5XX-001",
++            "DEBUG-LLM-TRANSPORT-001",
++            "DEBUG-STT-OK-001",
++            "DEBUG-STT-EMPTY-001",
++            "DEBUG-STT-MALFORMED-001",
++            "DEBUG-STT-HTTP429-001",
++            "DEBUG-STT-HTTP5XX-001",
++            "DEBUG-STT-TRANSPORT-001",
++            "DEBUG-STT-NO-TRUNCATED-001",
++        ];
++        assert_eq!(
++            vectors.len(),
++            expected.len(),
++            "fixture must carry exactly {} vectors",
++            expected.len()
++        );
++        for id in expected {
++            let v = debug_vector(&vectors, id);
++            let desc = v["description"].as_str().unwrap_or("");
++            assert!(
++                desc.contains("PINS:") && desc.contains("DOES NOT PIN:"),
++                "{id}: description must state what it pins AND what it does not"
++            );
++        }
++    }
++
++    /// The seven LLM scenarios the Advanced → System picker offers are exactly
++    /// the seven the provider knows. A picker option with no canned wire would
++    /// silently behave like `ok`; a canned wire with no picker option would be
++    /// unreachable.
++    #[test]
++    fn spec_debug_llm_scenario_set_is_the_seven_offered() {
++        let vectors = load_debug_vectors();
++        let from_fixture: Vec<&str> = vectors
++            .iter()
++            .filter(|v| v["surface"].as_str() == Some("llm"))
++            .map(|v| v["scenario"].as_str().expect("scenario"))
++            .collect();
++        assert_eq!(
++            from_fixture,
++            vec!["ok", "empty", "truncated", "malformed", "http429", "http5xx", "transport"],
++            "the LLM scenario set is the contract with AdvancedSettingsPanel's option list"
++        );
++    }
++
++    /// An unrecognised scenario string must resolve like `ok` (fail-soft), never
++    /// panic and never invent an outcome.
++    #[tokio::test]
++    async fn spec_debug_llm_unknown_scenario_falls_back_to_ok() {
++        let vectors = load_debug_vectors();
++        let ok = debug_vector(&vectors, "DEBUG-LLM-OK-001");
++        let r = DebugCleanup::new("no-such-scenario")
++            .cleanup("text", CleanupStyle::Polished, None, None)
++            .await
++            .expect("unknown scenario must behave like ok");
++        assert_eq!(r.text, ok["rust"]["text"].as_str().expect("rust.text"));
++    }
++
++    #[tokio::test]
++    async fn spec_debug_llm_ok() {
++        assert_llm_vector("DEBUG-LLM-OK-001").await;
++    }
++
++    #[tokio::test]
++    async fn spec_debug_llm_empty() {
++        assert_llm_vector("DEBUG-LLM-EMPTY-001").await;
++    }
++
++    #[tokio::test]
++    async fn spec_debug_llm_truncated() {
++        assert_llm_vector("DEBUG-LLM-TRUNCATED-001").await;
++    }
++
++    #[tokio::test]
++    async fn spec_debug_llm_malformed() {
++        assert_llm_vector("DEBUG-LLM-MALFORMED-001").await;
++    }
++
++    #[tokio::test]
++    async fn spec_debug_llm_http429() {
++        assert_llm_vector("DEBUG-LLM-HTTP429-001").await;
++    }
++
++    #[tokio::test]
++    async fn spec_debug_llm_http5xx() {
++        assert_llm_vector("DEBUG-LLM-HTTP5XX-001").await;
++    }
++
++    /// Performs a REAL request to the loopback discard port. No byte leaves the
++    /// device and nothing listens there, so this is hermetic and fast.
++    #[tokio::test]
++    async fn spec_debug_llm_transport() {
++        assert_llm_vector("DEBUG-LLM-TRANSPORT-001").await;
++    }
++
++    /// The debug provider reports its own model ID, so `Klarvo.log` cannot name
++    /// `deepseek-chat` for a run that never touched DeepSeek.
++    #[test]
++    fn spec_debug_cleanup_model_is_its_own_entry() {
++        assert_eq!(DebugCleanup::new("ok").model(), DebugCleanup::DEFAULT_MODEL);
++        assert_eq!(effective_cleanup_model(DEBUG_PROVIDER_NAME, ""), "debug");
++        assert_eq!(effective_cleanup_model(DEBUG_PROVIDER_NAME, "   "), "debug");
++        // The catch-all must NOT be what answers for "debug".
++        assert_ne!(
++            effective_cleanup_model(DEBUG_PROVIDER_NAME, ""),
++            DeepSeekCleanup::DEFAULT_MODEL
++        );
++    }
++
++    /// The extraction that made the debug provider possible must not have moved
++    /// the real mapping: the same `(status, body)` that `send_request` would see
++    /// yields the same verdicts it yielded before.
++    #[test]
++    fn spec_map_chat_response_preserves_the_real_mapping() {
++        let ok = map_chat_response(
++            200,
++            r#"{"choices":[{"message":{"content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#,
++        )
++        .expect("well-formed answer must map to Ok");
++        assert_eq!(ok.text, "hi");
++        assert_eq!(ok.prompt_tokens, Some(7));
++        assert_eq!(ok.completion_tokens, Some(3));
++
++        // usage is optional
++        let no_usage = map_chat_response(
++            200,
++            r#"{"choices":[{"message":{"content":"hi"},"finish_reason":"stop"}]}"#,
++        )
++        .expect("absent usage must still map to Ok");
++        assert_eq!(no_usage.prompt_tokens, None);
++
++        // A non-2xx prefers the API's own error message …
++        match map_chat_response(401, r#"{"error":{"message":"bad key"}}"#) {
++            Err(LlmError::ApiError { status, message }) => {
++                assert_eq!(status, 401);
++                assert_eq!(message, "bad key");
++            }
++            other => panic!("expected ApiError, got {other:?}"),
++        }
++        // … and falls back to the raw body when there is none.
++        match map_chat_response(500, "upstream exploded") {
++            Err(LlmError::ApiError { status, message }) => {
++                assert_eq!(status, 500);
++                assert_eq!(message, "upstream exploded");
++            }
++            other => panic!("expected ApiError, got {other:?}"),
++        }
++    }
+ }
+diff --git a/src-tauri/src/pipeline.rs b/src-tauri/src/pipeline.rs
+index baed7a7..02e271c 100755
+--- a/src-tauri/src/pipeline.rs
++++ b/src-tauri/src/pipeline.rs
+@@ -43,6 +43,10 @@ use crate::setup_audio_level_emitter;
+ pub fn resolve_stt_provider(cfg: &AppConfig, app_data_dir: &std::path::Path) -> Arc<dyn SttProvider> {
+     match cfg.stt_provider.as_str() {
+         "openai" => Arc::new(stt::OpenAiWhisper::new(&cfg.openai_api_key)),
++        // Story 13-1 (llm::DEBUG_PROVIDER_NAME): canned wire responses, no
++        // network. Explicit arm because the catch-all below silently resolves an
++        // unknown value to Groq.
++        "debug" => Arc::new(stt::DebugStt::new(&cfg.advanced.debug_stt_scenario)),
+         #[cfg(any(target_os = "windows", target_os = "android"))]
+         "local" => build_local_whisper_provider(cfg, app_data_dir),
+         #[cfg(not(any(target_os = "windows", target_os = "android")))]
+@@ -237,6 +241,13 @@ pub(crate) fn cleanup_provider_for(
+             "https://openrouter.ai/api/v1/chat/completions",
+             "deepseek/deepseek-chat",
+         )),
++        // Story 13-1 (llm::DEBUG_PROVIDER_NAME): canned wire responses, no
++        // network, no API key. Explicit arm because the catch-all below silently
++        // resolves an unknown value to DeepSeek. This is a *constructible*
++        // provider only — it is NOT in `resolve_fallback_provider`'s candidate
++        // array, exactly as Anthropic is constructible here without being a
++        // fallback candidate.
++        "debug" => Arc::new(llm::DebugCleanup::new(&advanced.debug_llm_scenario)),
+         // "deepseek" and any unrecognised value
+         _ => Arc::new(
+             llm::DeepSeekCleanup::new(api_key)
+@@ -260,6 +271,8 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
+         "anthropic" => cleanup_provider_for("anthropic", &cfg.anthropic_api_key, &cfg.advanced),
+         "groq" => cleanup_provider_for("groq", &cfg.groq_api_key, &cfg.advanced),
+         "openrouter" => cleanup_provider_for("openrouter", &cfg.openrouter_api_key, &cfg.advanced),
++        // Story 13-1: the debug provider needs no API key.
++        "debug" => cleanup_provider_for("debug", "", &cfg.advanced),
+         #[cfg(target_os = "windows")]
+         "local" => {
+             let model_dir = std::env::var("APPDATA")
+@@ -3057,6 +3070,122 @@ mod tests {
+         assert!(!offline);
+     }
+ 
++    // -----------------------------------------------------------------------
++    // Story 13-1 — the `debug` provider is REACHABLE but never a FALLBACK
++    // -----------------------------------------------------------------------
++
++    /// `llm_provider = "debug"` must reach `DebugCleanup`, not silently become
++    /// DeepSeek via the catch-all. Observable without a network call: only the
++    /// debug provider reports `model() == "debug"`.
++    ///
++    /// Inversion (verified RED at writing time): delete the `"debug"` arm from
++    /// `resolve_cleanup_provider` and the resolved model becomes `deepseek-chat`.
++    #[test]
++    fn spec_debug_llm_provider_resolves_to_the_debug_provider() {
++        let cfg = AppConfig {
++            llm_provider: "debug".to_string(),
++            // A DeepSeek key is present precisely so a silent fall-through to
++            // the catch-all would still build a usable provider and hide itself.
++            deepseek_api_key: "ds-key".to_string(),
++            ..AppConfig::default()
++        };
++        assert_eq!(
++            resolve_cleanup_provider(&cfg).model(),
++            llm::DebugCleanup::DEFAULT_MODEL
++        );
++        // Discriminating half: any other value must NOT resolve to the debug
++        // provider, so the assertion above cannot pass vacuously.
++        let deepseek = AppConfig {
++            llm_provider: "deepseek".to_string(),
++            deepseek_api_key: "ds-key".to_string(),
++            ..AppConfig::default()
++        };
++        assert_ne!(
++            resolve_cleanup_provider(&deepseek).model(),
++            llm::DebugCleanup::DEFAULT_MODEL
++        );
++    }
++
++    /// `cleanup_provider_for("debug", …)` reads the scenario out of the
++    /// `advanced` block it is already handed — the same block every other arm
++    /// reads its model override from.
++    #[tokio::test]
++    async fn spec_debug_llm_provider_reads_its_scenario_from_advanced() {
++        let advanced = config::AdvancedSettings {
++            debug_llm_scenario: "truncated".to_string(),
++            ..config::AdvancedSettings::default()
++        };
++        let provider = cleanup_provider_for("debug", "", &advanced);
++        let err = provider
++            .cleanup("text", llm::CleanupStyle::Polished, None, None)
++            .await
++            .expect_err("the truncated scenario must produce an error");
++        assert!(
++            matches!(err, llm::LlmError::OutputTruncated),
++            "the configured scenario must reach the provider, got {err:?}"
++        );
++    }
++
++    /// `stt_provider = "debug"` must reach `DebugStt`, not silently become Groq.
++    ///
++    /// Inversion (verified RED at writing time): delete the `"debug"` arm from
++    /// `resolve_stt_provider` and the canned transcript is replaced by a real
++    /// Groq request (here: an auth error, never the canned text).
++    #[tokio::test]
++    async fn spec_debug_stt_provider_resolves_to_the_debug_provider() {
++        let cfg = AppConfig {
++            stt_provider: "debug".to_string(),
++            groq_api_key: "gsk-key".to_string(),
++            ..AppConfig::default()
++        };
++        let provider = resolve_stt_provider(&cfg, std::path::Path::new("/nonexistent"));
++        let text = provider
++            .transcribe(b"not-a-real-wav", "de", None)
++            .await
++            .expect("the debug STT provider must answer without a network call");
++        assert_eq!(text, "Debug provider canned transcript.");
++    }
++
++    /// AC: `debug` must never appear as a cleanup-fallback candidate, so a debug
++    /// 429/5xx fires the PRODUCTION ladder (deepseek → openai → openrouter) and
++    /// the debug provider can never rescue itself.
++    #[test]
++    fn spec_debug_is_never_a_cleanup_fallback_candidate() {
++        let cfg = AppConfig {
++            llm_provider: "debug".to_string(),
++            deepseek_api_key: "ds-key".to_string(),
++            openai_api_key: "sk-openai".to_string(),
++            openrouter_api_key: "sk-or".to_string(),
++            groq_api_key: "gsk-key".to_string(),
++            anthropic_api_key: "sk-ant".to_string(),
++            ..AppConfig::default()
++        };
++        for primary in ["debug", "deepseek", "openai", "openrouter", "groq", ""] {
++            if let Some((_, name)) = resolve_fallback_provider(&cfg, primary) {
++                assert_ne!(
++                    name, "debug",
++                    "primary={primary}: debug must never be the selected fallback"
++                );
++            }
++        }
++        // With `debug` as the primary and every real key present, the ladder
++        // must still hand back its first real candidate.
++        let (_, first) = resolve_fallback_provider(&cfg, "debug")
++            .expect("a debug primary must still find a real fallback");
++        assert_eq!(first, "deepseek", "the production ladder starts at DeepSeek");
++
++        // Discriminating half: with NO real key at all there is no candidate —
++        // a `debug` entry in the list would make this `Some`.
++        let debug_only = AppConfig {
++            llm_provider: "debug".to_string(),
++            ..AppConfig::default()
++        };
++        assert!(
++            resolve_fallback_provider(&debug_only, "debug").is_none(),
++            "the debug provider must not be able to nominate itself"
++        );
++    }
++
+     /// Default stt_provider is "groq", so offline flag is false by default.
+     #[test]
+     fn test_offline_flag_false_by_default() {
+diff --git a/src-tauri/src/stt/groq_jni.rs b/src-tauri/src/stt/groq_jni.rs
+index 081499b..604a300 100644
+--- a/src-tauri/src/stt/groq_jni.rs
++++ b/src-tauri/src/stt/groq_jni.rs
+@@ -4,7 +4,7 @@
+ //! `com.klarvo.voice.GroqSttBridge`:
+ //!
+ //! - `nativeTranscribe(wavBase64, apiKey, language, dictionaryTerms, customPrompt,
+-//!                      sttModel, temperature): String`
++//!                      sttModel, temperature, sttProvider, debugSttScenario): String`
+ //! - `nativeIsHallucination(text: String): Boolean`
+ //! - `nativeIsPromptEcho(transcription: String, sttHint: String): Boolean`
+ //! - `nativeStripPromptFragments(text: String, sttHint: String): String`
+@@ -118,6 +118,16 @@ fn read_jstring(env: &mut JNIEnv, arg: JString, name: &str) -> Option<String> {
+ /// - `custom_prompt`:    User custom STT hint (or empty).
+ /// - `stt_model`:        Groq model name (e.g. "whisper-large-v3-turbo").
+ /// - `temperature`:      Whisper sampling temperature (0.0 = deterministic).
++/// - `stt_provider`:     `config.sttProvider`, carried through by Kotlin without
++///                       being inspected there. Story 13-1: `"debug"` selects
++///                       [`crate::stt::DebugStt`]; every other value keeps the
++///                       Groq path. Deciding this HERE rather than in Kotlin is
++///                       what keeps ADR-0017 intact — Android gets the debug
++///                       scenarios with no STT logic of its own, and the
++///                       `__ERROR_*` sentinels below are still emitted by the
++///                       real mapping rather than forged.
++/// - `debug_stt_scenario`: `config.debugSttScenario`. Read only when
++///                       `stt_provider == "debug"`.
+ ///
+ /// Returns: transcribed text, or an empty string on any error.
+ ///
+@@ -139,6 +149,8 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
+     custom_prompt: JString,
+     stt_model: JString,
+     temperature: jfloat,
++    stt_provider: JString,
++    debug_stt_scenario: JString,
+ ) -> jstring {
+     // --- Unmarshal string arguments ---
+     let b64 = match read_jstring(&mut env, wav_base64, "wav_base64") {
+@@ -160,6 +172,12 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
+         _ => "whisper-large-v3-turbo".to_string(),
+     };
+     let temp = temperature as f32;
++    // Story 13-1. Both default to the production path on a read failure — a
++    // debug run that cannot read its own arguments must degrade to the real
++    // provider, never the other way round.
++    let provider_name = read_jstring(&mut env, stt_provider, "stt_provider").unwrap_or_default();
++    let debug_scenario =
++        read_jstring(&mut env, debug_stt_scenario, "debug_stt_scenario").unwrap_or_default();
+ 
+     // --- Decode Base64 → WAV bytes ---
+     use base64::Engine as _;
+@@ -182,7 +200,17 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
+     let prompt = build_stt_prompt_with_hint(dict_opt, &lang, custom_opt);
+ 
+     // --- Build client (H9: sttModel from config, H10: no hardcoded model literal) ---
+-    let client = GroqWhisper::new(&key).with_model(&model).with_temperature(temp);
++    //
++    // Story 13-1: `sttProvider == "debug"` swaps in the canned-wire provider.
++    // Everything below is unchanged — the same runtime, the same guard chain and
++    // the same `__ERROR_*` sentinel mapping — so an Android debug run produces
++    // the production strings instead of imitating them.
++    let client: Box<dyn SttProvider> = if provider_name == crate::llm::DEBUG_PROVIDER_NAME {
++        log::info!("[groq_jni] DEBUG STT provider active: scenario={debug_scenario}");
++        Box::new(crate::stt::DebugStt::new(&debug_scenario))
++    } else {
++        Box::new(GroqWhisper::new(&key).with_model(&model).with_temperature(temp))
++    };
+ 
+     // --- Weg A: throwaway current-thread runtime + block_on ---
+     // `WhisperStt::transcribe` is async over reqwest. From JNI there is no shared
+diff --git a/src-tauri/src/stt/mod.rs b/src-tauri/src/stt/mod.rs
+index 19b27a7..064acca 100755
+--- a/src-tauri/src/stt/mod.rs
++++ b/src-tauri/src/stt/mod.rs
+@@ -385,53 +385,176 @@ impl SttProvider for WhisperStt {
+             let status_code = status.as_u16();
+             // Try to extract the API error message; fall back to raw text.
+             let body = response.text().await.unwrap_or_default();
+-            let message = serde_json::from_str::<ApiErrorResponse>(&body)
+-                .map(|e| e.error.message)
+-                .unwrap_or(body);
+-            return Err(SttError::ApiError {
+-                status: status_code,
+-                message,
+-            });
++            return Err(map_transcription_error_status(status_code, &body));
+         }
+ 
+-        // AC6: parse verbose_json response with both-shape tolerance.
+-        // We attempt verbose_json first (the new format). If the `segments` field
+-        // is absent (plain json response or future API change), serde still succeeds
+-        // because `segments` has `#[serde(default)]` → empty Vec.
+-        // Both shapes have a top-level `text` field which is the final fallback.
+         let body = response.bytes().await?;
++        map_transcription_body(&body)
++    }
++}
+ 
+-        let text = if let Ok(verbose) = serde_json::from_slice::<VerboseTranscriptionResponse>(&body) {
+-            // Verbose response (or plain json that deserializes with empty segments).
+-            let t = extract_verbose_text(verbose);
+-            if t.is_empty() {
+-                // All segments dropped or empty text field — treat as no speech.
+-                log::debug!("[stt] all segments dropped or empty after verbose_json parse");
+-                return Err(SttError::ResponseFormat(
+-                    "API returned empty text after segment confidence filter".to_string(),
+-                ));
+-            }
+-            t
+-        } else {
+-            // Fallback: try legacy plain json shape (future-compat / fail-soft).
+-            match serde_json::from_slice::<TranscriptionResponse>(&body) {
+-                Ok(r) => {
+-                    if r.text.is_empty() {
+-                        return Err(SttError::ResponseFormat(
+-                            "API returned empty text field".to_string(),
+-                        ));
+-                    }
+-                    r.text.trim().to_string()
+-                }
+-                Err(e) => {
+-                    return Err(SttError::ResponseFormat(format!(
+-                        "Cannot parse STT response (tried verbose_json and json): {e}"
+-                    )));
++// ---------------------------------------------------------------------------
++// Response → Result mapping (shared by WhisperStt and DebugStt)
++// ---------------------------------------------------------------------------
++
++/// Maps a non-2xx transcription response to [`SttError::ApiError`], preferring
++/// the API's own `error.message` and falling back to the raw body.
++///
++/// Extracted verbatim from `WhisperStt::transcribe` (story 13-1,
++/// behaviour-preserving) so [`DebugStt`] reaches it with a canned body.
++fn map_transcription_error_status(status: u16, body: &str) -> SttError {
++    let message = serde_json::from_str::<ApiErrorResponse>(body)
++        .map(|e| e.error.message)
++        .unwrap_or_else(|_| body.to_string());
++    SttError::ApiError { status, message }
++}
++
++/// Maps a 2xx transcription body to the transcript text.
++///
++/// Extracted verbatim from `WhisperStt::transcribe` (story 13-1,
++/// behaviour-preserving — the live path already parsed with
++/// `serde_json::from_slice`, so no error variant changes here).
++///
++/// AC6: parses the `verbose_json` response with both-shape tolerance. It
++/// attempts `verbose_json` first (the format we request). If the `segments`
++/// field is absent (plain json response or future API change), serde still
++/// succeeds because `segments` has `#[serde(default)]` → empty Vec. Both shapes
++/// have a top-level `text` field which is the final fallback.
++fn map_transcription_body(body: &[u8]) -> Result<String, SttError> {
++    let text = if let Ok(verbose) = serde_json::from_slice::<VerboseTranscriptionResponse>(body) {
++        // Verbose response (or plain json that deserializes with empty segments).
++        let t = extract_verbose_text(verbose);
++        if t.is_empty() {
++            // All segments dropped or empty text field — treat as no speech.
++            log::debug!("[stt] all segments dropped or empty after verbose_json parse");
++            return Err(SttError::ResponseFormat(
++                "API returned empty text after segment confidence filter".to_string(),
++            ));
++        }
++        t
++    } else {
++        // Fallback: try legacy plain json shape (future-compat / fail-soft).
++        match serde_json::from_slice::<TranscriptionResponse>(body) {
++            Ok(r) => {
++                if r.text.is_empty() {
++                    return Err(SttError::ResponseFormat(
++                        "API returned empty text field".to_string(),
++                    ));
+                 }
++                r.text.trim().to_string()
+             }
+-        };
++            Err(e) => {
++                return Err(SttError::ResponseFormat(format!(
++                    "Cannot parse STT response (tried verbose_json and json): {e}"
++                )));
++            }
++        }
++    };
++
++    Ok(text)
++}
++
++/// Wire-level mapping of a transcription response: `(status, body)` in,
++/// `Result<String, SttError>` out. What [`DebugStt`] feeds its canned responses
++/// through, so a debug run exercises the real mapping.
++pub(crate) fn map_transcription_response(status: u16, body: &[u8]) -> Result<String, SttError> {
++    if !(200..300).contains(&status) {
++        return Err(map_transcription_error_status(
++            status,
++            &String::from_utf8_lossy(body),
++        ));
++    }
++    map_transcription_body(body)
++}
++
++// ---------------------------------------------------------------------------
++// DebugStt -- canned wire responses for reproducing STT anomalies
++// (Story 13-1, the H+ enabler for drift row D9/D-M5+D-M6)
++// ---------------------------------------------------------------------------
+ 
+-        Ok(text)
++/// The canned `(status, body)` pair for a debug STT scenario.
++///
++/// `None` means "no response at all" — the caller performs a real request to
++/// [`crate::llm::DEBUG_TRANSPORT_URL`] (the loopback discard port) instead.
++///
++/// The scenario set is the LLM set **minus `truncated`**: [`SttError`] has no
++/// truncation variant, so there is nothing for a truncated STT answer to map
++/// to. An unrecognised scenario resolves like `"ok"`.
++pub(crate) fn debug_stt_canned_wire(scenario: &str) -> Option<(u16, &'static str)> {
++    match scenario {
++        // 200 with an empty transcript: the verbose parse succeeds and
++        // `extract_verbose_text` yields "" → ResponseFormat (drift row D-M5).
++        "empty" => Some((200, r#"{"text":"","segments":[]}"#)),
++        // 200 with a body that deserializes as neither shape.
++        "malformed" => Some((200, r#"{"unexpected":"debug provider malformed body"}"#)),
++        "http429" => Some((
++            429,
++            r#"{"error":{"message":"Debug provider: simulated rate limit"}}"#,
++        )),
++        "http5xx" => Some((
++            503,
++            r#"{"error":{"message":"Debug provider: simulated server error"}}"#,
++        )),
++        "transport" => None,
++        // "ok" and any unrecognised value (including "truncated", which has no
++        // SttError counterpart and is therefore not offered in the STT picker)
++        _ => Some((
++            200,
++            r#"{"text":"Debug provider canned transcript.","segments":[]}"#,
++        )),
++    }
++}
++
++/// An STT provider that never talks to a real API: it yields the canned wire
++/// response selected by `advanced.debugSttScenario` and lets the *real* mapping
++/// ([`map_transcription_response`]) decide the outcome.
++///
++/// Lives in Rust only — ADR-0017 makes STT shared core, so Android consumes
++/// this same provider through `stt::groq_jni::nativeTranscribe` and the
++/// `__ERROR_*` sentinels it already emits. A Kotlin-side canned transcript would
++/// *forge* those sentinels rather than produce them.
++///
++/// The provider ignores `audio`, `language` and `prompt` — the scenario alone
++/// decides the answer.
++pub struct DebugStt {
++    scenario: String,
++}
++
++impl DebugStt {
++    pub fn new(scenario: impl Into<String>) -> Self {
++        DebugStt {
++            scenario: scenario.into(),
++        }
++    }
++}
++
++#[async_trait::async_trait]
++impl SttProvider for DebugStt {
++    async fn transcribe(
++        &self,
++        _audio: &[u8],
++        _language: &str,
++        _prompt: Option<&str>,
++    ) -> Result<String, SttError> {
++        log::info!(
++            "[stt] DEBUG STT provider active: scenario={}",
++            self.scenario
++        );
++        match debug_stt_canned_wire(&self.scenario) {
++            Some((status, body)) => map_transcription_response(status, body.as_bytes()),
++            None => {
++                // `transport`: a real request that cannot succeed. The `?` turns
++                // the connection failure into `SttError::Request`, the same
++                // variant a real transport failure produces.
++                let response = reqwest::Client::new()
++                    .post(crate::llm::DEBUG_TRANSPORT_URL)
++                    .send()
++                    .await?;
++                let status = response.status().as_u16();
++                let body = response.bytes().await?;
++                map_transcription_response(status, &body)
++            }
++        }
+     }
+ }
+ 
+@@ -957,4 +1080,252 @@ mod tests {
+         };
+         assert!(!seg.should_drop(), "exactly -1.0 avg_logprob must be kept (boundary check)");
+     }
++
++    // -----------------------------------------------------------------------
++    // Story 13-1 — debug test provider (STT half, shared core per ADR-0017)
++    //
++    // Driven by the SAME test-fixtures/debug-provider-scenario-vectors.json the
++    // LLM half in llm/mod.rs and the Kotlin twin's DebugProviderScenarioTest
++    // read. Every assertion compares a PRODUCTION seam
++    // (`debug_stt_canned_wire`, `DebugStt::transcribe`) against the FIXTURE
++    // literal, never against another production symbol.
++    //
++    // There is no Kotlin twin for these vectors by construction: ADR-0017 makes
++    // the STT request and its guards shared Rust core, consumed on Android over
++    // `stt::groq_jni::nativeTranscribe`. The Kotlin column of every `stt` vector
++    // says so, and the Kotlin test skips them by surface.
++    // -----------------------------------------------------------------------
++
++    fn load_debug_vectors() -> Vec<serde_json::Value> {
++        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
++        let path = std::path::Path::new(&manifest_dir)
++            .parent()
++            .expect("workspace root")
++            .join("test-fixtures/debug-provider-scenario-vectors.json");
++        let content = std::fs::read_to_string(&path)
++            .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
++        serde_json::from_str(&content)
++            .expect("debug-provider-scenario-vectors.json must be a JSON array")
++    }
++
++    /// Throwing lookup — a missing id must fail loudly, never skip the assertion.
++    fn debug_vector(vectors: &[serde_json::Value], id: &str) -> serde_json::Value {
++        vectors
++            .iter()
++            .find(|v| v["id"].as_str() == Some(id))
++            .unwrap_or_else(|| panic!("fixture has no vector with id={id}"))
++            .clone()
++    }
++
++    /// The fixture's symbolic error name for an `SttError`. Exhaustive on
++    /// purpose: a new variant must be named here, not silently bucketed.
++    fn stt_error_name(e: &SttError) -> &'static str {
++        match e {
++            SttError::Request(_) => "Request",
++            SttError::ApiError { .. } => "ApiError",
++            SttError::ResponseFormat(_) => "ResponseFormat",
++            SttError::EmptyAudio => "EmptyAudio",
++            SttError::LocalWhisper(_) => "LocalWhisper",
++        }
++    }
++
++    /// Drives the REAL provider for one fixture vector and asserts both halves:
++    /// the canned bytes it puts on the wire, and the verdict the real mapping
++    /// returns for them.
++    async fn assert_stt_vector(id: &str) {
++        let vectors = load_debug_vectors();
++        let v = debug_vector(&vectors, id);
++        assert_eq!(v["surface"].as_str(), Some("stt"), "{id} is not an stt vector");
++        assert_eq!(
++            v["kotlin"]["outcome"].as_str(),
++            Some("n/a"),
++            "{id}: an STT vector has no Kotlin twin (ADR-0017) and must say so"
++        );
++        let scenario = v["scenario"].as_str().expect("scenario");
++
++        // (a) the canned wire bytes, against the fixture literal.
++        let wire = &v["wire"];
++        match wire["kind"].as_str().expect("wire.kind") {
++            "canned" => {
++                let (status, body) = debug_stt_canned_wire(scenario)
++                    .unwrap_or_else(|| panic!("{id}: {scenario} must produce a canned wire"));
++                assert_eq!(
++                    u64::from(status),
++                    wire["status"].as_u64().expect("wire.status"),
++                    "{id}: canned status must match the fixture"
++                );
++                assert_eq!(
++                    body,
++                    wire["body"].as_str().expect("wire.body"),
++                    "{id}: canned body must match the fixture"
++                );
++            }
++            "loopback" => {
++                assert!(
++                    debug_stt_canned_wire(scenario).is_none(),
++                    "{id}: {scenario} must have NO canned wire (it performs a real loopback request)"
++                );
++                assert_eq!(
++                    crate::llm::DEBUG_TRANSPORT_URL,
++                    wire["url"].as_str().expect("wire.url"),
++                    "{id}: loopback URL must match the fixture"
++                );
++            }
++            // `truncated` is an expected-absence vector: it is not offered in
++            // the STT picker, so the provider must treat it like any other
++            // unknown string (fail-soft to `ok`), not invent an outcome.
++            "not_offered" => {
++                let ok_wire = debug_stt_canned_wire("ok").expect("ok must have a canned wire");
++                assert_eq!(
++                    debug_stt_canned_wire(scenario),
++                    Some(ok_wire),
++                    "{id}: a not-offered scenario must fall back to the ok wire"
++                );
++            }
++            other => panic!("{id}: unknown wire.kind {other}"),
++        }
++
++        // (b) the verdict the REAL mapping returns, against the fixture literal.
++        let provider = DebugStt::new(scenario);
++        let result = provider.transcribe(b"not-a-real-wav", "de", None).await;
++        let expected = &v["rust"];
++        match expected["outcome"].as_str().expect("rust.outcome") {
++            "ok" => {
++                let text = result.unwrap_or_else(|e| panic!("{id}: expected Ok, got {e:?}"));
++                assert_eq!(
++                    text,
++                    expected["text"].as_str().expect("rust.text"),
++                    "{id}: canned transcript must match the fixture"
++                );
++            }
++            "error" => {
++                let e = match result {
++                    Err(e) => e,
++                    Ok(t) => panic!("{id}: expected an error, got Ok({t:?})"),
++                };
++                assert_eq!(
++                    stt_error_name(&e),
++                    expected["error"].as_str().expect("rust.error"),
++                    "{id}: error variant must match the fixture (got {e:?})"
++                );
++                if let Some(status) = expected["error_status"].as_u64() {
++                    match &e {
++                        SttError::ApiError { status: got, .. } => {
++                            assert_eq!(u64::from(*got), status, "{id}: HTTP status must match")
++                        }
++                        other => panic!("{id}: error_status stated but variant is {other:?}"),
++                    }
++                }
++                if let Some(needle) = expected["message_contains"].as_str() {
++                    let msg = e.to_string();
++                    assert!(
++                        msg.contains(needle),
++                        "{id}: error message {msg:?} must contain {needle:?}"
++                    );
++                }
++            }
++            other => panic!("{id}: unknown rust.outcome {other}"),
++        }
++    }
++
++    /// The six STT scenarios the Advanced → System picker offers are the LLM set
++    /// MINUS `truncated` — `SttError` has no truncation variant, so there would
++    /// be nothing for it to map to.
++    #[test]
++    fn spec_debug_stt_scenario_set_is_the_llm_set_minus_truncated() {
++        let vectors = load_debug_vectors();
++        let llm: Vec<&str> = vectors
++            .iter()
++            .filter(|v| v["surface"].as_str() == Some("llm"))
++            .map(|v| v["scenario"].as_str().expect("scenario"))
++            .collect();
++        let offered: Vec<&str> = vectors
++            .iter()
++            .filter(|v| {
++                v["surface"].as_str() == Some("stt")
++                    && v["wire"]["kind"].as_str() != Some("not_offered")
++            })
++            .map(|v| v["scenario"].as_str().expect("scenario"))
++            .collect();
++        let expected: Vec<&str> = llm.into_iter().filter(|s| *s != "truncated").collect();
++        assert_eq!(
++            offered, expected,
++            "the STT scenario set is the contract with AdvancedSettingsPanel's option list"
++        );
++    }
++
++    #[tokio::test]
++    async fn spec_debug_stt_ok() {
++        assert_stt_vector("DEBUG-STT-OK-001").await;
++    }
++
++    #[tokio::test]
++    async fn spec_debug_stt_empty() {
++        assert_stt_vector("DEBUG-STT-EMPTY-001").await;
++    }
++
++    #[tokio::test]
++    async fn spec_debug_stt_malformed() {
++        assert_stt_vector("DEBUG-STT-MALFORMED-001").await;
++    }
++
++    #[tokio::test]
++    async fn spec_debug_stt_http429() {
++        assert_stt_vector("DEBUG-STT-HTTP429-001").await;
++    }
++
++    #[tokio::test]
++    async fn spec_debug_stt_http5xx() {
++        assert_stt_vector("DEBUG-STT-HTTP5XX-001").await;
++    }
++
++    /// Performs a REAL request to the loopback discard port. No byte leaves the
++    /// device and nothing listens there, so this is hermetic and fast.
++    #[tokio::test]
++    async fn spec_debug_stt_transport() {
++        assert_stt_vector("DEBUG-STT-TRANSPORT-001").await;
++    }
++
++    /// `truncated` is not offered on the STT side; the provider must fail soft
++    /// to `ok` rather than panic or invent an outcome.
++    #[tokio::test]
++    async fn spec_debug_stt_truncated_is_not_offered() {
++        assert_stt_vector("DEBUG-STT-NO-TRUNCATED-001").await;
++    }
++
++    /// The extraction that made the debug provider possible must not have moved
++    /// the real mapping: the same `(status, body)` `transcribe` would see yields
++    /// the same verdicts it yielded before.
++    #[test]
++    fn spec_map_transcription_response_preserves_the_real_mapping() {
++        // verbose_json with segments → low-confidence segments are dropped.
++        let t = map_transcription_response(
++            200,
++            br#"{"text":"a b","segments":[{"text":"a","no_speech_prob":0.05},{"text":"b","no_speech_prob":0.9}]}"#,
++        )
++        .expect("well-formed verbose body must map to Ok");
++        assert_eq!(t, "a");
++
++        // plain json shape (no segments) → top-level text.
++        let t = map_transcription_response(200, br#"{"text":"  hello  "}"#)
++            .expect("plain json must map to Ok");
++        assert_eq!(t, "hello");
++
++        // A non-2xx prefers the API's own error message …
++        match map_transcription_response(401, br#"{"error":{"message":"bad key"}}"#) {
++            Err(SttError::ApiError { status, message }) => {
++                assert_eq!(status, 401);
++                assert_eq!(message, "bad key");
++            }
++            other => panic!("expected ApiError, got {other:?}"),
++        }
++        // … and falls back to the raw body when there is none.
++        match map_transcription_response(500, b"upstream exploded") {
++            Err(SttError::ApiError { status, message }) => {
++                assert_eq!(status, 500);
++                assert_eq!(message, "upstream exploded");
++            }
++            other => panic!("expected ApiError, got {other:?}"),
++        }
++    }
+ }
+diff --git a/src/components/AdvancedSettingsPanel.tsx b/src/components/AdvancedSettingsPanel.tsx
+index 32cee03..f241dfd 100755
+--- a/src/components/AdvancedSettingsPanel.tsx
++++ b/src/components/AdvancedSettingsPanel.tsx
+@@ -6,6 +6,17 @@ import { applyUiScale } from "../hooks/useUiScale";
+ import { INPUT_CLS, LABEL_CLS } from "./ui";
+ import { isMobile } from "../platform";
+ import { MobileTextarea } from "./MobileTextarea";
++import { KSelect } from "./settings/FormControls";
++
++// Story 13-1: the debug test provider's scenarios. Option labels ARE the
++// scenario strings -- derived from the config values, not composed prose,
++// exactly as the Log Level row labels its own options. The LLM list is the
++// contract with Rust's `llm::debug_llm_canned_wire` / Kotlin's
++// `KlarvoApi.debugCannedWire`; the STT list is that set minus `truncated`,
++// because the Rust `SttError` has no truncation variant (see
++// `stt::debug_stt_canned_wire`).
++const DEBUG_LLM_SCENARIOS = ["ok", "empty", "truncated", "malformed", "http429", "http5xx", "transport"];
++const DEBUG_STT_SCENARIOS = DEBUG_LLM_SCENARIOS.filter((s) => s !== "truncated");
+ 
+ const ADVANCED_DEFAULTS: AdvancedSettings = {
+   sttPromptDe: "",
+@@ -27,6 +38,9 @@ const ADVANCED_DEFAULTS: AdvancedSettings = {
+   logLevel: "info",
+   uiScale: "medium",
+   expertMode: false,
++  // Story 13-1: the benign scenario, matching the Rust serde default.
++  debugLlmScenario: "ok",
++  debugSttScenario: "ok",
+ };
+ 
+ type ActiveSection = "home" | "stt" | "llm" | "audio" | "system";
+@@ -401,6 +415,34 @@ export function AdvancedSettingsPanel({ onClose, isPaid, isTrial = false, embedd
+             <option value="error">error</option>
+           </select>
+         </div>
++        {/* Debug test provider (story 13-1) -- the two scenario pickers that make
++            a misbehaving provider reproducible on a real device. Behind the same
++            expertMode gate the Audio home-tree entry uses: these are footguns,
++            and a scenario only does anything while llmProvider / sttProvider is
++            set to "debug". Both reuse the shipped KSelect verbatim -- no new
++            class, variant, state or token. */}
++        {expertMode && (
++          <>
++            <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
++              <span className={LABEL_CLS}>Debug LLM Scenario</span>
++              <KSelect
++                value={settings.debugLlmScenario}
++                onChange={(v) => set("debugLlmScenario", v)}
++                options={DEBUG_LLM_SCENARIOS.map((s) => ({ value: s, label: s }))}
++                className={isMobile ? "w-full" : "w-auto"}
++              />
++            </div>
++            <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
++              <span className={LABEL_CLS}>Debug STT Scenario</span>
++              <KSelect
++                value={settings.debugSttScenario}
++                onChange={(v) => set("debugSttScenario", v)}
++                options={DEBUG_STT_SCENARIOS.map((s) => ({ value: s, label: s }))}
++                className={isMobile ? "w-full" : "w-auto"}
++              />
++            </div>
++          </>
++        )}
+         {/* Expert mode -- reveals the raw audio thresholds (its only remaining
+             expert items: story 7-9 removed the chunking and STT-temperature
+             rows, which were dead config) */}
+diff --git a/src/tauri-commands.ts b/src/tauri-commands.ts
+index 74c749c..1890085 100755
+--- a/src/tauri-commands.ts
++++ b/src/tauri-commands.ts
+@@ -117,6 +117,9 @@ const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
+   logLevel: "info",
+   uiScale: "medium",
+   expertMode: false,
++  // Story 13-1: the benign scenario, matching the Rust serde default.
++  debugLlmScenario: "ok",
++  debugSttScenario: "ok",
+ };
+ 
+ const MOCK_HISTORY: HistoryEntry[] = [
+diff --git a/src/types.ts b/src/types.ts
+index 31adbda..08873ff 100755
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -202,6 +202,14 @@ export interface AdvancedSettings {
+   /** When true, the Advanced UI surfaces the raw audio thresholds.
+    *  UI-visibility flag only. */
+   expertMode: boolean;
++  /** Story 13-1: which canned wire response the `debug` LLM cleanup provider
++   *  returns. One of `ok` (default), `empty`, `truncated`, `malformed`,
++   *  `http429`, `http5xx`, `transport`. Inert unless `llmProvider === "debug"`. */
++  debugLlmScenario: string;
++  /** Story 13-1: same set as `debugLlmScenario` minus `truncated` (the Rust
++   *  `SttError` has no truncation variant). Inert unless
++   *  `sttProvider === "debug"`. */
++  debugSttScenario: string;
+ }
+ 
+ // Style display metadata.
+diff --git a/test-fixtures/README.md b/test-fixtures/README.md
+index f5f096a..a38f1e7 100644
+--- a/test-fixtures/README.md
++++ b/test-fixtures/README.md
+@@ -20,3 +20,4 @@ Fixtures currently in the net:
+ | `vad-gate-golden-vectors-7-2.json` | — (Kotlin-only) | `VadGateGoldenVectorsTest` |
+ | `twin-constants-vectors.json` | `llm/mod.rs` (`spec_twin_constants_*`) | `TwinConstantsVectorsTest` (asserts 9 of 10 entries — `TWIN-CLEANUP-MODEL-ANTHROPIC-001` is Desktop-only, drift row H5, and is skipped by id) |
+ | `m12-dictionary-scope-vectors.json` | `llm/mod.rs` (`spec_m12_*`) | — (Android column is a written record: the Kotlin prompt builders are private) |
++| `debug-provider-scenario-vectors.json` | `llm/mod.rs` (`spec_debug_llm_*`) + `stt/mod.rs` (`spec_debug_stt_*`) | `DebugProviderScenarioTest` (asserts the 7 `surface: "llm"` entries; the 7 `surface: "stt"` entries are n/a on Android by construction — STT is shared Rust core per ADR-0017 — and are skipped by surface) |
+diff --git a/test-fixtures/debug-provider-scenario-vectors.json b/test-fixtures/debug-provider-scenario-vectors.json
+new file mode 100644
+index 0000000..29be50a
+--- /dev/null
++++ b/test-fixtures/debug-provider-scenario-vectors.json
+@@ -0,0 +1,142 @@
++[
++  {
++    "id": "DEBUG-LLM-OK-001",
++    "surface": "llm",
++    "scenario": "ok",
++    "description": "The benign scenario -- a 200 with a well-formed OpenAI-compatible answer. PINS: that the debug provider's canned wire response reaches each twin's REAL response mapping and comes back out as the canned text, unchanged, on both sides (Rust llm::map_chat_response, Kotlin KlarvoApi.mapCleanupResponse). DOES NOT PIN: any network call (none happens), the request body (the debug provider builds none), token accounting beyond 'usage is accepted', or what a real provider would answer.",
++    "wire": { "kind": "canned", "status": 200, "body": "{\"choices\":[{\"message\":{\"content\":\"Debug provider canned answer.\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":0,\"completion_tokens\":0,\"total_tokens\":0}}" },
++    "rust": { "outcome": "ok", "text": "Debug provider canned answer." },
++    "kotlin": { "outcome": "ok", "text": "Debug provider canned answer." },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-LLM-EMPTY-001",
++    "surface": "llm",
++    "scenario": "empty",
++    "description": "A 200 whose choice carries an EMPTY content string -- a provider refusal or degenerate completion. This is the reproduction for drift row D2 / D-H19. PINS: the divergence itself. Rust rejects the answer (LlmError::ResponseFormat, non-retryable -> raw transcript, clipboard-only, cause card); Kotlin returns the empty string, which today is pasted into the focused field and stored as the dictation. DOES NOT PIN: what happens downstream of the mapping on either platform (the paste path, the history write) -- story 13-2 owns that; only the mapping's verdict is locked here.",
++    "wire": { "kind": "canned", "status": 200, "body": "{\"choices\":[{\"message\":{\"content\":\"\"},\"finish_reason\":\"stop\"}]}" },
++    "rust": { "outcome": "error", "error": "ResponseFormat", "message_contains": "Empty content in response" },
++    "kotlin": { "outcome": "ok", "text": "" },
++    "expected_divergence": "D2 / D-H19: Rust errors on an empty LLM answer, Kotlin returns \"\" and pastes it. Story 13-2 closes this."
++  },
++  {
++    "id": "DEBUG-LLM-TRUNCATED-001",
++    "surface": "llm",
++    "scenario": "truncated",
++    "description": "A 200 whose choice carries finish_reason == \"length\" -- the max_tokens cap was hit mid-sentence. This is the reproduction for drift row D3 / D-M16. PINS: the divergence. Rust detects it (LlmError::OutputTruncated); Kotlin never inspects finish_reason at all and returns the half sentence. DOES NOT PIN: the max_tokens value itself (that is TWIN-LLM-MAX-TOKENS-001 in twin-constants-vectors.json) or how often the cap is reached in practice.",
++    "wire": { "kind": "canned", "status": 200, "body": "{\"choices\":[{\"message\":{\"content\":\"Debug provider canned answer that was cut\"},\"finish_reason\":\"length\"}]}" },
++    "rust": { "outcome": "error", "error": "OutputTruncated" },
++    "kotlin": { "outcome": "ok", "text": "Debug provider canned answer that was cut" },
++    "expected_divergence": "D3 / D-M16: Rust maps finish_reason == \"length\" to OutputTruncated, Kotlin has no truncation detection and pastes the partial text. Story 13-2 closes this."
++  },
++  {
++    "id": "DEBUG-LLM-MALFORMED-001",
++    "surface": "llm",
++    "scenario": "malformed",
++    "description": "A 200 carrying a well-formed envelope with NO choice entry. PINS: both twins refuse the answer, each in its own shape -- Rust LlmError::ResponseFormat(\"No choices in response\"), Kotlin a JSONException out of getJSONObject(0). The Kotlin half is drift row D10 / D-M2's observable: on a single-call dictation (<400 bytes) that bare JSONException is not an IOException, so KlarvoOverlayService's cleanup-fallback ladder never runs and the dictation degrades straight to clipboard-only. IMPORTANT NUANCE, recorded here rather than reproduced: a body that fails to DESERIALIZE at all (no \"choices\" key, or not JSON) takes a different Rust path -- reqwest's response.json() yields a decode error that #[from] turns into LlmError::Request, which is RETRYABLE, so Desktop fires the provider ladder for that shape (audit D-M2's Desktop column). The debug provider deliberately does not use that shape: llm::map_chat_response parses with serde_json::from_str and would report ResponseFormat, which would misrepresent the live behaviour it exists to reproduce. DOES NOT PIN: retryability on either side, the fallback ladder's membership, or the Rust behaviour for an undecodable body.",
++    "wire": { "kind": "canned", "status": 200, "body": "{\"choices\":[]}" },
++    "rust": { "outcome": "error", "error": "ResponseFormat", "message_contains": "No choices in response" },
++    "kotlin": { "outcome": "throws", "throws": "JSONException" },
++    "expected_divergence": "D10 / D-M2 (Android half): Kotlin leaks a bare JSONException on the single-call path, so no cleanup fallback fires. Story 13-2 closes this."
++  },
++  {
++    "id": "DEBUG-LLM-HTTP429-001",
++    "surface": "llm",
++    "scenario": "http429",
++    "description": "A 429 with an OpenAI-shaped error body. PINS: both twins map it to their retryable-failure shape -- Rust LlmError::ApiError { status: 429 } (pipeline::is_retryable_llm_error -> true), Kotlin an IOException whose message carries the literal \"HTTP 429\" that KlarvoOverlayService.isRetryableCleanupFailure regex-matches. Running this scenario end to end therefore fires the PRODUCTION fallback ladder (deepseek -> openai -> openrouter) and makes a real call to the user's configured fallback provider -- intended, and the point of the scenario. DOES NOT PIN: the ladder's membership (Groq is never a cleanup fallback, Epic 12 FR2; `debug` is never a candidate either), nor that the fallback call succeeds.",
++    "wire": { "kind": "canned", "status": 429, "body": "{\"error\":{\"message\":\"Debug provider: simulated rate limit\"}}" },
++    "rust": { "outcome": "error", "error": "ApiError", "error_status": 429, "message_contains": "Debug provider: simulated rate limit" },
++    "kotlin": { "outcome": "throws", "throws": "IOException", "message_contains": "HTTP 429" },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-LLM-HTTP5XX-001",
++    "surface": "llm",
++    "scenario": "http5xx",
++    "description": "A 503 with an OpenAI-shaped error body -- the server-outage shape. PINS: the same contract as DEBUG-LLM-HTTP429-001 with a >= 500 status -- Rust LlmError::ApiError { status: 503 } (retryable), Kotlin an IOException carrying the literal \"HTTP 503\"; the production fallback ladder fires on both. DOES NOT PIN: any other 5xx code, or provider-specific retry-after handling (neither twin reads it).",
++    "wire": { "kind": "canned", "status": 503, "body": "{\"error\":{\"message\":\"Debug provider: simulated server error\"}}" },
++    "rust": { "outcome": "error", "error": "ApiError", "error_status": 503, "message_contains": "Debug provider: simulated server error" },
++    "kotlin": { "outcome": "throws", "throws": "IOException", "message_contains": "HTTP 503" },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-LLM-TRANSPORT-001",
++    "surface": "llm",
++    "scenario": "transport",
++    "description": "No response at all: the provider performs a REAL request to http://127.0.0.1:1/ (the loopback discard port), which cannot connect. PINS: a genuine transport error is produced through the real client on both twins -- Rust LlmError::Request (is_retryable_llm_error -> true), Kotlin an IOException whose message carries NO \"HTTP nnn\", so isRetryableCleanupFailure's regex finds no status and returns true. A synthetic transport error is impossible: reqwest::Error has no public constructor, and a new LlmError variant would touch every match over the enum plus both is_retryable_* predicates. Loopback only -- no byte leaves the device. DOES NOT PIN: the exact OS error text (\"Connection refused\" is platform-wording), the timeout behaviour, or that port 1 is free (nothing may bind it without root).",
++    "wire": { "kind": "loopback", "url": "http://127.0.0.1:1/" },
++    "rust": { "outcome": "error", "error": "Request" },
++    "kotlin": { "outcome": "throws", "throws": "IOException", "message_excludes_http_status": true },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-STT-OK-001",
++    "surface": "stt",
++    "scenario": "ok",
++    "description": "STT benign scenario -- a 200 verbose_json body with a transcript and no segments, which extract_verbose_text falls back to. PINS: the canned body reaches the real Rust mapping (stt::map_transcription_response) and returns the canned transcript. The Kotlin column is n/a BY CONSTRUCTION, not by oversight: ADR-0017 makes the STT request and its guards shared Rust core, consumed on Android through GroqSttBridge.nativeTranscribe, so there is no Kotlin STT mapping to assert against. DOES NOT PIN: the segment-confidence filter (its own tests live in stt/mod.rs), the JNI sentinel encoding, or Android runtime behaviour.",
++    "wire": { "kind": "canned", "status": 200, "body": "{\"text\":\"Debug provider canned transcript.\",\"segments\":[]}" },
++    "rust": { "outcome": "ok", "text": "Debug provider canned transcript." },
++    "kotlin": { "outcome": "n/a", "note": "STT is shared Rust core (ADR-0017); Android consumes this same provider over JNI." },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-STT-EMPTY-001",
++    "surface": "stt",
++    "scenario": "empty",
++    "description": "A 200 whose transcript is empty -- the reproduction for drift row D9 / D-M5 (STT returns empty / unparseable text). PINS: Rust maps it to SttError::ResponseFormat, which pipeline::is_retryable_stt_error treats as NON-retryable, so the desktop pipeline reports at once instead of retrying. DOES NOT PIN: Android's retry budget (D-M6: three attempts with 2s/5s backoff live in KlarvoOverlayService.transcribeWithRetry, above the shared core and unchanged by this story), the local-Whisper safety net, or the pending-WAV terminal path. NOTE for the reproduction: pipeline::try_local_whisper_fallback can silently rescue a debug STT failure on a machine that has a local model downloaded -- remove or rename the model to observe the terminal path.",
++    "wire": { "kind": "canned", "status": 200, "body": "{\"text\":\"\",\"segments\":[]}" },
++    "rust": { "outcome": "error", "error": "ResponseFormat", "message_contains": "API returned empty text after segment confidence filter" },
++    "kotlin": { "outcome": "n/a", "note": "STT is shared Rust core (ADR-0017)." },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-STT-MALFORMED-001",
++    "surface": "stt",
++    "scenario": "malformed",
++    "description": "A 200 whose body deserializes as NEITHER the verbose_json nor the plain json shape. PINS: Rust reports SttError::ResponseFormat (non-retryable). Unlike the LLM twin, the STT mapping already parsed with serde_json::from_slice before this story, so the extracted map_transcription_response is behaviour-identical for an undecodable body and a truly malformed body can be used here. DOES NOT PIN: the exact serde error text (it is appended to the message and varies by serde version).",
++    "wire": { "kind": "canned", "status": 200, "body": "{\"unexpected\":\"debug provider malformed body\"}" },
++    "rust": { "outcome": "error", "error": "ResponseFormat", "message_contains": "Cannot parse STT response" },
++    "kotlin": { "outcome": "n/a", "note": "STT is shared Rust core (ADR-0017)." },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-STT-HTTP429-001",
++    "surface": "stt",
++    "scenario": "http429",
++    "description": "A 429 with an OpenAI-shaped error body. PINS: Rust SttError::ApiError { status: 429 }, which is_retryable_stt_error treats as retryable -- the shape D9's retry-budget half needs to be observable on device. On Android the same error arrives as the __ERROR_API:HTTP 429 sentinel that transcribeWithRetry already classifies. DOES NOT PIN: Android's 429-vs-5xx classification gap (audit D-M7), which lives in Kotlin and is out of this story's scope.",
++    "wire": { "kind": "canned", "status": 429, "body": "{\"error\":{\"message\":\"Debug provider: simulated rate limit\"}}" },
++    "rust": { "outcome": "error", "error": "ApiError", "error_status": 429, "message_contains": "Debug provider: simulated rate limit" },
++    "kotlin": { "outcome": "n/a", "note": "STT is shared Rust core (ADR-0017)." },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-STT-HTTP5XX-001",
++    "surface": "stt",
++    "scenario": "http5xx",
++    "description": "A 503 with an OpenAI-shaped error body -- the server-outage shape. PINS: the same contract as DEBUG-STT-HTTP429-001 with a >= 500 status -- Rust SttError::ApiError { status: 503 }, which is_retryable_stt_error treats as retryable. DOES NOT PIN: any other 5xx code.",
++    "wire": { "kind": "canned", "status": 503, "body": "{\"error\":{\"message\":\"Debug provider: simulated server error\"}}" },
++    "rust": { "outcome": "error", "error": "ApiError", "error_status": 503, "message_contains": "Debug provider: simulated server error" },
++    "kotlin": { "outcome": "n/a", "note": "STT is shared Rust core (ADR-0017)." },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-STT-TRANSPORT-001",
++    "surface": "stt",
++    "scenario": "transport",
++    "description": "No response at all: a REAL request to http://127.0.0.1:1/ which cannot connect. PINS: Rust SttError::Request (retryable), produced through the real reqwest client rather than synthesised. Loopback only -- no byte leaves the device. DOES NOT PIN: the exact OS error text or the timeout behaviour.",
++    "wire": { "kind": "loopback", "url": "http://127.0.0.1:1/" },
++    "rust": { "outcome": "error", "error": "Request" },
++    "kotlin": { "outcome": "n/a", "note": "STT is shared Rust core (ADR-0017)." },
++    "expected_divergence": null
++  },
++  {
++    "id": "DEBUG-STT-NO-TRUNCATED-001",
++    "surface": "stt",
++    "scenario": "truncated",
++    "description": "An EXPECTED-ABSENCE vector, not a behaviour vector: `truncated` is deliberately NOT offered on the STT side, because SttError carries no truncation variant and there is nothing for a truncated transcript to map to. PINS: the STT scenario picker offers the LLM set MINUS this one, and stt::debug_stt_canned_wire resolves the string like `ok` (fail-soft) rather than inventing an outcome. DOES NOT PIN: any user-visible behaviour -- the value is unreachable through the UI.",
++    "wire": { "kind": "not_offered" },
++    "rust": { "outcome": "ok", "text": "Debug provider canned transcript." },
++    "kotlin": { "outcome": "n/a", "note": "STT is shared Rust core (ADR-0017)." },
++    "expected_divergence": null
++  }
++]

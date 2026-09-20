@@ -1,0 +1,42 @@
+{
+  "inversionRawSelect": {
+    "backgroundColor": "rgb(15, 17, 18)",
+    "borderTopColor": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+    "borderRightColor": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+    "borderBottomColor": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+    "borderLeftColor": "oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+    "borderTopLeftRadius": "8px",
+    "paddingTop": "8px",
+    "paddingRight": "10px",
+    "paddingBottom": "8px",
+    "paddingLeft": "10px",
+    "fontSize": "12px",
+    "color": "rgb(236, 238, 239)",
+    "boxShadow": "none"
+  },
+  "inversionNewTrigger": {
+    "backgroundColor": "rgb(27, 30, 32)",
+    "borderTopColor": "rgb(40, 44, 47)",
+    "borderRightColor": "rgb(40, 44, 47)",
+    "borderBottomColor": "rgb(40, 44, 47)",
+    "borderLeftColor": "rgb(40, 44, 47)",
+    "borderTopLeftRadius": "8px",
+    "paddingTop": "6px",
+    "paddingRight": "10px",
+    "paddingBottom": "6px",
+    "paddingLeft": "10px",
+    "fontSize": "12px",
+    "color": "rgb(236, 238, 239)",
+    "boxShadow": "rgba(41, 199, 172, 0.28) 0px 0px 0px 3px"
+  },
+  "differences": [
+    "backgroundColor: rgb(27, 30, 32) != rgb(15, 17, 18)",
+    "borderTopColor: rgb(40, 44, 47) != oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+    "borderRightColor: rgb(40, 44, 47) != oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+    "borderBottomColor: rgb(40, 44, 47) != oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+    "borderLeftColor: rgb(40, 44, 47) != oklab(0.290349 -0.00391997 -0.00683959 / 0.6)",
+    "paddingTop: 6px != 8px",
+    "paddingBottom: 6px != 8px",
+    "boxShadow: rgba(41, 199, 172, 0.28) 0px 0px 0px 3px != none"
+  ]
+}
