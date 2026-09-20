@@ -8,7 +8,7 @@ gatedBy: "Epic 3 test net (behavior-preserving refactor)"
 buildsOn: ["3.1", "3.2", "3.3", "3.4"]
 inputDocuments:
   - _bmad-output/planning-artifacts/epics.md
-  - _bmad-output/implementation-artifacts/4-1-isolate-the-load-config-core-into-a-tested-migrate-and-normalize.md
+  - _bmad-output/implementation-artifacts/4-1-isolate-the-load-config-core-into-migrate-and-normalize.md
   - _bmad-output/implementation-artifacts/deferred-work.md
 ---
 
@@ -384,7 +384,7 @@ Before closing, run these specific existing tests and confirm green:
 ### References
 
 - Epic 4 / DEPTH-pipeline finding: `_bmad-output/planning-artifacts/epics.md` (§Epic 4, Story 4.2)
-- Story 4.1 (equivalent config refactor, same behavior-preserving class): `_bmad-output/implementation-artifacts/4-1-isolate-the-load-config-core-into-a-tested-migrate-and-normalize.md`
+- Story 4.1 (equivalent config refactor, same behavior-preserving class): `_bmad-output/implementation-artifacts/4-1-isolate-the-load-config-core-into-migrate-and-normalize.md`
 - Story 4.3 (save_config_locked choke-point precedent): `_bmad-output/implementation-artifacts/4-3-single-sanctioned-config-write-path-save-config-locked.md`
 - Deferred work (pre-existing DEPTH-pipeline context): `_bmad-output/implementation-artifacts/deferred-work.md` (§"From Task 2.2")
 - Epic-3 retro AI-1 (inversion-check at writing time): `_bmad-output/implementation-artifacts/epic-3-retro-2026-06-02.md`

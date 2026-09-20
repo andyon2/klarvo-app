@@ -11,7 +11,7 @@ inputDocuments:
   - docs/adr/0015-state-file-write-convention.md
   - _bmad-output/implementation-artifacts/4-3-single-sanctioned-config-write-path-save-config-locked.md
   - _bmad-output/implementation-artifacts/1-3-single-writer-serialization-for-state-file-saves.md
-  - _bmad-output/implementation-artifacts/1-4-hardened-config-migration-pre-migration-backup-error-propagation.md
+  - _bmad-output/implementation-artifacts/1-4-hardened-config-migration-backup-and-error-propagation.md
   - _bmad-output/implementation-artifacts/deferred-work.md
 ---
 
@@ -308,7 +308,7 @@ Before closing the story, verify:
 - Epic 4 / DEPTH-config finding: `_bmad-output/planning-artifacts/epics.md` (§Epic 4, Story 4.1)
 - ADR-0015 §5 (structural decoupling gate): `docs/adr/0015-state-file-write-convention.md`
 - Story 4.3 (save_config_locked + pub(crate) demotion): `_bmad-output/implementation-artifacts/4-3-single-sanctioned-config-write-path-save-config-locked.md`
-- Story 1.4 (backup_pre_migration_config + error propagation): `_bmad-output/implementation-artifacts/1-4-hardened-config-migration-pre-migration-backup-error-propagation.md`
+- Story 1.4 (backup_pre_migration_config + error propagation): `_bmad-output/implementation-artifacts/1-4-hardened-config-migration-backup-and-error-propagation.md`
 - Story 1.3 deferred work / D1 note: `_bmad-output/implementation-artifacts/deferred-work.md` (§"Deferred from: code review of 1-3")
 - Epic-3 retro AI-1 (inversion-check at writing time): `_bmad-output/implementation-artifacts/epic-3-retro-2026-06-02.md`
 - Current function: `src-tauri/src/config/mod.rs:1111-1422` (`load_config_reporting`)

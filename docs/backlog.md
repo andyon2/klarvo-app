@@ -230,7 +230,7 @@ native (M), D-H11 OpenAI STT (S–M). Candidates without release: C13 statistics
 
 **CUT 2026-09-17 (Andi: "J zu allem"):** free tier = **DeepSeek + Groq** on both platforms (G1a-DeepSeek; Android widens
 from Groq-only). Cut released as proposed → **Epic 13 "Parity-Linie über Audit #2"**, epic file
-`_bmad-output/planning-artifacts/epics-parity-line-audit-2.md`, nine stories 13-1 … 13-9 in `sprint-status.yaml` (all
+`_bmad-output/planning-artifacts/epics.md` Part 9 (until 2026-09-20: `epics-parity-line-audit-2.md`), nine stories 13-1 … 13-9 in `sprint-status.yaml` (all
 `backlog`): 13-1 debug test provider (H+ enabler) · 13-2 sweep guards + silent loss · 13-3 sweep Android gates + config
 hygiene · 13-4 Desktop license gate + one free tier · 13-5 sweep license rows + sync · 13-6 Desktop banking guard ·
 13-7 Android profiles + profile language · 13-8 native preview blur · 13-9 OpenAI STT via Rust. **The build of 13-1

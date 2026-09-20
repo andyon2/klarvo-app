@@ -14,7 +14,7 @@ inputDocuments:
   - _bmad-output/implementation-artifacts/5-1-backend-pause-triggered-delta-flush-for-toggle-hold.md
   - _bmad-output/implementation-artifacts/5-3-settings-opt-in-preview-toggle-and-preview-pause-slider.md
   - _bmad-output/implementation-artifacts/6-6-preview-box-appearance-customization.md
-  - _bmad-output/implementation-artifacts/6-3-font-size-axis-preview-font-size-config-settings-picker-k-scaling.md
+  - _bmad-output/implementation-artifacts/6-3-font-size-axis-config-settings-picker-k-scaling.md
   - _bmad-output/project-context.md
 ---
 
@@ -448,7 +448,7 @@ sub-1s latency class end-to-end with the new repeatable path.
 - `_bmad-output/implementation-artifacts/6-6-preview-box-appearance-customization.md` — themes/color
   pickers/font-family; "separate-window reactive read" lesson (read config fresh at show-time, not
   cached) applies directly to `ListeningPanelView` here.
-- `_bmad-output/implementation-artifacts/6-3-font-size-axis-preview-font-size-config-settings-picker-k-scaling.md`
+- `_bmad-output/implementation-artifacts/6-3-font-size-axis-config-settings-picker-k-scaling.md`
   — `previewFontSize` field + desktop's `FONT_PX_MAP` (`small`:11, `medium`:13, `large`:15).
 - `src-tauri/src/config/mod.rs:730-790,1001-1032` — all 11 preview `AppConfig` fields + defaults
   [Source: src-tauri/src/config/mod.rs].
