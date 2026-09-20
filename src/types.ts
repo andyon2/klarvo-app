@@ -202,6 +202,14 @@ export interface AdvancedSettings {
   /** When true, the Advanced UI surfaces the raw audio thresholds.
    *  UI-visibility flag only. */
   expertMode: boolean;
+  /** Story 13-1: which canned wire response the `debug` LLM cleanup provider
+   *  returns. One of `ok` (default), `empty`, `truncated`, `malformed`,
+   *  `http429`, `http5xx`, `transport`. Inert unless `llmProvider === "debug"`. */
+  debugLlmScenario: string;
+  /** Story 13-1: same set as `debugLlmScenario` minus `truncated` (the Rust
+   *  `SttError` has no truncation variant). Inert unless
+   *  `sttProvider === "debug"`. */
+  debugSttScenario: string;
 }
 
 // Style display metadata.

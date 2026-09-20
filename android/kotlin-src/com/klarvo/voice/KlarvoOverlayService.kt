@@ -1766,7 +1766,9 @@ class KlarvoOverlayService : Service() {
                     "whisper-large-v3-turbo",
                     config.dictionaryTerms,
                     config.customPrompt,
-                    null // preview chunks are display-only -- no pending-WAV backup needed
+                    null, // preview chunks are display-only -- no pending-WAV backup needed
+                    config.sttProvider,
+                    config.debugSttScenario
                 )
                 if (text.isBlank()) return@execute
                 if (GroqSttBridge.nativeIsHallucination(text)) {
@@ -2075,7 +2077,9 @@ class KlarvoOverlayService : Service() {
                         "whisper-large-v3-turbo", // H9: model comes from Rust config (sttModel not yet in Android AppConfig; default parity)
                         config.dictionaryTerms,
                         config.customPrompt,
-                        pendingWavFile
+                        pendingWavFile,
+                        config.sttProvider,
+                        config.debugSttScenario
                     )
                 } catch (sttEx: IOException) {
                     // AC3: automatic local-Whisper safety net after Groq's retries are
@@ -2723,7 +2727,9 @@ class KlarvoOverlayService : Service() {
         sttModel: String,
         dictionaryTerms: String,
         customPrompt: String,
-        pendingWavFile: File?
+        pendingWavFile: File?,
+        sttProvider: String,
+        debugSttScenario: String
     ): String {
         val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
         val retryDelaysMs = listOf(2_000L, 5_000L)
@@ -2737,7 +2743,14 @@ class KlarvoOverlayService : Service() {
                 dictionaryTerms = dictionaryTerms,
                 customPrompt = customPrompt,
                 sttModel = sttModel,
-                temperature = 0.0f
+                temperature = 0.0f,
+                // Story 13-1: both values are carried through UNINSPECTED. The
+                // Rust core decides whether "debug" means anything -- ADR-0017
+                // keeps every STT request and guard decision out of Kotlin, and
+                // a canned transcript forged here would produce the __ERROR_*
+                // sentinels instead of the real code emitting them.
+                sttProvider = sttProvider,
+                debugSttScenario = debugSttScenario
             )
 
             when {

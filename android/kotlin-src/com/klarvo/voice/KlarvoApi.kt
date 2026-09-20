@@ -29,7 +29,12 @@ data class LlmProviderInfo(
     // must exclude THIS name (not the configured one) when asking for a
     // further fallback after a runtime failure, or they can end up retrying
     // the same substitute provider that just failed.
-    val providerName: String
+    val providerName: String,
+    // Story 13-1: which canned wire response the DEBUG test provider returns.
+    // Empty for every real provider -- only [KlarvoApi.cleanup]'s debug branch
+    // reads it, and only when providerName == "debug". Appended last because
+    // this is a positionally-constructed data class.
+    val debugScenario: String = ""
 )
 
 /**
@@ -82,6 +87,140 @@ object KlarvoApi {
     const val DEFAULT_MODEL_DEEPSEEK = "deepseek-chat"
     const val DEFAULT_MODEL_OPENAI = "gpt-4o-mini"
     const val DEFAULT_MODEL_GROQ = "llama-3.3-70b-versatile"
+
+    // --- Debug test provider (story 13-1) ---
+    //
+    // The `llmProvider` / `sttProvider` config value that selects the debug
+    // provider. Rust↔Kotlin TWIN of `llm::DEBUG_PROVIDER_NAME`. It is NEVER a
+    // default, NEVER a member of [cleanupFallbackCandidates], and never offered
+    // by the normal provider picker; it exists so drift rows D2/D-H19,
+    // D3/D-M16, D9 and D10/D-M2 are reproducible on a real device without
+    // standing up a fake API.
+    //
+    // Reachability note (recorded, not fixed here): [readConfig]'s license gate
+    // rewrites `llmProvider` to "groq" when the device is neither licensed nor
+    // in trial, so the debug provider only resolves on a licensed/trial device.
+    // Story 13-4 owns that gate.
+    internal const val DEBUG_PROVIDER_NAME = "debug"
+
+    // Model ID reported for a debug run, so `klarvo.log` cannot name
+    // `deepseek-chat` for a run that never touched DeepSeek. Twin of
+    // `llm::DebugCleanup::DEFAULT_MODEL`.
+    internal const val DEBUG_MODEL = "debug"
+
+    // The benign scenario. Twin of Rust's `default_debug_scenario()`.
+    internal const val DEBUG_SCENARIO_DEFAULT = "ok"
+
+    // Endpoint the `transport` scenario talks to: the loopback discard port.
+    // Nothing listens there, so the request fails to connect and yields a
+    // GENUINE IOException through the real client. Loopback only -- no byte
+    // leaves the device. Twin of `llm::DEBUG_TRANSPORT_URL`.
+    internal const val DEBUG_TRANSPORT_URL = "http://127.0.0.1:1/"
+
+    /**
+     * The canned `(status, body)` pair for a debug LLM scenario, or `null` for
+     * `transport` ("no response at all" -- the caller performs the loopback
+     * request described on [DEBUG_TRANSPORT_URL] instead).
+     *
+     * An unrecognised scenario resolves like `ok`, matching the Rust twin's
+     * fail-soft `_ =>` arm.
+     *
+     * Rust↔Kotlin TWIN of `llm::debug_llm_canned_wire`. The bodies must stay
+     * byte-identical: they are pinned on both sides by
+     * `test-fixtures/debug-provider-scenario-vectors.json`, because the whole
+     * point of the debug provider is that the SAME wire bytes go through each
+     * twin's own mapping and the divergence stays visible.
+     */
+    internal fun debugCannedWire(scenario: String): Pair<Int, String>? = when (scenario) {
+        "empty" -> 200 to """{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}"""
+        "truncated" -> 200 to """{"choices":[{"message":{"content":"Debug provider canned answer that was cut"},"finish_reason":"length"}]}"""
+        // A body that genuinely does NOT parse: a JSON envelope that ends
+        // mid-string, the shape a cut-off or proxy-garbled provider answer has.
+        // Drift row D10 / D-M2. JSONObject(body) throws a bare JSONException,
+        // which is NOT an IOException, so the single-call fallback ladder in
+        // KlarvoOverlayService never runs; on the chunked path
+        // collectChunkResults rewraps it into an IOException whose message
+        // carries no "HTTP nnn", so isRetryableCleanupFailure finds no status
+        // and the ladder DOES fire there. The body deliberately contains no
+        // "HTTP nnn" substring so that regex cannot match by accident.
+        "malformed" -> 200 to """{"choices":[{"message":{"content":"Debug provider truncated stream"""
+        "http429" -> 429 to """{"error":{"message":"Debug provider: simulated rate limit"}}"""
+        "http5xx" -> 503 to """{"error":{"message":"Debug provider: simulated server error"}}"""
+        "transport" -> null
+        // "ok" and any unrecognised value
+        else -> 200 to """{"choices":[{"message":{"content":"Debug provider canned answer."},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}"""
+    }
+
+    /**
+     * The response→result half of [cleanup], extracted verbatim (story 13-1,
+     * behaviour-preserving) so a plain-JUnit test can drive the REAL mapping and
+     * so [cleanup]'s debug branch can feed it a canned `(status, body)` pair.
+     *
+     * This is the mapping story 13-2 is about, and it is deliberately NOT the
+     * same as the Rust twin's:
+     * - an empty `content` is returned as `""` (Rust: `ResponseFormat`) -- drift
+     *   row D2 / D-H19,
+     * - `finish_reason` is never inspected, so a truncated answer is returned as
+     *   the half sentence (Rust: `OutputTruncated`) -- drift row D3 / D-M16,
+     * - an unparseable body throws a bare [org.json.JSONException], which is NOT
+     *   an IOException, so the caller's cleanup-fallback ladder never runs on
+     *   the single-call path -- drift row D10 / D-M2's Android column. (On the
+     *   chunked path [collectChunkResults] rewraps it into a status-less
+     *   IOException, and there the ladder does fire; both halves are pinned by
+     *   `DebugProviderScenarioTest`.) The Rust twin's live path lets
+     *   `response.json()` fail, which becomes the RETRYABLE `LlmError::Request`
+     *   -- that is D-M2's Desktop column, and why the two platforms differ here.
+     *
+     * Those three are recorded as expected divergences in
+     * `test-fixtures/debug-provider-scenario-vectors.json`. Do not "fix" them
+     * here: story 13-2 owns the fix and needs them observable first.
+     *
+     * @throws IOException on a non-200 status (message carries `HTTP <code>`,
+     *   which `KlarvoOverlayService.isRetryableCleanupFailure` regex-matches).
+     * @throws org.json.JSONException on a body it cannot parse.
+     */
+    internal fun mapCleanupResponse(responseCode: Int, body: String, model: String): String {
+        if (responseCode != 200) {
+            throw IOException("LLM cleanup failed ($model): HTTP $responseCode -- $body")
+        }
+        val json = JSONObject(body)
+        val rawContent = json
+            .getJSONArray("choices")
+            .getJSONObject(0)
+            .getJSONObject("message")
+            .getString("content")
+            .trim()
+        return sanitizeLlmOutput(rawContent)
+    }
+
+    /**
+     * The `transport` scenario: a REAL request to the loopback discard port.
+     *
+     * A synthetic transport failure would have to be a hand-thrown exception,
+     * which proves nothing about the client; this produces the genuine article
+     * through the same `HttpURLConnection` path production uses. The resulting
+     * message carries no `HTTP <code>`, so
+     * `KlarvoOverlayService.isRetryableCleanupFailure` finds no status and
+     * treats it as retryable -- the twin of `LlmError::Request`.
+     */
+    private fun debugTransportRequest(model: String): String {
+        val conn = URL(DEBUG_TRANSPORT_URL).openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 2_000
+        conn.readTimeout = 2_000
+        conn.doOutput = true
+        // Nothing listens on the discard port, so this already throws.
+        conn.outputStream.use { it.write(ByteArray(0)) }
+        // Unreachable in practice. If something DID answer, map it through the
+        // same path rather than inventing an outcome.
+        val code = conn.responseCode
+        val responseBody = if (code == 200) {
+            conn.inputStream.bufferedReader().readText()
+        } else {
+            conn.errorStream?.bufferedReader()?.readText() ?: "unknown error"
+        }
+        return mapCleanupResponse(code, responseBody, model)
+    }
 
     /**
      * Resolves the effective cleanup model from a raw `advanced.llmModel*`
@@ -223,7 +362,15 @@ object KlarvoApi {
         // provider (drift row H5) — llmModelAnthropic is Desktop-only.
         val llmModelDeepseek: String = "",
         val llmModelOpenai: String = "",
-        val llmModelGroq: String = ""
+        val llmModelGroq: String = "",
+        // Story 13-1: "advanced.debugLlmScenario" / "advanced.debugSttScenario".
+        // Inert unless the matching provider is "debug". Appended at the tail on
+        // purpose: [readConfig] builds Config(...) POSITIONALLY, so new fields go
+        // last. The STT value is NOT consumed by any Kotlin logic -- it is passed
+        // straight through to GroqSttBridge.nativeTranscribe, because STT is
+        // shared Rust core (ADR-0017) and Kotlin only carries the config value.
+        val debugLlmScenario: String = DEBUG_SCENARIO_DEFAULT,
+        val debugSttScenario: String = DEBUG_SCENARIO_DEFAULT
     )
 
     /**
@@ -259,6 +406,22 @@ object KlarvoApi {
                 apiKey = config.openrouterApiKey,
                 providerName = "openrouter"
             ) else null
+            // Story 13-1: the debug test provider. Needs no API key, so it is
+            // resolved UNCONDITIONALLY -- a key check here would drop through to
+            // the fallback ladder and silently turn a debug run into a real
+            // DeepSeek call. The `url` stays empty on purpose: [cleanup] returns
+            // before it would build a URL from it.
+            //
+            // Without this explicit arm the `else ->` below maps "debug" to
+            // DeepSeek, which is exactly the silent substitution this story
+            // exists to avoid.
+            DEBUG_PROVIDER_NAME -> LlmProviderInfo(
+                url    = "",
+                model  = DEBUG_MODEL,
+                apiKey = "",
+                providerName = DEBUG_PROVIDER_NAME,
+                debugScenario = config.debugLlmScenario
+            )
             else -> if (config.deepseekApiKey.isNotBlank()) LlmProviderInfo(
                 url    = DEEPSEEK_CHAT_URL,
                 model  = effectiveCleanupModel(config.llmModelDeepseek, DEFAULT_MODEL_DEEPSEEK),
@@ -431,6 +594,32 @@ object KlarvoApi {
     }
 
     /**
+     * Pure `advanced.debugLlmScenario` / `advanced.debugSttScenario` parse
+     * (story 13-1). Same shape and the same reason as [parseLlmModelOverride]
+     * and [parseMinRecordingMs]: a JVM unit test drives the REAL `org.json` path
+     * against a real `config.json` string instead of asserting a hand-built
+     * [Config] against itself. A misspelled key here would make the whole debug
+     * mechanism silently inert while the UI reported green.
+     *
+     * `key` is the camelCase key under `advanced` (Rust serializes
+     * `AdvancedSettings` with `rename_all = "camelCase"`). An absent `advanced`
+     * object, an absent key, a non-String value and a blank string all yield
+     * [DEBUG_SCENARIO_DEFAULT].
+     *
+     * Blank→default is the Kotlin end of a deliberate agreement rather than a
+     * literal mirror: Rust's serde `default` only fires for an ABSENT key, so a
+     * stored `""` stays `""` there — and `llm::debug_llm_canned_wire("")` falls
+     * into the same fail-soft `_ =>` arm as `"ok"`. Both platforms therefore
+     * behave as `ok` for a blank value; only the intermediate representation
+     * differs.
+     */
+    internal fun parseDebugScenario(json: JSONObject, key: String): String {
+        val advanced = json.optJSONObject("advanced") ?: return DEBUG_SCENARIO_DEFAULT
+        val value = advanced.opt(key) as? String ?: return DEBUG_SCENARIO_DEFAULT
+        return value.ifBlank { DEBUG_SCENARIO_DEFAULT }
+    }
+
+    /**
      * Reads config.json from the app's data directory.
      * Tauri's app_data_dir() resolves to dataDir, not filesDir.
      * Returns null if the file doesn't exist or keys are missing.
@@ -495,6 +684,10 @@ object KlarvoApi {
             val llmModelDeepseek = parseLlmModelOverride(json, "llmModelDeepseek")
             val llmModelOpenai = parseLlmModelOverride(json, "llmModelOpenai")
             val llmModelGroq = parseLlmModelOverride(json, "llmModelGroq")
+            // Story 13-1: which canned answer the debug providers return. Inert
+            // unless llmProvider / sttProvider is "debug".
+            val debugLlmScenario = parseDebugScenario(json, "debugLlmScenario")
+            val debugSttScenario = parseDebugScenario(json, "debugSttScenario")
             // Dictionary terms live in dictionary.json, NOT in config.json.
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
@@ -592,7 +785,8 @@ object KlarvoApi {
                 previewTextColor, previewBgColor, previewBgBlur,
                 previewBorderColor, previewBorderWidth, previewBorderRadius,
                 previewFontFamily, previewFontSize, previewLineSpacing,
-                llmModelDeepseek, llmModelOpenai, llmModelGroq
+                llmModelDeepseek, llmModelOpenai, llmModelGroq,
+                debugLlmScenario, debugSttScenario
             )
         } catch (e: Exception) {
             null
@@ -1074,6 +1268,21 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
 
         val systemPrompt = appendPromptExtensions(basePrompt, dictionaryTerms, customInstructions)
 
+        // Story 13-1: the DEBUG test provider short-circuits here, BEFORE any URL
+        // is built, and feeds a canned (status, body) pair through the very same
+        // [mapCleanupResponse] the real providers use below. Injecting at the
+        // wire rather than at the return value is the whole point: the defect
+        // story 13-2 fixes lives in the mapping, so a pre-baked result would
+        // bypass the code under test. The prompt above is built and discarded --
+        // the scenario alone decides the answer, so a reproduction is
+        // deterministic regardless of what was dictated.
+        if (provider.providerName == DEBUG_PROVIDER_NAME) {
+            KlarvoLogger.i(TAG, "[debug-provider] LLM cleanup scenario=${provider.debugScenario}")
+            val wire = debugCannedWire(provider.debugScenario)
+                ?: return debugTransportRequest(provider.model)
+            return mapCleanupResponse(wire.first, wire.second, provider.model)
+        }
+
         val url = URL(provider.url)
         val conn = url.openConnection() as HttpURLConnection
 
@@ -1108,21 +1317,14 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
         val responseCode = conn.responseCode
         if (responseCode != 200) {
             val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "unknown error"
-            throw IOException("LLM cleanup failed (${provider.model}): HTTP $responseCode -- $errorBody")
+            return mapCleanupResponse(responseCode, errorBody, provider.model)
         }
 
         val responseText = conn.inputStream.bufferedReader().readText()
-        val json = JSONObject(responseText)
         // Note: conn.disconnect() intentionally omitted -- HttpURLConnection reuses
         // the TCP+TLS connection via Keep-Alive pooling when disconnect() is not called.
         // Calling disconnect() forces a new TCP+TLS handshake on every request (+200-500ms).
-        val rawContent = json
-            .getJSONArray("choices")
-            .getJSONObject(0)
-            .getJSONObject("message")
-            .getString("content")
-            .trim()
-        return sanitizeLlmOutput(rawContent)
+        return mapCleanupResponse(responseCode, responseText, provider.model)
     }
 
     // --- Chunked cleanup ---

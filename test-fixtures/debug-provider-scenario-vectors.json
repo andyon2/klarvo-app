@@ -1,0 +1,341 @@
+[
+  {
+    "id": "DEBUG-LLM-OK-001",
+    "surface": "llm",
+    "scenario": "ok",
+    "description": "The benign scenario -- a 200 with a well-formed OpenAI-compatible answer. PINS: that the debug provider's canned wire response reaches each twin's REAL response mapping and comes back out as the canned text, unchanged, on both sides (Rust llm::map_chat_response, Kotlin KlarvoApi.mapCleanupResponse). DOES NOT PIN: any network call (none happens), the request body (the debug provider builds none), token accounting beyond 'usage is accepted', or what a real provider would answer.",
+    "wire": {
+      "kind": "canned",
+      "status": 200,
+      "body": "{\"choices\":[{\"message\":{\"content\":\"Debug provider canned answer.\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":0,\"completion_tokens\":0,\"total_tokens\":0}}"
+    },
+    "rust": {
+      "outcome": "ok",
+      "text": "Debug provider canned answer."
+    },
+    "kotlin": {
+      "outcome": "ok",
+      "text": "Debug provider canned answer."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-LLM-EMPTY-001",
+    "surface": "llm",
+    "scenario": "empty",
+    "description": "A 200 whose choice carries an EMPTY content string -- a provider refusal or degenerate completion. This is the reproduction for drift row D2 / D-H19. PINS: the divergence itself. Rust rejects the answer (LlmError::ResponseFormat, non-retryable -> raw transcript, clipboard-only, cause card); Kotlin returns the empty string, which today is pasted into the focused field and stored as the dictation. DOES NOT PIN: what happens downstream of the mapping on either platform (the paste path, the history write) -- story 13-2 owns that; only the mapping's verdict is locked here.",
+    "wire": {
+      "kind": "canned",
+      "status": 200,
+      "body": "{\"choices\":[{\"message\":{\"content\":\"\"},\"finish_reason\":\"stop\"}]}"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "ResponseFormat",
+      "message_contains": "Empty content in response"
+    },
+    "kotlin": {
+      "outcome": "ok",
+      "text": ""
+    },
+    "expected_divergence": "D2 / D-H19: Rust errors on an empty LLM answer, Kotlin returns \"\" and pastes it. Story 13-2 closes this."
+  },
+  {
+    "id": "DEBUG-LLM-TRUNCATED-001",
+    "surface": "llm",
+    "scenario": "truncated",
+    "description": "A 200 whose choice carries finish_reason == \"length\" -- the max_tokens cap was hit mid-sentence. This is the reproduction for drift row D3 / D-M16. PINS: the divergence. Rust detects it (LlmError::OutputTruncated); Kotlin never inspects finish_reason at all and returns the half sentence. DOES NOT PIN: the max_tokens value itself (that is TWIN-LLM-MAX-TOKENS-001 in twin-constants-vectors.json) or how often the cap is reached in practice.",
+    "wire": {
+      "kind": "canned",
+      "status": 200,
+      "body": "{\"choices\":[{\"message\":{\"content\":\"Debug provider canned answer that was cut\"},\"finish_reason\":\"length\"}]}"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "OutputTruncated"
+    },
+    "kotlin": {
+      "outcome": "ok",
+      "text": "Debug provider canned answer that was cut"
+    },
+    "expected_divergence": "D3 / D-M16: Rust maps finish_reason == \"length\" to OutputTruncated, Kotlin has no truncation detection and pastes the partial text. Story 13-2 closes this."
+  },
+  {
+    "id": "DEBUG-LLM-MALFORMED-001",
+    "surface": "llm",
+    "scenario": "malformed",
+    "description": "A 200 carrying a body that genuinely does NOT deserialize: a JSON envelope that ends mid-string, the shape a cut-off or proxy-garbled provider answer has. This is the reproduction for drift row D10 / D-M2, and it reproduces the MECHANISM, not a look-alike. PINS: both halves of that row. Rust -- reqwest's response.json() fails to decode, the error #[from]-converts to LlmError::Request, pipeline::is_retryable_llm_error says TRUE and the production fallback ladder fires (D-M2's Desktop column). Kotlin -- JSONObject(body) throws a bare org.json.JSONException, which is NOT an IOException, so KlarvoOverlayService's single-call cleanup ladder never runs and the dictation degrades straight to clipboard-only (D-M2's Android column); on the CHUNKED path (text >= CHUNK_THRESHOLD 400 bytes) KlarvoApi.collectChunkResults rewraps the same JSONException into an IOException whose message carries no \"HTTP nnn\", so isRetryableCleanupFailure finds no status and the ladder DOES fire there. The body deliberately contains no \"HTTP nnn\" substring, so that regex cannot match by accident. DOES NOT PIN: the fallback ladder's membership (Groq is never a cleanup fallback, Epic 12 FR2; `debug` is never a candidate either), whether the fallback call succeeds, the exact reqwest/org.json error wording beyond the substring asserted here, or the STT side -- STT parses with serde_json::from_slice and is NON-retryable for the same class of body (see DEBUG-STT-MALFORMED-001).",
+    "wire": {
+      "kind": "canned",
+      "status": 200,
+      "body": "{\"choices\":[{\"message\":{\"content\":\"Debug provider truncated stream"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "Request",
+      "message_contains": "error decoding response body",
+      "retryable": true
+    },
+    "kotlin": {
+      "outcome": "throws",
+      "throws": "JSONException",
+      "chunked_path": {
+        "throws": "IOException",
+        "message_excludes_http_status": true
+      }
+    },
+    "expected_divergence": "D10 / D-M2: Rust treats the undecodable body as retryable (LlmError::Request) and fires the provider ladder; Kotlin leaks a bare JSONException on the single-call path so no fallback fires there, while the chunked path rewraps it into a status-less IOException and does fall back. Story 13-2 closes the single-call half."
+  },
+  {
+    "id": "DEBUG-LLM-HTTP429-001",
+    "surface": "llm",
+    "scenario": "http429",
+    "description": "A 429 with an OpenAI-shaped error body. PINS: both twins map it to their retryable-failure shape -- Rust LlmError::ApiError { status: 429 } (pipeline::is_retryable_llm_error -> true), Kotlin an IOException whose message carries the literal \"HTTP 429\" that KlarvoOverlayService.isRetryableCleanupFailure regex-matches. Running this scenario end to end therefore fires the PRODUCTION fallback ladder (deepseek -> openai -> openrouter) and makes a real call to the user's configured fallback provider -- intended, and the point of the scenario. DOES NOT PIN: the ladder's membership (Groq is never a cleanup fallback, Epic 12 FR2; `debug` is never a candidate either), nor that the fallback call succeeds.",
+    "wire": {
+      "kind": "canned",
+      "status": 429,
+      "body": "{\"error\":{\"message\":\"Debug provider: simulated rate limit\"}}"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "ApiError",
+      "error_status": 429,
+      "message_contains": "Debug provider: simulated rate limit"
+    },
+    "kotlin": {
+      "outcome": "throws",
+      "throws": "IOException",
+      "message_contains": "HTTP 429"
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-LLM-HTTP5XX-001",
+    "surface": "llm",
+    "scenario": "http5xx",
+    "description": "A 503 with an OpenAI-shaped error body -- the server-outage shape. PINS: the same contract as DEBUG-LLM-HTTP429-001 with a >= 500 status -- Rust LlmError::ApiError { status: 503 } (retryable), Kotlin an IOException carrying the literal \"HTTP 503\"; the production fallback ladder fires on both. DOES NOT PIN: any other 5xx code, or provider-specific retry-after handling (neither twin reads it).",
+    "wire": {
+      "kind": "canned",
+      "status": 503,
+      "body": "{\"error\":{\"message\":\"Debug provider: simulated server error\"}}"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "ApiError",
+      "error_status": 503,
+      "message_contains": "Debug provider: simulated server error"
+    },
+    "kotlin": {
+      "outcome": "throws",
+      "throws": "IOException",
+      "message_contains": "HTTP 503"
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-LLM-TRANSPORT-001",
+    "surface": "llm",
+    "scenario": "transport",
+    "description": "No response at all: the provider performs a REAL request to http://127.0.0.1:1/ (the loopback discard port), which cannot connect. PINS: a genuine transport error is produced through the real client on both twins -- Rust LlmError::Request (is_retryable_llm_error -> true), Kotlin an IOException whose message carries NO \"HTTP nnn\", so isRetryableCleanupFailure's regex finds no status and returns true. A synthetic transport error is impossible: reqwest::Error has no public constructor, and a new LlmError variant would touch every match over the enum plus both is_retryable_* predicates. Loopback only -- no byte leaves the device. DOES NOT PIN: the exact OS error text (\"Connection refused\" is platform-wording), the timeout behaviour, or that port 1 is free (nothing may bind it without root).",
+    "wire": {
+      "kind": "loopback",
+      "url": "http://127.0.0.1:1/"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "Request"
+    },
+    "kotlin": {
+      "outcome": "throws",
+      "throws": "IOException",
+      "message_excludes_http_status": true
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-STT-OK-001",
+    "surface": "stt",
+    "scenario": "ok",
+    "description": "STT benign scenario -- a 200 verbose_json body with a transcript and no segments, which extract_verbose_text falls back to. PINS: the canned body reaches the real Rust mapping (stt::map_transcription_response) and returns the canned transcript. The Kotlin column is n/a BY CONSTRUCTION, not by oversight: ADR-0017 makes the STT request and its guards shared Rust core, consumed on Android through GroqSttBridge.nativeTranscribe, so there is no Kotlin STT mapping to assert against. DOES NOT PIN: the segment-confidence filter (its own tests live in stt/mod.rs), the JNI sentinel encoding, or Android runtime behaviour.",
+    "wire": {
+      "kind": "canned",
+      "status": 200,
+      "body": "{\"text\":\"Debug provider canned transcript.\",\"segments\":[]}"
+    },
+    "rust": {
+      "outcome": "ok",
+      "text": "Debug provider canned transcript."
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT is shared Rust core (ADR-0017); Android consumes this same provider over JNI."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-STT-EMPTY-001",
+    "surface": "stt",
+    "scenario": "empty",
+    "description": "A 200 whose transcript is empty -- the reproduction for drift row D9 / D-M5 (STT returns empty / unparseable text). PINS: Rust maps it to SttError::ResponseFormat, which pipeline::is_retryable_stt_error treats as NON-retryable, so the desktop pipeline reports at once instead of retrying. DOES NOT PIN: Android's retry budget (D-M6: three attempts with 2s/5s backoff live in KlarvoOverlayService.transcribeWithRetry, above the shared core and unchanged by this story), the local-Whisper safety net, or the pending-WAV terminal path. NOTE for the reproduction: pipeline::try_local_whisper_fallback can silently rescue a debug STT failure on a machine that has a local model downloaded -- remove or rename the model to observe the terminal path.",
+    "wire": {
+      "kind": "canned",
+      "status": 200,
+      "body": "{\"text\":\"\",\"segments\":[]}"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "ResponseFormat",
+      "message_contains": "API returned empty text after segment confidence filter"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT is shared Rust core (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-STT-MALFORMED-001",
+    "surface": "stt",
+    "scenario": "malformed",
+    "description": "A 200 whose body deserializes as NEITHER the verbose_json nor the plain json shape. PINS: Rust reports SttError::ResponseFormat, which pipeline::is_retryable_stt_error treats as NON-retryable -- so unlike the LLM twin's malformed row (DEBUG-LLM-MALFORMED-001, retryable LlmError::Request) an undecodable STT body does NOT fire a retry. The asymmetry is real, pre-existing and pinned here rather than normalised away: the live STT path reads bytes() and parses with serde_json::from_slice, so the decode failure is caught by our own code and named ResponseFormat, whereas the live LLM path calls response.json() and lets reqwest raise a decode error that maps to the retryable Request variant. The extracted map_transcription_http_response carries that sequence verbatim, so the debug provider reports what the real path reports. DOES NOT PIN: the exact serde error text (it is appended to the message and varies by serde version), nor any opinion on which twin is right -- story 13-2 owns the verdict.",
+    "wire": {
+      "kind": "canned",
+      "status": 200,
+      "body": "{\"unexpected\":\"debug provider malformed body\"}"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "ResponseFormat",
+      "message_contains": "Cannot parse STT response",
+      "retryable": false
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT is shared Rust core (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-STT-HTTP429-001",
+    "surface": "stt",
+    "scenario": "http429",
+    "description": "A 429 with an OpenAI-shaped error body. PINS: Rust SttError::ApiError { status: 429 }, which is_retryable_stt_error treats as retryable -- the shape D9's retry-budget half needs to be observable on device. On Android the same error arrives as the __ERROR_API:HTTP 429 sentinel that transcribeWithRetry already classifies. DOES NOT PIN: Android's 429-vs-5xx classification gap (audit D-M7), which lives in Kotlin and is out of this story's scope.",
+    "wire": {
+      "kind": "canned",
+      "status": 429,
+      "body": "{\"error\":{\"message\":\"Debug provider: simulated rate limit\"}}"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "ApiError",
+      "error_status": 429,
+      "message_contains": "Debug provider: simulated rate limit"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT is shared Rust core (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-STT-HTTP5XX-001",
+    "surface": "stt",
+    "scenario": "http5xx",
+    "description": "A 503 with an OpenAI-shaped error body -- the server-outage shape. PINS: the same contract as DEBUG-STT-HTTP429-001 with a >= 500 status -- Rust SttError::ApiError { status: 503 }, which is_retryable_stt_error treats as retryable. DOES NOT PIN: any other 5xx code.",
+    "wire": {
+      "kind": "canned",
+      "status": 503,
+      "body": "{\"error\":{\"message\":\"Debug provider: simulated server error\"}}"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "ApiError",
+      "error_status": 503,
+      "message_contains": "Debug provider: simulated server error"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT is shared Rust core (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-STT-TRANSPORT-001",
+    "surface": "stt",
+    "scenario": "transport",
+    "description": "No response at all: a REAL request to http://127.0.0.1:1/ which cannot connect. PINS: Rust SttError::Request (retryable), produced through the real reqwest client rather than synthesised. Loopback only -- no byte leaves the device. DOES NOT PIN: the exact OS error text or the timeout behaviour.",
+    "wire": {
+      "kind": "loopback",
+      "url": "http://127.0.0.1:1/"
+    },
+    "rust": {
+      "outcome": "error",
+      "error": "Request"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT is shared Rust core (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-STT-NO-TRUNCATED-001",
+    "surface": "stt",
+    "scenario": "truncated",
+    "description": "An EXPECTED-ABSENCE vector, not a behaviour vector: `truncated` is deliberately NOT offered on the STT side, because SttError carries no truncation variant and there is nothing for a truncated transcript to map to. PINS: the STT scenario picker offers the LLM set MINUS this one, and stt::debug_stt_canned_wire resolves the string like `ok` (fail-soft) rather than inventing an outcome. DOES NOT PIN: any user-visible behaviour -- the value is unreachable through the UI.",
+    "wire": {
+      "kind": "not_offered"
+    },
+    "rust": {
+      "outcome": "ok",
+      "text": "Debug provider canned transcript."
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT is shared Rust core (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-LLM-PROVIDER-OPTIONS-001",
+    "surface": "provider-options",
+    "config_key": "llmProvider",
+    "description": "The option list of the `LLM Provider` row in Settings -> Advanced -> System (expert mode only). PINS: the row offers exactly the values config::VALID_LLM_PROVIDERS accepts, in that order, `debug` included -- read by a Rust test against the constant AND by the desktop proxy harness against the rendered DOM, so the React list cannot drift from the allowlist unnoticed. The list is DERIVED from the allowlist, not composed: it is exactly the set migrate_and_normalize keeps, which is what lets the row switch BACK out of `debug` (a two-option debug/off row would be a one-way door, and \"off\" has no source). DOES NOT PIN: the NORMAL provider picker (RecordingAudioContent, SettingsPanel), which must never offer `debug`; nor the pre-existing disagreement between the allowlist and that picker (`anthropic` is allowlisted but unpickable, `local` is pickable for LLM but not allowlisted) -- out of scope, noted not fixed.",
+    "options": [
+      "deepseek",
+      "openai",
+      "anthropic",
+      "groq",
+      "openrouter",
+      "debug"
+    ],
+    "rust": {
+      "constant": "VALID_LLM_PROVIDERS"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "The React settings bundle is the only settings surface on Android (MainActivity : TauriActivity), so there is no Kotlin option list to assert against."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "DEBUG-STT-PROVIDER-OPTIONS-001",
+    "surface": "provider-options",
+    "config_key": "sttProvider",
+    "description": "The option list of the `STT Provider` row in Settings -> Advanced -> System (expert mode only). PINS: the row offers exactly the values config::VALID_STT_PROVIDERS accepts, in that order, `debug` included -- read by a Rust test against the constant AND by the desktop proxy harness against the rendered DOM. Same derivation rule as DEBUG-LLM-PROVIDER-OPTIONS-001. DOES NOT PIN: the normal STT picker in RecordingAudioContent (CLOUD_STT_MODELS), which must never offer `debug`; nor whether `local` should be hidden on Android -- that gate is story 13-3's, and this row deliberately mirrors the allowlist rather than inventing a second, divergent provider list.",
+    "options": [
+      "groq",
+      "openai",
+      "local",
+      "debug"
+    ],
+    "rust": {
+      "constant": "VALID_STT_PROVIDERS"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT is shared Rust core (ADR-0017); the picker writes config.sttProvider, which Kotlin carries through to the JNI uninspected."
+    },
+    "expected_divergence": null
+  }
+]

@@ -4,7 +4,7 @@
 //! `com.klarvo.voice.GroqSttBridge`:
 //!
 //! - `nativeTranscribe(wavBase64, apiKey, language, dictionaryTerms, customPrompt,
-//!                      sttModel, temperature): String`
+//!                      sttModel, temperature, sttProvider, debugSttScenario): String`
 //! - `nativeIsHallucination(text: String): Boolean`
 //! - `nativeIsPromptEcho(transcription: String, sttHint: String): Boolean`
 //! - `nativeStripPromptFragments(text: String, sttHint: String): String`
@@ -38,17 +38,72 @@
 //! This file uses `jni 0.21` (pinned in Cargo.toml). The 0.22 API is NOT available
 //! (0.22 is the v2 archive). Do not add 0.22 imports.
 
-#![cfg(target_os = "android")]
+//! ## Platform gating
+//!
+//! Every `extern "system"` entry point below is `#[cfg(target_os = "android")]`,
+//! but the **module is not**: [`select_stt_provider`] — the one decision
+//! `nativeTranscribe` makes before it hands off to the shared core — is plain
+//! Rust and compiles everywhere, so the Linux `cargo test --lib` gate can reach
+//! the Android debug branch. An android-gated selector would be a selector no
+//! executing test can reach (story 13-1).
 
+#[cfg(target_os = "android")]
 use jni::objects::{JClass, JString};
+#[cfg(target_os = "android")]
 use jni::sys::{jboolean, jfloat, jlong, jstring};
+#[cfg(target_os = "android")]
 use jni::JNIEnv;
 
-use super::{
-    build_stt_prompt_with_hint, is_hallucination, strip_stockphrase_ghosts, GroqWhisper,
-    SttProvider,
-};
+use super::{GroqWhisper, SttProvider};
+#[cfg(target_os = "android")]
+use super::{build_stt_prompt_with_hint, is_hallucination, strip_stockphrase_ghosts};
+#[cfg(target_os = "android")]
 use crate::pipeline::{compute_wav_rms, is_prompt_echo, silence_skip, strip_prompt_fragments};
+
+// ---------------------------------------------------------------------------
+// Provider choice — the ONE decision nativeTranscribe makes (story 13-1)
+// ---------------------------------------------------------------------------
+
+/// Picks the STT provider the Android JNI entry point will use.
+///
+/// Extracted out of the `extern "system"` function so it is reachable by a plain
+/// Rust unit test: the Android `debug` branch was previously inside a function
+/// no test could call, on a target no test runs on, so inverting its comparison
+/// kept every gate green.
+///
+/// `debug_scenario`, `api_key`, `model` and `temperature` are all read from
+/// `config.json` by Kotlin and carried through uninspected — the `"debug"`
+/// decision is made here, in Rust, which is what keeps ADR-0017 intact: Android
+/// gets the debug scenarios with no STT logic of its own.
+///
+/// Any provider name other than [`crate::llm::DEBUG_PROVIDER_NAME`] keeps the
+/// production Groq path, including an empty string (the fail-soft value the JNI
+/// caller substitutes when it cannot read the argument): a debug run that cannot
+/// read its own arguments must degrade to the real provider, never the reverse.
+///
+/// Its only production caller is `nativeTranscribe` below, which is Android-only;
+/// on every other target it exists solely so the `cargo test --lib` gate can
+/// reach the branch. Hence the same `cfg_attr` dead-code allowance
+/// `config::load_config` uses for the mirror-image situation.
+#[cfg_attr(not(any(test, target_os = "android")), allow(dead_code))]
+pub fn select_stt_provider(
+    provider_name: &str,
+    debug_scenario: &str,
+    api_key: &str,
+    model: &str,
+    temperature: f32,
+) -> Box<dyn SttProvider> {
+    if provider_name == crate::llm::DEBUG_PROVIDER_NAME {
+        log::info!("[groq_jni] DEBUG STT provider active: scenario={debug_scenario}");
+        Box::new(crate::stt::DebugStt::new(debug_scenario))
+    } else {
+        Box::new(
+            GroqWhisper::new(api_key)
+                .with_model(model)
+                .with_temperature(temperature),
+        )
+    }
+}
 
 // ---------------------------------------------------------------------------
 // WAV duration helper (local — mirrors SilencePreFilter.computeDurationMs)
@@ -58,6 +113,7 @@ use crate::pipeline::{compute_wav_rms, is_prompt_echo, silence_skip, strip_promp
 ///
 /// Returns 0 if the header is malformed or too short.
 /// Mirrors `SilencePreFilter.computeDurationMs` in Kotlin for boundary parity.
+#[cfg(target_os = "android")]
 fn compute_wav_duration_ms(wav_bytes: &[u8]) -> u64 {
     if wav_bytes.len() < 44 {
         return 0;
@@ -77,11 +133,13 @@ fn compute_wav_duration_ms(wav_bytes: &[u8]) -> u64 {
 // ---------------------------------------------------------------------------
 
 /// Build an empty Java string, falling back to null on JNI failure.
+#[cfg(target_os = "android")]
 fn empty_jstring(env: &mut JNIEnv) -> jstring {
     env.new_string("").map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }
 
 /// Build a Java string from a Rust `&str`, falling back to empty string on failure.
+#[cfg(target_os = "android")]
 fn to_jstring(env: &mut JNIEnv, s: &str) -> jstring {
     match env.new_string(s) {
         Ok(js) => js.into_raw(),
@@ -94,6 +152,7 @@ fn to_jstring(env: &mut JNIEnv, s: &str) -> jstring {
 
 /// Read a Java String argument into a Rust `String`. Returns `None` on failure
 /// (caller must return a fail-soft value).
+#[cfg(target_os = "android")]
 fn read_jstring(env: &mut JNIEnv, arg: JString, name: &str) -> Option<String> {
     match env.get_string(&arg) {
         Ok(s) => Some(s.into()),
@@ -118,6 +177,16 @@ fn read_jstring(env: &mut JNIEnv, arg: JString, name: &str) -> Option<String> {
 /// - `custom_prompt`:    User custom STT hint (or empty).
 /// - `stt_model`:        Groq model name (e.g. "whisper-large-v3-turbo").
 /// - `temperature`:      Whisper sampling temperature (0.0 = deterministic).
+/// - `stt_provider`:     `config.sttProvider`, carried through by Kotlin without
+///                       being inspected there. Story 13-1: `"debug"` selects
+///                       [`crate::stt::DebugStt`]; every other value keeps the
+///                       Groq path. Deciding this HERE rather than in Kotlin is
+///                       what keeps ADR-0017 intact — Android gets the debug
+///                       scenarios with no STT logic of its own, and the
+///                       `__ERROR_*` sentinels below are still emitted by the
+///                       real mapping rather than forged.
+/// - `debug_stt_scenario`: `config.debugSttScenario`. Read only when
+///                       `stt_provider == "debug"`.
 ///
 /// Returns: transcribed text, or an empty string on any error.
 ///
@@ -128,6 +197,7 @@ fn read_jstring(env: &mut JNIEnv, arg: JString, name: &str) -> Option<String> {
 ///
 /// The double-underscore prefix makes these machine-detectable by the Kotlin
 /// retry wrapper so it can distinguish retriable from non-retriable errors.
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
     mut env: JNIEnv,
@@ -139,6 +209,8 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
     custom_prompt: JString,
     stt_model: JString,
     temperature: jfloat,
+    stt_provider: JString,
+    debug_stt_scenario: JString,
 ) -> jstring {
     // --- Unmarshal string arguments ---
     let b64 = match read_jstring(&mut env, wav_base64, "wav_base64") {
@@ -160,6 +232,12 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
         _ => "whisper-large-v3-turbo".to_string(),
     };
     let temp = temperature as f32;
+    // Story 13-1. Both default to the production path on a read failure — a
+    // debug run that cannot read its own arguments must degrade to the real
+    // provider, never the other way round.
+    let provider_name = read_jstring(&mut env, stt_provider, "stt_provider").unwrap_or_default();
+    let debug_scenario =
+        read_jstring(&mut env, debug_stt_scenario, "debug_stt_scenario").unwrap_or_default();
 
     // --- Decode Base64 → WAV bytes ---
     use base64::Engine as _;
@@ -182,7 +260,14 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
     let prompt = build_stt_prompt_with_hint(dict_opt, &lang, custom_opt);
 
     // --- Build client (H9: sttModel from config, H10: no hardcoded model literal) ---
-    let client = GroqWhisper::new(&key).with_model(&model).with_temperature(temp);
+    //
+    // Story 13-1: `sttProvider == "debug"` swaps in the canned-wire provider.
+    // The choice lives in [`select_stt_provider`] so a Rust test can reach it;
+    // everything below is unchanged — the same runtime, the same guard chain and
+    // the same `__ERROR_*` sentinel mapping — so an Android debug run produces
+    // the production strings instead of imitating them.
+    let client: Box<dyn SttProvider> =
+        select_stt_provider(&provider_name, &debug_scenario, &key, &model, temp);
 
     // --- Weg A: throwaway current-thread runtime + block_on ---
     // `WhisperStt::transcribe` is async over reqwest. From JNI there is no shared
@@ -247,6 +332,7 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
 ///
 /// Replaces `HallucinationFilter.isHallucination()` in Kotlin. The Kotlin twin
 /// is deleted after this bridge is wired in.
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeIsHallucination(
     mut env: JNIEnv,
@@ -271,6 +357,7 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeIsHallucination
 /// Returns `true` if `transcription` is an echo of the STT conditioning prompt.
 ///
 /// Replaces the implicit echo check in the Kotlin pipeline path.
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeIsPromptEcho(
     mut env: JNIEnv,
@@ -300,6 +387,7 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeIsPromptEcho(
 /// Strips conditioning-prompt fragments from the transcription.
 ///
 /// Returns the stripped text, or the original text on any error.
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeStripPromptFragments(
     mut env: JNIEnv,
@@ -339,6 +427,7 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeStripPromptFrag
 /// the `silenceThreshold` field, both config-driven since Story 7.2, AC5) and passed in here
 /// as arguments -- `500L`/`0.005f` are only the Kotlin caller's null-safe fallback defaults,
 /// matching the desktop pipeline defaults. This function itself stays pure / config-free.
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeSilenceCheck(
     mut env: JNIEnv,
@@ -390,6 +479,21 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeSilenceCheck(
 // Tests (pure Rust, no JVM needed)
 // ---------------------------------------------------------------------------
 
+// ⚠ This test module stays `#[cfg(target_os = "android")]`, i.e. it still never
+// executes — exactly as before story 13-1, which only ungated the module's
+// non-JNI half. Ungating it is a separate piece of work, not a free win:
+// `test_panic_safety_is_hallucination_unusual_inputs` asserts
+// `is_hallucination("\0")`, which is FALSE against today's guard. That
+// assertion was written in story 7-3 and, because the whole file was
+// android-gated, has never run. It is a never-executed test's wrong
+// expectation, not a product defect — but whoever ungates this module has to
+// adjudicate it first.
+//
+// The one thing this story needed to be testable — the provider choice — lives
+// outside this module in [`select_stt_provider`] and is covered by
+// `stt::tests::spec_android_select_stt_provider_*`, which DO run on the
+// `cargo test --lib` gate.
+#[cfg(target_os = "android")]
 #[cfg(test)]
 mod tests {
     use super::*;

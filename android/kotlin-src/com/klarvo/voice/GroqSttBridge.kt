@@ -45,6 +45,14 @@ object GroqSttBridge {
      * @param customPrompt     User custom STT hint (or empty).
      * @param sttModel         Groq model name (e.g. "whisper-large-v3-turbo").
      * @param temperature      Whisper sampling temperature (0.0 = deterministic).
+     * @param sttProvider      `config.sttProvider`, passed through verbatim. The
+     *                         Rust side decides what it means; Kotlin carries the
+     *                         value and nothing else (ADR-0017 -- STT request and
+     *                         guard logic live only in the shared Rust core).
+     * @param debugSttScenario `config.debugSttScenario`, passed through verbatim.
+     *                         Only read on the Rust side, and only when
+     *                         `sttProvider == "debug"` (story 13-1). Ignored
+     *                         otherwise.
      * @return Transcribed text, or an error code string (see class-level doc).
      */
     @JvmStatic
@@ -55,7 +63,9 @@ object GroqSttBridge {
         dictionaryTerms: String,
         customPrompt: String,
         sttModel: String,
-        temperature: Float
+        temperature: Float,
+        sttProvider: String,
+        debugSttScenario: String
     ): String
 
     /**
