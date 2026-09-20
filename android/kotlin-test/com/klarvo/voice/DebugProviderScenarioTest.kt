@@ -52,8 +52,10 @@ import java.util.concurrent.Future
  * (the silent single-call path and the rewrapped chunked path, through the real
  * [KlarvoApi.collectChunkResults]); the COMPOSITION [KlarvoApi.debugCleanupOrNull]
  * that [KlarvoApi.cleanup] takes before it builds a URL, including its `null` for
- * every real provider; the config-parse seam; the reachability of the `"debug"`
- * arm in `resolveLlmProvider`; and its absence from the cleanup fallback ladder.
+ * every real provider, AND — as a source-text tripwire, because no executing test
+ * can see it — the PLACEMENT of that branch above `URL(provider.url)`; the
+ * config-parse seam; the reachability of the `"debug"` arm in
+ * `resolveLlmProvider`; and its absence from the cleanup fallback ladder.
  *
  * Does NOT cover:
  * - the two `surface: "provider-options"` vectors. They pin the option lists of
@@ -390,6 +392,89 @@ class DebugProviderScenarioTest {
                 )
             )
         }
+    }
+
+    /**
+     * SOURCE-TEXT TRIPWIRE over the branch's PLACEMENT, in the
+     * [Adr0017BoundaryGuardTest] style — because
+     * [debugCleanupOrNull_answersForTheDebugProviderAndOnlyForIt] cannot see it.
+     *
+     * That test drives the extracted function directly, so moving its CALL SITE
+     * in [KlarvoApi.cleanup] below `val url = URL(provider.url)` would leave
+     * every gate green while the debug provider's `url` — `""`, as
+     * `resolveLlmProvider` builds it — made `URL("")` throw a
+     * MalformedURLException. That is an IOException carrying no `HTTP nnn`, so
+     * `KlarvoOverlayService.isRetryableCleanupFailure` would read it as retryable
+     * and fire the cleanup-fallback ladder into the user's real DeepSeek key —
+     * a real network call, real tokens, from a provider chosen precisely to make
+     * none.
+     *
+     * Comment lines are skipped, so the prose around the branch (which names both
+     * anchors on purpose) cannot satisfy or defeat the check. Exactly one code
+     * occurrence of each anchor is required: zero means renamed, reformatted or
+     * deleted, more than one means the ordering claim is ambiguous. Either way it
+     * fails loudly with the line numbers it did find.
+     */
+    @Test
+    fun debugBranchIsTakenBeforeTheProviderUrlIsBuilt() {
+        val src = kotlinSrcFile("KlarvoApi.kt").readText()
+
+        val callSite = Regex("""^\s*debugCleanupOrNull\(provider\)\?\.let\s*\{\s*return it\s*}\s*$""")
+        val urlBuild = Regex("""^\s*val\s+url\s*=\s*URL\(provider\.url\)\s*$""")
+
+        val callLines = codeLineNumbersMatching(src, callSite)
+        val urlLines = codeLineNumbersMatching(src, urlBuild)
+
+        assertEquals(
+            "KlarvoApi.kt: expected exactly one `debugCleanupOrNull(provider)?.let { return it }` " +
+                "statement, found $callLines — renamed, reformatted or duplicated",
+            1,
+            callLines.size
+        )
+        assertEquals(
+            "KlarvoApi.kt: expected exactly one `val url = URL(provider.url)` statement, " +
+                "found $urlLines — renamed, reformatted or duplicated",
+            1,
+            urlLines.size
+        )
+        assertTrue(
+            "KlarvoApi.kt: the debug branch must be taken BEFORE the provider URL is built, " +
+                "but debugCleanupOrNull is at line ${callLines[0]} and URL(provider.url) at " +
+                "line ${urlLines[0]}. The debug provider's url is \"\", so URL(\"\") throws a " +
+                "MalformedURLException — an IOException with no `HTTP nnn` — and the cleanup " +
+                "fallback ladder would fire into the user's real API key.",
+            callLines[0] < urlLines[0]
+        )
+    }
+
+    /**
+     * 1-based line numbers of CODE lines matching [pattern]. Lines that are pure
+     * comments (`//`, `/*`, `*`, `*/`) are skipped, so documentation naming an
+     * anchor can neither satisfy nor defeat a placement assertion.
+     */
+    private fun codeLineNumbersMatching(src: String, pattern: Regex): List<Int> =
+        src.lines().mapIndexedNotNull { i, line ->
+            val t = line.trim()
+            val isComment = t.startsWith("//") || t.startsWith("/*") || t.startsWith("*")
+            if (!isComment && pattern.containsMatchIn(line)) i + 1 else null
+        }
+
+    /** Resolves a production Kotlin source file, loudly. Mirrors [Adr0017BoundaryGuardTest]. */
+    private fun kotlinSrcFile(name: String): File {
+        val cwd = File(System.getProperty("user.dir") ?: ".")
+        val rel = "android/kotlin-src/com/klarvo/voice/$name"
+        val candidates = listOf(
+            cwd.resolve("../../../../$rel"), // gen/android/app/ → repo root
+            cwd.resolve(rel),
+            cwd.resolve("../$rel"),
+            cwd.resolve("../../../$rel"),
+        )
+        return candidates.firstOrNull { it.canonicalFile.isFile }?.canonicalFile
+            ?: error(
+                "Cannot find $rel. Tried:" +
+                    candidates.joinToString("") { System.lineSeparator() + "  " + it.canonicalPath } +
+                    System.lineSeparator() + "CWD=" + cwd.canonicalPath
+            )
     }
 
     /**
