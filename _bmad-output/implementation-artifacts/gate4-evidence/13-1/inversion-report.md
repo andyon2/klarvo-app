@@ -1,6 +1,6 @@
 # Story 13-1 — desktop proxy gate (INVERSION RUN)
 
-Run: 2026-09-20T14:25:00.285Z
+Run: 2026-09-20T15:02:28.137Z
 Checks: 30 (derived from the result records, not hand-counted)
 Ordinary checks: 18, failed: 0
 Result: PASS

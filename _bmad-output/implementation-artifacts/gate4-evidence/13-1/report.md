@@ -1,6 +1,6 @@
 # Story 13-1 — desktop proxy gate
 
-Run: 2026-09-20T14:24:31.245Z
+Run: 2026-09-20T15:01:59.787Z
 Checks: 66 (derived from the result records, not hand-counted)
 Ordinary checks: 66, failed: 0
 Result: PASS

@@ -2,15 +2,15 @@
 title: '13-1 Debug test provider, both twins'
 type: 'feature'
 created: '2026-09-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '11f83818d498ba0ca6f5651e7fd7245f529f2e7e'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-alignment']
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/project-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
@@ -26,6 +26,27 @@ deferred:
     location: 'src-tauri/src/stt/groq_jni.rs::tests'
     severity: 'low'
     origin: 'pre-existing'
+  - summary: >-
+      No device-free gate checks that the Kotlin and Rust halves of the 9-parameter
+      `nativeTranscribe` JNI signature still agree in arity and order.
+    evidence: |-
+      `GroqSttBridge.nativeTranscribe` and `Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe`
+      both grew `sttProvider` + `debugSttScenario` in commit `e0da32a`. Nothing compares them:
+      the JVM gate never loads the `.so`, the `extern "system"` entry points stay
+      `#[cfg(target_os = "android")]` so `cargo test --lib` never builds them, and
+      `Adr0017BoundaryGuardTest` is a Kotlin-only source-text tripwire whose own KDoc excludes
+      the Rust side. Because `#[no_mangle]` exports the short JNI name with no signature suffix,
+      a one-sided edit (or a stale `.so`) misbinds silently rather than throwing: the scenario
+      string lands in `provider_name`, `select_stt_provider` sees `"ok" != "debug"`, and the
+      STT half of the enabler degrades to a real Groq call with no error and no log line.
+      The gap class predates this story -- that boundary has never had a gate -- and closing it
+      needs an adb/emulator step that calls `nativeTranscribe` once after a rebuild, which is
+      larger than this story. The manual check already named in `## Verification`
+      (`scripts/android-build.sh`, not `scripts/android-smoke.sh`) covers this run.
+    location: >-
+      android/kotlin-src/com/klarvo/voice/GroqSttBridge.kt:59 + src-tauri/src/stt/groq_jni.rs:202
+    severity: 'medium'
+    origin: 'pre-existing gap class, widened by this story'
 ---
 
 <intent-contract>
@@ -491,6 +512,46 @@ produced a red.
 
 ## Review Triage Log
 
+### 2026-09-20 — Review pass
+- verdicts: 36 findings — high 0, medium 11, low 20, false 5, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` blind-hunter: the Android `debug` LLM branch in `KlarvoApi.cleanup` is reached by no executing test — verified: `grep -rn "\.cleanup(" android/kotlin-test/` had no hits; the class KDoc waived it. Fixed by extracting `internal fun debugCleanupOrNull(provider)` with the `KlarvoLogger` call hoisted, driven for `ok`, `http429` and seven non-debug names, plus a source-text tripwire pinning the call site ABOVE `val url = URL(provider.url)` (commits `f1f07cb`, `d90f83a`).
+  - `[low]` `[reject]` blind-hunter: the normal provider picker renders the literal `debug` as its trigger label once the enabler is on — verified real (`FormControls.tsx:93` `options.find(...)?.label ?? value`), but the intent's Never clause and its AC are both about the option *list*, which stays clean; showing the active value is honest, the state is expert-mode-only, and every fix adds a branch to hide the truth.
+  - `[low]` `[reject]` blind-hunter: the rewritten `scanPickers()` dropped the predecessor's `document.body.innerText` `debug` scan — verified dropped, but the harness never sets any row to `debug` (the preview mock is `deepseek`), so the old scan could not have caught the leak above either; re-adding it would add a check that cannot fire.
+  - `[medium]` `[patch]` blind-hunter: `handleSttProviderChange` silently clobbers `llmProvider = "debug"` — verified: `SettingsPanel.tsx:757` passes it to `RecordingAudioContent` as `setLocalSttProvider`, and `RecordingAudioContent.tsx:82-90` calls it from the cloud STT Model picker as well as the Cloud/Offline toggle. Fixed with the same guard shape as the re-seed effect at :302, in functional form (`f1f07cb`).
+  - `[low]` `[patch]` blind-hunter: the Rust `transport` scenario builds a bare `reqwest::Client::new()` with no timeout — verified: every shipped provider in the same two files uses `Client::builder().connect_timeout(15s).timeout(30s)` (`llm/mod.rs:502`, `:1071`, `stt/mod.rs:284`). Fixed at both debug sites with the identical builder plus `.no_proxy()` (`f1f07cb`).
+  - `[low]` `[reject]` blind-hunter: `debugSttScenario` does not hot-reload while `debugLlmScenario` does — verified real (`save_advanced_settings` rebuilds only the cleanup slot), but the spec records it operationally and the manual checks prescribe pressing the Settings Save last, which rebuilds both slots; the fix adds a new STT-slot rebuild path.
+  - `[low]` `[reject]` blind-hunter: two stacked sticky Save footers with different scopes, and nothing on screen says which saves what — verified real (`SettingsPanel.tsx:906` renders outside the category branch). Rejected: the intent mandates both "no second writer to those two keys" and "no hint line, no prose", which together force this shape; a wrong press is self-revealing and recoverable, and the manual checks name the order in bold.
+  - `[low]` `[reject]` blind-hunter: INVERSION-1 is overclaimed in `verdict.md` (only `idle`, only `ROWS[0]`) — verified: the run prints `INVERSION-1: 1/10 RED` itself, so the count is not concealed; the raw `<select>` has no listbox or options, so the other six states cannot be pointed at it, and the spec asks for one red run.
+  - `[low]` `[patch]` blind-hunter: the cross-twin fixture names `llm::map_chat_response` / `stt::map_transcription_response`, the two mappers this change deliberately deleted — verified at fixture lines 6 and 159. Fixed to the `*_http_response` names (`f1f07cb`).
+  - `[low]` `[patch]` blind-hunter: `DEBUG-LLM-MALFORMED-001` pins reqwest's Display string with no version reference — verified. Fixed by naming reqwest 0.12.28 (`src/error.rs`, `Kind::Decode`) in the description and restating that `rust.error` + `rust.retryable` are the load-bearing claims (`f1f07cb`).
+  - `[medium]` `[patch]` blind-hunter: the React option arrays are pinned only by a script no gate runs — verified both halves myself: removing `"debug"` from `VALID_LLM_PROVIDERS` reddens 3 tests; removing it from `LLM_PROVIDER_OPTIONS` reddens none. Fixed with `llm::tests::spec_react_option_arrays_and_debug_guards_are_pinned_to_rust`, a source-text tripwire in the `Adr0017BoundaryGuardTest` style, five inversions run RED (`f1f07cb`).
+  - `[low]` `[patch]` blind-hunter: `"debug"` is a bare literal on the TS twin only — same root cause as the entry above; the new tripwire builds both `SettingsPanel.tsx` guards from `DEBUG_PROVIDER_NAME`, so a rename reddens it (`f1f07cb`).
+  - `[low]` `[patch]` edge-case-hunter: `transport` has no connect/read timeout — same entry as the blind-hunter timeout finding; fixed together (`f1f07cb`).
+  - `[low]` `[patch]` edge-case-hunter: `HTTP_PROXY` would route the loopback probe through a proxy, falsifying "no byte leaves the device" — same entry; `.no_proxy()` added at both sites (`f1f07cb`).
+  - `[low]` `[reject]` edge-case-hunter: only `debug_stt_scenario` changing rebuilds no STT slot — same claim as the blind-hunter hot-reload finding; rejected for the same reason.
+  - `[false]` `[reject]` edge-case-hunter: a blank Groq key makes `readConfig` return `null` even for the key-free debug STT provider — the bad outcome is real but the intent names it verbatim as out of scope ("a blank Groq key still makes `readConfig` return `null`… Android reproduction therefore needs a licensed/trial device with a Groq key configured"); 13-4 owns the gate.
+  - `[false]` `[reject]` edge-case-hunter: `sttIsAlternative` rewrites `sttProvider = "debug"` to `groq` on an unlicensed device — likewise named verbatim in the intent ("the gate rewrites **both keys** to `groq` on an unlicensed device"); the claim that only the llmProvider half is documented is refuted by the intent text itself.
+  - `[low]` `[reject]` edge-case-hunter: the Advanced STT row writes the raw setter, so picking `local` there leaves a cloud LLM configured — verified real, but routing it through `handleSttProviderChange` would reintroduce exactly the `debug` clobber the patch above removes, and the resulting state is legal and reversible from the normal picker.
+  - `[low]` `[patch]` edge-case-hunter: `isTrivialChunk` returns letter/digit-free input verbatim before `cleanup` is reached, contradicting "deterministic regardless of what was dictated" — verified at `KlarvoApi.kt:1529` and its Rust twin; the product behaviour is correct and shared by both twins, so only the overbroad comment was wrong. Reworded in both twins (`f1f07cb`).
+  - `[medium]` `[patch]` edge-case-hunter (claim): "pinned from both sides by the fixture" is false for the React arrays — same entry as the tripwire finding; closed by it (`f1f07cb`).
+  - `[false]` `[reject]` edge-case-hunter (claim): the new rows use `LABEL_CLS` while the reference row uses `LABEL_CLS_M` — the intent-contract prescribes `LABEL_CLS` explicitly and puts the label span outside the equality gate's scope, so this is the specified outcome, not a defect.
+  - `[medium]` `[patch]` verification-gap: React option lists pinned only by a throwaway harness no recurring gate runs — same entry as the tripwire finding; the lens's demonstration was reproduced before patching (`f1f07cb`).
+  - `[medium]` `[patch]` verification-gap: `KlarvoApi.cleanup`'s debug short-circuit is driven by no test, and moving it below `URL(provider.url)` keeps every gate green — same entry as the blind-hunter Kotlin finding; the extraction closed the coverage half (`f1f07cb`) and the source-text ordering tripwire closed the placement half (`d90f83a`).
+  - `[medium]` `[defer]` verification-gap: the widened `nativeTranscribe` JNI signature is checked by nothing that runs device-free — verified: no gate loads the `.so`, the `extern "system"` entry points are android-gated, and the export binds by short name. The gap class predates this story (no gate has ever checked that boundary) and closing it needs an emulator/adb step; deferred with severity medium.
+  - `[low]` `[patch]` verification-gap (other): stale `map_chat_response` / `map_transcription_response` names in the fixture — same entry as the blind-hunter fixture finding; fixed (`f1f07cb`).
+  - `[low]` `[reject]` verification-gap (other): `KSelect`'s `currentLabel` fallback renders "debug" in the normal picker — same entry as the blind-hunter trigger-label finding; rejected for the same reason.
+  - `[low]` `[reject]` intent-alignment: the UI → IPC `save_settings` → `config.json` seam is covered by nothing — verified real, but the merge is a provider-agnostic `Option<String>` passthrough and the only `debug`-specific hazard in it (allowlist normalization) is pinned twice, including by a real-file round-trip; a `save_settings` integration test needs a Tauri `AppHandle`.
+  - `[low]` `[reject]` intent-alignment: the rows' own Save button does not save the provider rows — same entry as the two-footers finding; rejected for the same reason.
+  - `[medium]` `[patch]` intent-alignment: "one owner" is satisfied for state but two writers with different semantics touch `llmProvider` — the clobbering half is the `handleSttProviderChange` entry and was patched (`f1f07cb`); the `local`-coupling half was rejected above.
+  - `[false]` `[reject]` intent-alignment: the provider rows are a second, differently-optioned picker (`anthropic` reachable, `local` a one-way exit) — the intent's matrix prescribes the option sets verbatim as `VALID_*_PROVIDERS` + `debug`, and `local` is not allowlisted so a stored `"local"` is already rewritten at load; the spec's Decisions name the pre-existing picker/allowlist disagreement.
+  - `[medium]` `[patch]` intent-alignment: the Kotlin matrix cells are about the ladder while the evidence is at the `KlarvoApi` seam, and the `cleanup` debug branch is executed by no test — the executable half is the Kotlin entry and was patched (`f1f07cb`, `d90f83a`); that `isRetryableCleanupFailure` is private and untestable without Robolectric is stated in the test's own KDoc.
+  - `[medium]` `[patch]` intent-alignment: the React lists are pinned by a script outside any gate — same entry as the tripwire finding; closed (`f1f07cb`).
+  - `[false]` `[reject]` intent-alignment: `expertMode` ON is measured against the preview mock, not the product flag — the React branch condition is the same boolean whatever its origin, so the gate's conclusion about the React surface holds; the Rust side of that flag is separately pinned by the config tests.
+  - `[medium]` `[defer]` intent-alignment: two platforms are named but only the desktop layout branch is measured, and the JNI arity is checked by no executing gate — the JNI half is the deferred entry above; the layout half is refuted, because the new rows copy the reference row's own `isMobile` wrapper verbatim and the equality gate's scope is explicitly the `KSelect` only, which is platform-invariant.
+  - `[low]` `[reject]` intent-alignment: inversion evidence is artifacts for the harness but source comments for Rust and Kotlin — I spot-checked one claim myself (removing `"debug"` from `VALID_LLM_PROVIDERS` reddened 3 tests with the expected messages), and the implementer re-ran five more for the new tripwire; recording every red run as an artifact is process evidence, not a code fix.
+  - `[low]` `[patch]` intent-alignment: the shared fixture names symbols the amendment deleted — same entry as the fixture finding; fixed (`f1f07cb`).
+
 ## Design Notes
 
 **Why wire-level injection.** A trait-level canned `Result` would be ~40 lines per twin and would test
@@ -588,7 +649,7 @@ path; injecting it would mean a second, unrelated debug seam. 13-2 records the W
 
 ## Auto Run Result
 
-Status: implemented — all machine gates green; review not run by this session
+Status: done
 Blocking condition: none
 
 ### 2026-09-20 implementation run
@@ -612,6 +673,128 @@ Gates, each re-run from the tree after the last edit:
 Not run by this session, and therefore not claimed: the review lens set (`review` frontmatter is
 empty), the Windows release build, and anything on a device. The two manual H+ checks in
 **Verification** are unchanged and still Andi's.
+
+### 2026-09-20 review pass (this session)
+
+**What was implemented.** A `debug` provider value for LLM cleanup (twinned: `llm/mod.rs` +
+`KlarvoApi.kt`) and for STT (Rust only, ADR-0017, selected in `groq_jni.rs`), returning a canned
+`(status, body)` pair that is run through each twin's *own* response mapping. On Rust the pair is
+turned into a real in-memory `reqwest::Response` (`http = "1"` + `From<http::Response<T>>`) and handed
+to one behaviour-preserving extraction per twin, so `malformed` produces the genuine
+`LlmError::Request` and the production ladder fires — D-M2's mechanism, not a look-alike. Four
+`expertMode`-gated `KSelect` rows in Settings → Advanced → System select the two providers and the two
+scenarios; the provider rows write `SettingsPanel`'s state through props, keeping one client-side
+owner of `llmProvider`/`sttProvider`.
+
+**Files changed**
+
+| File | What changed |
+|---|---|
+| `src-tauri/Cargo.toml` + `Cargo.lock` | `http = "1"` as a direct dep (already resolved at 1.4.0; zero new crates) |
+| `src-tauri/src/llm/mod.rs` | one verbatim extraction `map_chat_http_response(reqwest::Response)`; `DEBUG_PROVIDER_NAME`, `DEBUG_TRANSPORT_URL`, `debug_canned_response`, `debug_llm_canned_wire`, `DebugCleanup`; the React source-text tripwire test |
+| `src-tauri/src/stt/mod.rs` | the twin extraction `map_transcription_http_response`; `debug_stt_canned_wire`, `DebugStt`; the `select_stt_provider` tests |
+| `src-tauri/src/stt/groq_jni.rs` | module cfg moved from the module to its items; `select_stt_provider` extracted so the Android debug branch is test-reachable; `nativeTranscribe` gained two params |
+| `src-tauri/src/config/mod.rs` | `debugLlmScenario` / `debugSttScenario` (serde default `"ok"`); `"debug"` on both provider allowlists |
+| `src-tauri/src/pipeline.rs` | explicit `debug` arms in `resolve_stt_provider`, `cleanup_provider_for`, `resolve_cleanup_provider`; `resolve_fallback_provider` untouched |
+| `src-tauri/src/commands/settings.rs` | `debug_llm_scenario` clause in `cleanup_provider_reload_needed` |
+| `android/kotlin-src/.../KlarvoApi.kt` | `mapCleanupResponse` + `debugCleanupOrNull` extractions, `debugCannedWire`, `parseDebugScenario`, the `DEBUG_PROVIDER_NAME` resolve arm, two `Config` fields |
+| `android/kotlin-src/.../GroqSttBridge.kt`, `KlarvoOverlayService.kt` | the two new JNI params, carried through uninspected |
+| `android/kotlin-test/.../DebugProviderScenarioTest.kt` | new, 17 tests |
+| `src/components/AdvancedSettingsPanel.tsx` | the four `KSelect` rows behind `expertMode`, four new props |
+| `src/components/SettingsPanel.tsx` | props wired to the one state owner; re-seed guard; `handleSttProviderChange` guard |
+| `src/types.ts`, `src/tauri-commands.ts` | the two mirrored `AdvancedSettings` fields |
+| `test-fixtures/debug-provider-scenario-vectors.json` + `README.md` | 16 vectors, read by Rust, JVM and the proxy harness |
+| `_bmad-output/.../gate4-evidence/13-1/` | harness, reports, verdict, style maps, screenshots |
+
+**Review findings.** Four lenses ran (blind-hunter, edge-case-hunter, verification-gap,
+intent-alignment); 36 findings — high 0, medium 11, low 20, false 5, maybe-false 0. Full rows in
+`## Review Triage Log`.
+
+- **Patched: 7 entries — medium 3, low 4.**
+  1. *(medium)* the React option arrays and both TS `debug` guards were pinned by no recurring gate →
+     `llm::tests::spec_react_option_arrays_and_debug_guards_are_pinned_to_rust`, five inversions RED.
+  2. *(medium)* `KlarvoApi.cleanup`'s debug short-circuit was executed by no test and its placement
+     above `URL(provider.url)` was unpinned → `debugCleanupOrNull` extraction + a source-text ordering
+     tripwire, two inversions RED.
+  3. *(medium)* `handleSttProviderChange` was a second writer that clobbered `llmProvider = "debug"` →
+     guarded in functional form, same shape as the re-seed guard.
+  4. *(low)* the `transport` probe used a bare `reqwest::Client::new()` → the shipped builder
+     (`connect_timeout(15s)`, `timeout(30s)`) plus `.no_proxy()` at both sites.
+  5. *(low)* the fixture named two deleted mappers → corrected to the `*_http_response` names.
+  6. *(low)* the fixture pinned reqwest's Display string unversioned → reqwest 0.12.28 named.
+  7. *(low)* "deterministic regardless of what was dictated" ignored the trivial-chunk guard →
+     reworded in both twins.
+- **Deferred: 1 entry** *(medium, frontmatter `deferred`)* — no device-free gate checks that the two
+  halves of the 9-parameter `nativeTranscribe` signature still agree; `#[no_mangle]` binds by short
+  name, so a one-sided edit misbinds silently. Pre-existing gap class; closing it needs an adb step.
+- **Rejected, with reasons:**
+  - `debug` renders as the *trigger label* of the normal picker once selected (`FormControls.tsx:93`
+    falls back to the raw value) — low; the intent's Never clause and its AC are about the option
+    list, which stays clean, and hiding the active value would make the control lie.
+  - the harness dropped the predecessor's body-text `debug` scan — low; the harness never sets a row
+    to `debug`, so the old scan could not have fired either.
+  - `debugSttScenario` does not hot-reload — low; recorded operationally, and the manual checks
+    prescribe pressing the Settings Save last, which rebuilds both slots.
+  - two stacked Save footers with different scopes — low; the intent mandates both "no second writer"
+    and "no hint line, no prose", which together force this shape; a wrong press is self-revealing.
+  - INVERSION-1 covers `idle` on one row only — low; the harness prints `1/10 RED` itself, and a raw
+    `<select>` has no listbox to point the other states at.
+  - blank Groq key / unlicensed rewrite of `debug` → `groq` — false; the intent names both verbatim
+    as 13-4's.
+  - `LABEL_CLS` vs `LABEL_CLS_M` — false; the intent prescribes `LABEL_CLS` and excludes the label
+    from the gate's scope.
+  - the Advanced STT row uses the raw setter, so `local` there leaves a cloud LLM — low; routing it
+    through `handleSttProviderChange` would reintroduce the clobber patch 3 removes.
+  - the UI → `save_settings` → `config.json` seam is untested — low; the merge is a provider-agnostic
+    passthrough and its only `debug`-specific hazard (normalization) is pinned twice.
+  - the provider rows are a second, differently-optioned picker (`anthropic`, `local`) — false; the
+    intent's matrix prescribes `VALID_*_PROVIDERS` + `debug` verbatim.
+  - `expertMode` ON measured against the preview mock — false; the React branch condition is the same
+    boolean whatever its origin, and the Rust side of the flag is pinned by the config tests.
+  - only the desktop layout branch is style-measured — false; the rows copy the reference row's own
+    `isMobile` wrapper verbatim and the gate's scope is the `KSelect` only, which is invariant.
+  - inversion evidence is prose for Rust/Kotlin — low; one claim was spot-checked by this session and
+    five more were re-run for the new tripwire.
+
+**Verification performed by this session** (every command re-run against the final tree, `d90f83a`):
+
+- `cd src-tauri && cargo test --lib` — **744 passed, 0 failed** (708 at `baseline_revision`).
+- Device-free JVM gate, after verifying `android/kotlin-{src,test}` and
+  `src-tauri/gen/android/app/src/{main,test}/java/com/klarvo/voice/` are byte-identical, with
+  `ANDROID_HOME` set and `--rerun-tasks` — **25 suites, 211 tests, 0 failures**, counted from the
+  result XMLs; `Adr0017BoundaryGuardTest` 3/3 green, `DebugProviderScenarioTest` 17/17 green.
+- `npm run build` — TS strict green.
+- Desktop proxy gate against the running `npm run preview` (port 1422, real Chromium): green run
+  **66 ordinary checks, 0 failed, exit 0**; inversion run **3/3 groups RED, exit 0**. `git status`
+  clean of the throwaway `src/tauri-commands.ts` edit after both runs.
+- Inversion spot-check by this session: removing `"debug"` from `VALID_LLM_PROVIDERS` reddened
+  `spec_debug_provider_survives_normalization`,
+  `spec_debug_provider_and_scenarios_survive_a_real_config_file_round_trip` and
+  `spec_debug_provider_option_lists_match_the_config_allowlists` with the expected messages; the file
+  was restored and the suite re-confirmed green.
+- **Matrix test audit:** every row of the I/O & Edge-Case Matrix has a covering test that ran and
+  passed — LLM `ok`/`empty`/`truncated`/`malformed`/`http429`/`http5xx`/`transport` via
+  `llm::tests::spec_debug_llm_*` (the `malformed` vector asserting `LlmError::Request` **and** the
+  real `is_retryable_llm_error(..) == true`) and `DebugProviderScenarioTest` for the Kotlin column;
+  STT `ok`/`empty`/`malformed`/`http429`/`http5xx`/`transport` via `stt::tests::spec_debug_stt_*`;
+  STT `truncated` via `spec_debug_stt_truncated_is_not_offered`; both provider-option rows via
+  `spec_debug_provider_option_lists_match_the_config_allowlists`.
+
+**What this run does NOT claim.** No pixels, no aesthetics, no device. Nothing on the Xiaomi and
+nothing on Windows was executed; Android Rust compilation is unverified on this host (no NDK, and
+installing one is forbidden). The proxy gate proves wiring, structure and computed-style equality on
+the desktop React surface only, and cannot observe persistence because preview writers are no-ops.
+The two manual H+ checks in **Verification** are unchanged and still Andi's — and because the JNI
+arity changed, the Android one needs a fresh APK via `scripts/android-build.sh`, not
+`scripts/android-smoke.sh`.
+
+**Follow-up review recommended: true.** Named risk: three `medium` entries were patched in the last
+round, and two of the three fixes are *form-sensitive source-text tripwires* — the Kotlin ordering
+assertion and the React array/guard assertion both match code by regex, so a harmless reformat of
+`KlarvoApi.cleanup`'s prologue or of the four `.tsx` arrays reddens them for a non-product reason,
+and neither has been exercised by anything other than its own inversion. None of the three patched
+surfaces (the Kotlin `cleanup` prologue, the `handleSttProviderChange` guard, the TSX arrays) has run
+on a real device in this story.
 
 ### Relationship to the predecessor spec
 
