@@ -2,7 +2,7 @@
 title: '13-2 Parity sweep: guards and silent loss'
 type: 'feature'
 created: '2026-09-21'
-status: 'in-review'
+status: 'done'
 baseline_revision: '4e4bc00b4ef28a75370acdb44e905e5699ec9388'
 route: 'full'
 route_source: 'auto'
@@ -42,6 +42,106 @@ deferred:
     evidence: 'Lines 659-660 of `spec-13-2-parity-sweep-guards-and-silent-loss.md` contain a literal `</content>` and `</invoke>` written into the artifact by the first planning session, between the Verification section and `## Auto Run Result`. Cosmetic; that file is now a historical record. Not reproduced here. pre-existing.'
     location: '_bmad-output/implementation-artifacts/spec-13-2-parity-sweep-guards-and-silent-loss.md'
     severity: 'low'
+  - summary: >-
+      `reprocess_pending_entry` is the third desktop cleanup call site and it never consults the
+      offline rule
+    evidence: |-
+      Review pass 2026-09-21 (verification-gap, edge-case). `commands/history.rs` takes
+      `inner.cleanup_provider` and calls `chunked_cleanup` unconditionally -- no
+      `config_skips_cleanup`, no offline flag. With `sttProvider = "local"` (G2a) the
+      "Erneut verarbeiten" button re-transcribes on device and then sends the transcript to
+      DeepSeek; with `llmProvider = "local"` on a non-Windows build it reaches the
+      `_ => cleanup_provider_for("deepseek", ...)` arm (D-M21). Pre-existing: `pipeline::is_offline`
+      was not consulted there either, and the intent names only the three definitions that existed
+      (`is_offline`, `is_offline_mode`, Kotlin's), so this fourth call site is outside the row.
+      The false "every caller is gated" comment this story wrote was corrected as a patch; the
+      gap itself is left. Settle it by deciding whether reprocess is a dictation (gate it) or a
+      repair action (say so). pre-existing.
+    location: 'src-tauri/src/commands/history.rs::reprocess_pending_entry'
+    severity: medium
+  - summary: >-
+      Android transcripts from the local-Whisper safety net skip the shared guard chain
+    evidence: |-
+      Review pass 2026-09-21 (edge-case). `nativeTranscribe` now runs the whole chain
+      (`guard_transcript_for_jni`), but the local-Whisper net reached after a Groq failure calls
+      only `GroqSttBridge.nativeIsHallucination`, so a local transcript gets no fragment strip and
+      no echo verdict. Pre-existing -- the pre-13-2 inline chain was equally Groq-only -- but this
+      story cut `retryDelaysMs` to empty, so the net is now reached sooner and more often, and
+      `guard_transcript`'s doc calls itself "the one chain, both platforms". pre-existing.
+    location: 'android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt (local-Whisper net)'
+    severity: medium
+  - summary: >-
+      An Android clipboard-write failure ends in a silent IDLE while its Desktop twin shows the
+      "TEXT LOST" card
+    evidence: |-
+      Review pass 2026-09-21 (edge-case, intent-alignment). `copyToClipboard` returning false
+      yields no paste, no toast, no card -- the one path where the text is really gone is the one
+      with no observable state, while Desktop emits `ClipboardWriteFailed` -> "TEXT LOST". This is
+      what the story chose, not an oversight: the D6 matrix row asks only for "caught; no success
+      check; pasteErrorCount incremented", and the intent's Never-list forbids new toast text and
+      new bubble drawings. Settle it by deciding whether Android gets a degraded terminal surface
+      at all -- a design question, not a build one.
+    location: 'android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt::copyToClipboard'
+    severity: medium
+  - summary: >-
+      The new blank-delivery guard has no Desktop twin, so the platforms now differ in the
+      opposite direction
+    evidence: |-
+      Review pass 2026-09-21 (blind-hunter, edge-case, intent-alignment). Android ends the run
+      silently when `deliveredText.isBlank()` after the post-cleanup ghost strip -- no paste, no
+      clipboard, no history row. Desktop's `process_audio` produces `cleaned_text` and delivers it
+      whatever its length, so a ghost strip that consumes the whole text is delivered there. The
+      guard is spec-mandated ("an empty `finalText` must never reach `saveToHistory`, the clipboard
+      or the paste"); what is not recorded anywhere is that satisfying it created a fresh asymmetry
+      in a parity sweep.
+    location: 'android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt (blank-delivery guard)'
+    severity: low
+  - summary: '`KlarvoApi.cleanupLocal` is now unreachable from the overlay pipeline'
+    evidence: |-
+      Review pass 2026-09-21 (edge-case). The offline rule made `LOCAL_CLEANUP_AVAILABLE = false`
+      the answer for every `llmProvider = "local"` config, so the MNN branch that used to call
+      `cleanupLocal` is gone from `processAudio`. The function and its `LocalLlmInference` reach
+      survive with no caller. Deleting it is a decision about the Android local path (G3b) and
+      about the control (13-3), both of which this story is told not to make.
+    location: 'android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::cleanupLocal'
+    severity: low
+  - summary: >-
+      A control-character-only LLM answer is still judged differently on the two platforms
+    evidence: |-
+      Review pass 2026-09-21 (blind-hunter). The whitespace half was closed as a patch
+      (`llm/mod.rs` now asks `content.trim().is_empty()`, like the Kotlin twin). The remaining
+      asymmetry is ordering: Kotlin runs `sanitizeLlmOutput` BEFORE the emptiness check, Rust runs
+      its sanitizer downstream of it, so an answer made only of control characters is a named
+      non-retryable failure on Android and a delivered blank on Desktop. Recorded in
+      `TEST-LLM-EMPTY-001`'s description rather than pinned. Closing it means moving one of the two
+      sanitizers, which no audit row asks for.
+    location: 'src-tauri/src/llm/mod.rs::map_chat_http_response'
+    severity: low
+  - summary: >-
+      Three other desktop entry points build the STT prompt without `advanced.sttPrompt*` and run
+      no part of the guard chain
+    evidence: |-
+      Review pass 2026-09-21 (verification-gap, "Other findings" -- filed there as not-a-gap).
+      `commands::history::reprocess_pending_entry` and the React commands `transcribe_audio` /
+      `transcribe_audio_bytes` call `build_stt_prompt(terms, language)` with no hint override and
+      never reach `guard_transcript`, while that function's doc now calls itself "**The** post-STT
+      guard chain -- one function, both platforms". All three predate this story and no audit row
+      names them. pre-existing.
+    location: 'src-tauri/src/commands/history.rs, src-tauri/src/commands/recording.rs'
+    severity: low
+  - summary: >-
+      Six test files each carry their own `stripComments` / fixture-path resolver, none handling
+      Kotlin raw strings
+    evidence: |-
+      Review pass 2026-09-21 (blind-hunter). `GuardChainBridgeTest`, `OfflineRuleVectorsTest`,
+      `OverlayServiceSourceContractTest`, `SttSentinelClassificationTest` plus the pre-existing
+      copies in `Adr0017BoundaryGuardTest` and `TestProviderScenarioTest`. All are string-literal
+      aware; none handles a Kotlin raw string or a `'"'` char literal, so one future production
+      edit could silently change what every tripwire in the net sees. The duplication class is
+      pre-existing and this story widened it while consolidating the same class in production
+      (`stt::STT_HINT_*`). Fix is a shared test helper across six files, not a direct correction.
+    location: 'android/kotlin-test/com/klarvo/voice/'
+    severity: low
 ---
 
 <intent-contract>
@@ -725,6 +825,61 @@ they are byte-identical, and nothing enforced that. The separator moved into the
 
 ## Review Triage Log
 
+### 2026-09-21 — Review pass
+
+Lenses: `blind-hunter`, `edge-case-hunter`, `verification-gap`, `intent-alignment` (thorough set,
+route `full`). Rows are in lens-report order. Grouped entries keep their own rows and share a route;
+the groups are named inline.
+
+- verdicts: 45 findings — high 4, medium 15, low 23, false 3, maybe-false 0
+
+- findings:
+  - `[low]` `[patch]` blind-hunter: the `guard_transcript` call-site comment in `process_audio` states "ghost strip → fragment strip", the order the build measured as wrong — verified at `pipeline.rs`; the one comment a reader meets at the call site taught the rejected order. Fixed: corrected to the shipped order and marked "measured, not preferred".
+  - `[low]` `[patch]` blind-hunter: the auto-stop log line still printed `>= $requiredSilentFrames` after the condition became `>` — verified at `KlarvoAudioRecorder.kt:663`; `verdict.md` names logcat as D-L21's only device-side observable, so the one device check contradicted the code. Fixed: log text now prints `>`.
+  - `[high]` `[patch]` blind-hunter: the two lines carrying B2's and D9's central claims in `groq_jni.rs` are android-gated and have no assertion of any kind — verified: `cargo test --lib` compiles no `#[cfg(target_os = "android")]` item and the JVM gate never builds the Rust android target, so reverting either left both gates green. Group with verification-gap's fourth gap and intent-alignment's seam 1. Fixed: lifted into `guard_hint_for_jni` / `stt_error_sentinel`, both plain Rust in the shipped `select_stt_provider` shape, both asserted.
+  - `[medium]` `[patch]` blind-hunter: new Rust↔Kotlin divergence in the emptiness check this story built — verified: `llm/mod.rs` tested `content.is_empty()` on raw content while Kotlin tested after `.trim()` + `sanitizeLlmOutput`, so a whitespace-only answer was a named failure on Android and a delivered blank on Desktop, under a fixture now carrying `expected_divergence: null`. Fixed: Rust asks `content.trim().is_empty()`; pinned on both sides with a `" ja "` discriminator. The control-character half remains and is deferred.
+  - `[medium]` `[defer]` blind-hunter: the blank-delivery guard is one-sided and unrecorded — verified: Desktop delivers `cleaned_text` whatever its length, Android now ends silently. The guard is spec-mandated; the fresh asymmetry was not recorded anywhere. Deferred as a recorded residual.
+  - `[medium]` `[patch]` blind-hunter: `frame_decision` is pinned but `process_frame` is not — verified: re-inlining `if energy_ok { … } else { 0.0 }` at the only production call site undoes all of D-L19 with every gate green. Group with verification-gap's second gap. Fixed: `#[cfg(test)]` predictor-call counter on `SileroVad`, asserted through the public `feed()`.
+  - `[low]` `[patch]` blind-hunter: R1–R8 were measured against a different tree than the one that shipped — verified: those rows report `766 filtered out` (767 total) where R9/R10 report 767 (768), while the report framed "36/36 RED" as one measurement. Fixed: `code-inversions.json` is now four batches each carrying `measured_at`, and the Rust batch was re-run against the current tree.
+  - `[low]` `[patch]` blind-hunter: "one offline rule" was still three `"local"` literals on the Kotlin side — verified in `skipsCloudCleanup`, `shouldInstallPreviewFlush` and `flushPreviewDelta`; a provider-id rename would disable two of three G2a guards. Fixed: one `LOCAL_PROVIDER_ID` constant at all three sites.
+  - `[false]` `[reject]` blind-hunter: `shouldInstallPreviewFlush(..., cachedConfig?.sttProvider ?: "groq")` defaults a G2a guard to the uploading value — refuted: when `cachedConfig` is null the adjacent `cachedConfig?.livePreviewEnabled == true` in the same `&&` is false, so the flush is never installed and no byte can leave. The bad outcome does not occur at the cited location.
+  - `[low]` `[reject]` blind-hunter: `DeliveryDecision.paste` is read by four tests and by nothing that ships — verified, but the redundancy is structural: `shouldAttemptPaste` must run before the paste and `decideDelivery` after it, so the field cannot be the gate. Not worth fixing: removing it churns four tests, and reading it at the call site is impossible by construction.
+  - `[low]` `[patch]` blind-hunter: `groq_jni.rs::tests` still documented the deleted inline chain in its rejected order — verified at the `mod tests` header and both `test_ac2_*` comments. Group with edge-case's deletion finding on the same lines. Fixed: rewritten as HISTORICAL, pointing at `pipeline::guard_transcript` and the tests that actually run.
+  - `[low]` `[defer]` blind-hunter: three `stripComments` implementations and five path resolvers were added on top of pre-existing copies, none handling Kotlin raw strings — verified across six test files. Deferred: the fix is a shared test helper across six files, not a direct correction, and the duplication class predates this story.
+  - `[false]` `[reject]` blind-hunter: the spec's review frontmatter was empty and the follow-up review unbooked — refuted: the lens read the file mid-flight; this review pass wrote `review: thorough`, `review_source: auto` and `lenses_ran` before launching, and books `followup_review_recommended` at finalization.
+  - `[medium]` `[patch]` blind-hunter: `guardedClipboardWrite` catches `Exception`, not `Throwable`, while its KDoc and the D6 row promise "never an uncaught main-thread exception" — verified. Group with edge-case's `UnsatisfiedLinkError` finding. Fixed: widened to `Throwable`, with a test that throws an `Error` through the seam.
+  - `[high]` `[patch]` edge-case-hunter: `GroqSttBridge.nativeStripStockphraseGhosts` is called unguarded and a stale `.so` raises `UnsatisfiedLinkError`, an `Error` — verified: the outer handler is `catch (e: IOException)`, so the throw kills the worker thread after the paid STT and LLM calls, nothing is pasted or stored and the bubble stays in TRANSCRIBING. Group with blind-hunter's `Throwable` finding. Fixed: the one call wrapped in `catch (t: Throwable)` degrading to `finalText`.
+  - `[low]` `[patch]` edge-case-hunter: `KlarvoAccessibilityService.instance` was read twice, so a disconnect between the two yields `attempted = true` with a null outcome and no logged cause — verified; the resulting delivery is still safe (IDLE plus the clipboard toast, no false success), so the harm is a lost cause in the log. Fixed: hoisted to one local `val`, with a test.
+  - `[low]` `[reject]` edge-case-hunter: a 200 with an empty or missing `choices` array now burns the provider ladder, because `JSONException` became retryable — verified as real. Not worth fixing: a well-formed 200 with no choices is not something a user meets in everyday use, and the fix adds a branch and a third exception type to a mapper this story just simplified.
+  - `[false]` `[reject]` edge-case-hunter: an explicit JSON null for a `sttPrompt*` key would yield the literal string "null" as the Whisper hint — refuted: `config.json` is written by Rust's `AdvancedSettings`, whose `String` fields serialize as `""` and never as null, so the trigger requires a hand-edited file. (The patch round removed it anyway: `parseSttPrompt` uses `opt(key) as? String ?: ""`.)
+  - `[medium]` `[defer]` edge-case-hunter: a failed clipboard write leaves the dictation lost with no toast, no card and no state the user can read — verified. Group with the same lens's "silent IDLE" claim and intent-alignment's divergence 4. Deferred: the D6 matrix row asks only for "caught; no success check; `pasteErrorCount` incremented", and the intent's Never-list forbids new toast text and new bubble drawings, so the fix is a design decision this story is excluded from making.
+  - `[medium]` `[defer]` edge-case-hunter: local-STT and local-Whisper transcripts skip the guard chain on Android — verified: only `nativeIsHallucination` runs on that path. Pre-existing (the pre-13-2 inline chain was equally Groq-only), though this story's retry-budget cut makes the net more reachable.
+  - `[low]` `[defer]` edge-case-hunter: `KlarvoApi.cleanupLocal` is now dead — verified: the offline rule removed its only caller. Deferred: deleting it is a decision about the Android local path (G3b) and the control (13-3), both excluded by the intent.
+  - `[low]` `[patch]` edge-case-hunter: `groq_jni.rs::tests` describes a composition that no longer exists — verified. Grouped with blind-hunter's row on the same lines; same fix.
+  - `[low]` `[patch]` edge-case-hunter: `testCannedWire`'s "malformed" comment still states the single-call ladder never runs — verified at `KlarvoApi.kt`; this change inverted exactly that. Fixed: comment corrected.
+  - `[low]` `[patch]` edge-case-hunter: the `mapCleanupResponse` KDoc claims "no ladder, no paste, no history row" while a row IS written with the raw transcript — verified. Fixed: the KDoc and `TEST-LLM-EMPTY-001`'s description now say what is true (no row carrying the empty answer; the raw transcript is stored, as Desktop stores it).
+  - `[medium]` `[defer]` edge-case-hunter: the clipboard-failure path is the one path with no observable state, against the intent's "same observable state its desktop twin ends in" — verified. Grouped with the row above; same deferral.
+  - `[low]` `[reject]` edge-case-hunter: `pipeline.rs`'s Tasks text names the reverse guard order — verified, and the Spec Change Log records the reversal with its measurement. Rejected: its fix is to edit this build's spec. The code comment half was patched separately.
+  - `[medium]` `[patch]` edge-case-hunter: `resolve_cleanup_provider`'s new comment claims "every caller passes through `config_skips_cleanup` / `offline_rule` first" — verified false: `resolve_providers`, `commands/settings.rs:803` and `reprocess_pending_entry` all reach it ungated, and the third also calls the provider. Group with verification-gap's fifth gap. Fixed: the comment now names the two gated dictation callers and `reprocess_pending_entry` as the known ungated one; the gap itself is deferred.
+  - `[low]` `[reject]` edge-case-hunter: `flushPreviewDelta` re-reads `cachedConfig`, not the live config, so a mid-recording switch to local STT is invisible — verified as a real nuance of the E1 row. Not worth fixing: `cachedConfig` is refreshed at recording start, so install and flush read the same value and the re-check is defence-in-depth; a per-flush disk read on a pause-hot path is more than a direct correction.
+  - `[low]` `[defer]` edge-case-hunter: the blank-guard KDoc cites `PipelineEvent::idle()` as its Desktop twin, and Desktop has no such guard — verified. Grouped with blind-hunter's asymmetry row; same deferral.
+  - `[medium]` `[patch]` verification-gap: the D10 fix — removal of the `e is IOException` pre-gate — is observed by no test; restoring the pre-gate keeps every test and the fixture green. Pre-verified by the lens and re-checked here. Fixed: `cleanupLadderGateHasNoTypePreFilter` parses the assignment's condition text and requires it to be exactly `isRetryableCleanupFailure(e)`, with the then-branch still reaching `resolveFallbackLlmProvider`.
+  - `[medium]` `[patch]` verification-gap: D-L19's only production call site is unverified; only the extracted helper is tested. Pre-verified. Grouped with blind-hunter's `process_frame` row; same fix.
+  - `[medium]` `[patch]` verification-gap: the three new `advanced.sttPrompt*` keys bypass the repo's parse-seam pattern and nothing reads the JSON, so a misspelled key makes B4 inert on Android with every gate green. Pre-verified; the repo's own `LlmModelOverrideConfigTest` states this rationale verbatim. Fixed: `parseSttPrompt` extracted in the `parseLlmModelOverride` shape, with JVM tests over real `config.json` text including absent-`advanced`, absent-key, key-at-root and non-string.
+  - `[high]` `[patch]` verification-gap: the android-gated half of `groq_jni.rs` — B2's hint feed, D9's sentinel, B3's export — is neither compiled nor run by either gate. Pre-verified, including that the JVM unit-test task never builds the Rust android target. Grouped with blind-hunter's row; same fix.
+  - `[medium]` `[patch]` verification-gap: `reprocess_pending_entry` did not adopt the one offline rule, while the code now carries a written claim that every caller does. Pre-verified. Split: the false claim was patched (comment corrected, the ungated caller named); the missing gate itself is pre-existing and deferred, because the intent names only the three definitions that existed.
+  - `[high]` `[patch]` verification-gap (other): the unguarded `nativeStripStockphraseGhosts` call loses the whole dictation on a stale `.so`. Grouped with the edge-case row; same fix.
+  - `[low]` `[patch]` verification-gap (other): `localSttBranchIsTakenOnlyWhileTheTestProviderIsOff` was weakened from "the first occurrence" to "some occurrence" when E1 added a second — verified. Fixed: re-anchored by body scoping.
+  - `[low]` `[patch]` verification-gap (other): `ChunkingParityTest`'s comments still justify their assertion with the `e is IOException` gate this story removed — verified; the assertion holds, the stated reason does not. Fixed: comments corrected.
+  - `[low]` `[reject]` verification-gap (other): `retryBudgetIsOneAttempt` is a source-text assertion, so a loop-shape change passes — verified, and filed by the lens as a note rather than a defect. Not worth fixing: executing the backoff loop needs Robolectric, which this repo does not have; the limit is now stated in `verdict.md` instead of implied.
+  - `[low]` `[defer]` verification-gap (other): `reprocess_pending_entry` and `transcribe_audio`/`transcribe_audio_bytes` build the STT prompt without `advanced.sttPrompt*` and run no part of `guard_transcript` — verified; the lens filed it explicitly as not-a-gap. Pre-existing and unnamed by any audit row; deferred as a recorded residual against `guard_transcript`'s "one function, both platforms" doc.
+  - `[medium]` `[patch]` intent-alignment: after the change no test in `recording.rs` exercises any code in `recording.rs` — verified: all four tests call `pipeline::config_skips_cleanup` directly, so reintroducing a second rule inside `cleanup_text` stays green, which is D-M20 one level up. Fixed: the offline branch extracted to `offline_passthrough(&AppState, &str)` — `cleanup_text` itself takes a `State` no test in this crate can build — and driven by two executing tests.
+  - `[low]` `[reject]` intent-alignment: E1's re-check reads a snapshot rather than fresh state, so it is not literally a re-read. Grouped with the edge-case row on the same line; rejected for the same reason.
+  - `[low]` `[reject]` intent-alignment: E2's "identical outcome on all three" is verified as one predicate with three readers, never by driving the three paths — verified. Partly addressed by the `offline_passthrough` patch (the in-app path now executes); the hotkey and Android overlay paths need a running app, and no instrument for that exists off-device. Recorded in the residual risks instead.
+  - `[medium]` `[defer]` intent-alignment: the clipboard-failure path ends in a state its desktop twin does not. Grouped with the edge-case rows; same deferral.
+  - `[low]` `[defer]` intent-alignment: the blank-delivery guard creates a divergence in the opposite direction. Grouped with blind-hunter's row; same deferral.
+  - `[medium]` `[patch]` intent-alignment: the production changes sit at the surface the intent names but the tests sit one or two levels below it — four seams carried no executing coverage (`nativeTranscribe`, `processAudio`'s `handler.post` block, `recording.rs`, the paste/retry/flush bodies). Verified. Fixed for three of the four: the `nativeTranscribe` decisions were lifted into testable helpers, `recording.rs` got an executing seam, and the D10 gate got a tripwire. The `handler.post` wiring of D4 and D5 remains source-read — recorded in the residual risks.
+
 ## Design Notes
 
 ### Delivery-state contract (which state each terminal path enters, and its source)
@@ -903,7 +1058,7 @@ anything on Windows. Every count reported must name what it did not exercise.
 
 ## Auto Run Result
 
-Status: ready-for-dev
+Status: done
 Blocking condition: none
 
 ### 2026-09-21 -- planning run 2 (resume after the intent gate; halt after planning requested)
@@ -984,3 +1139,133 @@ this spec. Nothing was built and no test was run -- not `cargo test --lib`, not 
 Map was re-measured by reading the tree, not by executing it. The 15 planned rows are planned, not
 verified. The claim that the D-L19 change is verdict-preserving is a reading of
 `advance_state`'s existing `energy_ok` AND (`vad/mod.rs:324-325`), not a measured result.
+
+### 2026-09-21 — build + review run (final)
+
+**Implemented change.** All 15 ADR-0016 Amendment 4 rows this story owns are closed. The post-STT
+guard chain became one function, `pipeline::guard_transcript`, which the desktop pipeline calls
+directly and the Android JNI calls through `stt::groq_jni::guard_transcript_for_jni`, fed the
+conditioning hint alone instead of the full built prompt (B2 / D-H5, D-H6, D-M9). A pre-guard ghost
+strip was added on Desktop and a post-cleanup one on Android over a new
+`nativeStripStockphraseGhosts` extern (B3 / D-H7). Android now conditions Whisper with
+`advanced.sttPrompt{De,En,Auto}` and `customPrompt` reaches the LLM and nothing else (B4 / D-H4).
+`mapCleanupResponse` became the twin of `llm::parse_chat_completion` — truncation and emptiness are
+named non-retryable failures, and an undecodable body fires the provider ladder on the single-call
+path too (D2, D3, D10). A `__ERROR_FORMAT:` sentinel makes an empty STT answer non-retryable with a
+retry budget of one (D9 / D-M5, D-M6). The Android delivery decision now reads the paste outcome and
+the clipboard outcome, so only a run that delivered earns the DONE checkmark, with no new
+`RecordingState` (D4, D5, D6). Four of five "nothing recognized" toasts are gone (D11). The history
+row and the Turso push moved behind the banking verdict, onto a worker thread (B1-Android / D-H3).
+One offline predicate — `pipeline::offline_rule` / `config_skips_cleanup` and the Kotlin twin
+`skipsCloudCleanup` — replaced three disagreeing definitions, and the live-preview flush refuses a
+stored `local` STT provider at install and at flush time (E1, E2). The desktop VAD calls Silero on
+every frame and the Android auto-stop hangover fires on the (N+1)-th frame (B6 / D-L19, D-L21); the
+0.5/0.35 dual threshold is documented as a carve-out and not built.
+
+**Files changed** (3 commits: `a995ca7` implementation, `967609f` matrix-audit coverage, `9efda74`
+review patches).
+
+- `src-tauri/src/pipeline.rs` — `guard_transcript` + `GuardOutcome`; the one offline rule
+  (`local_cleanup_available`, `offline_rule`, `offline_rule_with`, `config_skips_cleanup`);
+  `is_offline` deleted; `terminal_degrade_cause` widened so a clipboard-write failure on a clean run
+  names the shipped `ClipboardWriteFailed` cause.
+- `src-tauri/src/stt/mod.rs` — the built-in hint literals collapsed to `STT_HINT_DE/EN/AUTO`;
+  `builtin_stt_hint`, `select_stt_hint_override`, `stt_hint_text`; the prompt-builder separator made
+  explicit.
+- `src-tauri/src/stt/groq_jni.rs` — the inline chain replaced by a call; `guard_hint_for_jni`,
+  `stt_error_sentinel`, `guard_transcript_for_jni` as plain-Rust helpers a Linux test can reach; the
+  new `nativeStripStockphraseGhosts` export.
+- `src-tauri/src/vad/mod.rs` — `frame_decision` always invokes the predictor; a `#[cfg(test)]`
+  call counter on `SileroVad`; the `energy_floor` doc rewritten.
+- `src-tauri/src/llm/mod.rs` — the emptiness check trims, matching the Kotlin twin.
+- `src-tauri/src/commands/recording.rs` — `is_offline_mode` deleted; the offline branch extracted to
+  `offline_passthrough` and driven by tests.
+- `android/kotlin-src/.../KlarvoApi.kt` — the two new non-retryable cleanup exceptions; `Config`'s
+  three `sttPrompt*` fields with `parseSttPrompt`; `selectSttHintOverride`; `effectiveLlmProviderName`.
+- `android/kotlin-src/.../KlarvoOverlayService.kt` — the offline twin, the delivery and terminal-state
+  seams, `classifySttSentinel`, `guardedClipboardWrite`, the step reorder, the toast removals.
+- `android/kotlin-src/.../KlarvoAccessibilityService.kt` — `pasteIntoFocusedField` reports a
+  `PasteOutcome` instead of `Unit`.
+- `android/kotlin-src/.../KlarvoAudioRecorder.kt` — `hangoverFired`; the D-M10 carve-out documented.
+- `android/kotlin-src/.../GroqSttBridge.kt` — the new extern and the corrected `customPrompt` KDoc.
+- `android/kotlin-test/.../` — 4 new suites (`GuardChainBridgeTest`, `OfflineRuleVectorsTest`,
+  `SttSentinelClassificationTest`, `OverlayServiceSourceContractTest`) and 4 extended.
+- `test-fixtures/` — `guard-chain-vectors.json` and `offline-rule-vectors.json` new; the VAD and
+  test-provider vectors extended; `README.md` ledger updated.
+- `docs/backlog.md` — the deferred items and the hint/blocklist finding, with source refs.
+- `_bmad-output/implementation-artifacts/gate4-evidence/13-2/` — inversion evidence and verdict.
+
+**Review findings breakdown.** 45 findings from 4 lenses: high 4, medium 15, low 23, false 3.
+
+- *Patched* (16 fixes over 24 finding rows, grouped into 12 entries): 2 high entries — the
+  android-gated `nativeTranscribe` decisions lifted into testable plain-Rust helpers, and the
+  unguarded `nativeStripStockphraseGhosts` call that an `UnsatisfiedLinkError` would have used to
+  kill the worker thread after the paid API calls. 6 medium entries — the whitespace-emptiness
+  divergence, the unpinned `process_frame` call site, the unread `sttPrompt*` config keys, the
+  unobserved D10 ladder gate, the false "every caller is gated" comment, and `recording.rs`'s tests
+  no longer exercising `recording.rs`. 4 low entries — the call-site comment naming the rejected
+  guard order, the `>=` in the auto-stop log line, the three `"local"` literals, and the inversion
+  evidence's provenance. Plus eleven stale or overstated comments.
+- *Deferred* (8 new items in frontmatter `deferred`): `reprocess_pending_entry`'s missing offline
+  gate (medium), the Android local-Whisper path skipping the guard chain (medium), the silent-IDLE
+  clipboard failure (medium), the blank-delivery guard's missing Desktop twin (low), the unreachable
+  `cleanupLocal` (low), the control-character asymmetry (low), three desktop entry points that build
+  the STT prompt without `sttPrompt*` (low), and the duplicated test helpers (low).
+- *Rejected*, each with its reason: the preview-flush `?: "groq"` default (`false` — the same null
+  makes the adjacent clause false, so the flush is never installed); the empty review frontmatter
+  (`false` — read mid-flight, written before the lenses launched); the JSON-null `sttPrompt*`
+  (`false` — Rust serializes those fields as `""`, never null); `DeliveryDecision.paste` being
+  production-dead (`low` — the redundancy is structural, the gate must precede the paste); the empty
+  `choices` array burning the ladder (`low` — not met in everyday use, fix adds a branch); the
+  spec's Tasks text naming the reverse guard order (`low` — its fix is to edit this build's spec);
+  `flushPreviewDelta` reading the cached config (`low` ×2 — install and flush read the same
+  snapshot, a per-flush disk read is more than a direct correction); `retryBudgetIsOneAttempt` being
+  source-text only (`low` — executing the loop needs Robolectric, which this repo does not have);
+  and E2's three paths never being driven end to end (`low` — partly addressed, no off-device
+  instrument exists for the other two).
+
+**Verification performed** (all by this session, on the patched tree at `9efda74`):
+
+- Baseline `cd src-tauri && cargo test --lib` at `4e4bc00`: **749 passed, 0 failed** — the number
+  the spec predicted, so the baseline exception was never needed.
+- `cd src-tauri && cargo test --lib`: **774 passed, 0 failed**.
+- Device-free JVM gate (`:app:testUniversalDebugUnitTest --rerun-tasks` after syncing
+  `android/kotlin-src` and `android/kotlin-test` into `gen/android`): **29 suites / 268 tests, 0
+  failures, 0 errors, 0 skipped**. `Adr0017BoundaryGuardTest` green.
+- `npm run build`: not run — no `src/` file is touched by this story.
+- Inversions: **48/48 RED**, in four batches each carrying the tree it was measured at; the Rust
+  batch was re-run against the shipped tree.
+- Matrix Test Audit: all 20 I/O & Edge-Case Matrix rows are covered by a test that ran and passed.
+  Four rows (D11, B1-Android, D6-Android, E1's flush half) had no covering test after the first
+  implementation pass and were closed before review.
+
+**What no number here claims.** Both gates decide logic, wiring and structure on Linux only. Not
+decided: the real Whisper conditioning result for real audio (B4), the banking guard against a real
+foreground app (B1-Android), the real clipboard and accessibility behaviour on a device (D4,
+D6-Android), the real-audio effect of the VAD change (D-L19 / D-L21), the bubble's appearance, and
+anything on Windows. No APK was built and no Windows build was made. `verdict.md` carries the H+ list
+unchanged from the pre-build spec.
+
+**Residual risks.**
+
+- **The named unverified risk behind the follow-up recommendation:** two `high` entries were patched,
+  both of the same shape — a decision that no gate could reach, so it could be reverted with every
+  gate green. That shape was found three times across this story (the android-gated chain at
+  planning, the four matrix rows after the first pass, the two `nativeTranscribe` decisions at
+  review). The remaining instance is `processAudio`'s `handler.post` body: that Step 4 *calls*
+  `decideDelivery` / `terminalStateFor` and threads the paste outcome through them — D4's and D5's
+  actual wiring — is established by reading the diff and by source tripwires, never by execution. A
+  follow-up review should look there first.
+- **Six inversions did not behave as evidence on the first attempt** — four came back GREEN
+  (`contains`-style tripwires satisfied by an unrelated second occurrence; one production change made
+  with no assertion at all) and two went RED by compile error, which proves nothing about the test.
+  All six are written into `code-inversion-report.md`. Order-anchored and body-scoped assertions held;
+  `contains` ones did not.
+- **`scripts/android-install-debug.sh <ip:port> --full` is mandatory** — this story adds a native
+  symbol. A stale `.so` now degrades to the un-stripped text instead of killing the run, but the
+  symbol must still be rebuilt for B3's Android half to work at all.
+- **D6 and D-L19 remain Weg 2, agent-verified only**, as ADR-0016 Amendment 4 already records for D6
+  and as B6's missing H+ marker implies for D-L19.
+- **`test_silence_stays_silence` is green but now model-dependent** — it moved from a deterministic
+  `prob = 0.0` path to real ONNX output on digital-silence frames.
+- **`conductor/13-2` is unpushed** (6 commits ahead of `v1-ship`, no upstream). Not pushed by this run.
