@@ -404,6 +404,40 @@ class KlarvoOverlayService : Service() {
         }
 
         /**
+         * Performs [write] and reports whether it landed; a throw is caught,
+         * handed to [onFailure], and **never** propagated.
+         *
+         * Story 13-2 (D6 / D-M12). `copyToClipboard` was unguarded inside
+         * `handler.post`, so a throwing `setPrimaryClip` — an OEM clipboard
+         * service refusing or dying; HyperOS has its own clipboard policy
+         * layer — was an uncaught main-thread exception and the app crashed
+         * mid-delivery.
+         *
+         * [write] and [onFailure] are function parameters for exactly the
+         * reason `KlarvoAudioRecorder.vadGateDecision`'s `isSpeech` is one: the
+         * real bodies need a `Context`, a `ClipboardManager` and
+         * `android.util.Log`, all of which throw "not mocked" on this
+         * classpath. With the seam a JVM test drives the real catch semantics
+         * with a throwing fake, instead of a human reading the try/catch.
+         * The production [onFailure] (log + `pasteErrorCount`) still needs a
+         * source tripwire — see `OverlayServiceSourceContractTest`.
+         *
+         * A real `setPrimaryClip` failure is not producible on Andi's device
+         * and the test provider cannot inject it; ADR-0016 Amendment 4 records
+         * D6 as agent-verified only (Weg 2).
+         */
+        internal fun guardedClipboardWrite(
+            write: () -> Unit,
+            onFailure: (Throwable) -> Unit,
+        ): Boolean = try {
+            write()
+            true
+        } catch (e: Exception) {
+            onFailure(e)
+            false
+        }
+
+        /**
          * Classifies a cleanup failure as retryable, mirroring Rust's
          * `is_retryable_llm_error` (429 / 5xx / a transport failure with no
          * HTTP response at all).
@@ -3027,20 +3061,21 @@ class KlarvoOverlayService : Service() {
      * no new toast text, and Android gets no equivalent of Desktop's
      * "TEXT LOST" card, which would be a new surface.
      */
-    private fun copyToClipboard(text: String): Boolean = try {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Klarvo transcription", text)
-        clipboard.setPrimaryClip(clip)
-        true
-    } catch (e: Exception) {
-        KlarvoLogger.e(TAG, "[delivery] clipboard write failed -- text not delivered", e)
-        Thread {
-            KlarvoApi.updateFeedbackMetrics(this@KlarvoOverlayService) { m ->
-                m.copy(pasteErrorCount = m.pasteErrorCount + 1)
-            }
-        }.start()
-        false
-    }
+    private fun copyToClipboard(text: String): Boolean = guardedClipboardWrite(
+        write = {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("Klarvo transcription", text)
+            clipboard.setPrimaryClip(clip)
+        },
+        onFailure = { e ->
+            KlarvoLogger.e(TAG, "[delivery] clipboard write failed -- text not delivered", e)
+            Thread {
+                KlarvoApi.updateFeedbackMetrics(this@KlarvoOverlayService) { m ->
+                    m.copy(pasteErrorCount = m.pasteErrorCount + 1)
+                }
+            }.start()
+        },
+    )
 
     /**
      * The Whisper conditioning hint for [config]'s active language — the value

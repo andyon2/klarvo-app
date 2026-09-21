@@ -292,5 +292,87 @@
       ],
       "compile_error": false
     }
+  ],
+  "kotlin_matrix_audit": [
+    {
+      "inversion": "D11: \"No speech detected\" is toasted again (a recognition result speaks)",
+      "file": "KlarvoOverlayService.kt",
+      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak",
+      "RED": true,
+      "failed_tests": [
+        "OverlayServiceSourceContractTest > nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak FAILED",
+        "BUILD FAILED in 5s"
+      ]
+    },
+    {
+      "inversion": "D11 other half: \"No audio recorded\" is removed too (the capture fault goes silent)",
+      "file": "KlarvoOverlayService.kt",
+      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak",
+      "RED": true,
+      "failed_tests": [
+        "OverlayServiceSourceContractTest > nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak FAILED",
+        "BUILD FAILED in 5s"
+      ]
+    },
+    {
+      "inversion": "B1-Android: the history/Turso worker moves back ahead of the banking verdict (Steps 3/3b)",
+      "file": "KlarvoOverlayService.kt",
+      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.bankingVerdictPrecedesTheHistoryAndTursoWrites",
+      "RED": true,
+      "failed_tests": [
+        "OverlayServiceSourceContractTest > bankingVerdictPrecedesTheHistoryAndTursoWrites FAILED",
+        "BUILD FAILED in 5s"
+      ]
+    },
+    {
+      "inversion": "B1-Android: the writes run inline on the main looper instead of a worker thread",
+      "file": "KlarvoOverlayService.kt",
+      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.theWritesAreStillOffTheMainLooper",
+      "RED": true,
+      "failed_tests": [
+        "OverlayServiceSourceContractTest > theWritesAreStillOffTheMainLooper FAILED",
+        "BUILD FAILED in 5s"
+      ]
+    },
+    {
+      "inversion": "D6: guardedClipboardWrite rethrows instead of catching (the uncaught main-thread throw returns)",
+      "file": "KlarvoOverlayService.kt",
+      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.clipboardWriteIsCaughtCountedAndNeverPropagates",
+      "RED": true,
+      "failed_tests": [
+        "OverlayServiceSourceContractTest > clipboardWriteIsCaughtCountedAndNeverPropagates FAILED",
+        "BUILD FAILED in 5s"
+      ]
+    },
+    {
+      "inversion": "D6: copyToClipboard's failure handler stops incrementing pasteErrorCount",
+      "file": "KlarvoOverlayService.kt",
+      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.copyToClipboardRoutesThroughTheSeamAndCountsTheFailure",
+      "RED": true,
+      "failed_tests": [
+        "OverlayServiceSourceContractTest > copyToClipboardRoutesThroughTheSeamAndCountsTheFailure FAILED",
+        "BUILD FAILED in 5s"
+      ]
+    },
+    {
+      "inversion": "E1: the flush-time re-check moves BELOW the delta snapshot",
+      "file": "KlarvoOverlayService.kt",
+      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio",
+      "RED": true,
+      "failed_tests": [
+        "OverlayServiceSourceContractTest > previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio FAILED",
+        "BUILD FAILED in 5s"
+      ]
+    },
+    {
+      "inversion": "E1: the flush-time re-check only logs and no longer returns",
+      "file": "KlarvoOverlayService.kt",
+      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio",
+      "RED": true,
+      "failed_tests": [
+        "OverlayServiceSourceContractTest > previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio FAILED",
+        "BUILD FAILED in 5s"
+      ]
+    }
   ]
 }

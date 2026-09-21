@@ -693,6 +693,17 @@ they are byte-identical, and nothing enforced that. The separator moved into the
   (`GUARD-ECHO-DROP-001`, `GUARD-BLOCKLIST-DROP-001`). An inversion of
   `guard_transcript_for_jni` came back GREEN: every planned guard vector asserts
   survival, so the drop arm was never exercised. See `code-inversion-report.md`.
+- **Matrix Test Audit follow-up (after the first build pass).** Four I/O & Edge-Case
+  Matrix rows — **D11**, **B1-Android**, **D6-Android** and the flush-time half of
+  **E1** — had no covering test; their evidence was "read the diff", which the audit
+  rule does not accept. Added `OverlayServiceSourceContractTest` (7 tests) and one new
+  production seam, `KlarvoOverlayService.guardedClipboardWrite`, so D6's "caught, never
+  an uncaught main-thread exception" is EXECUTED rather than read — the
+  `vadGateDecision` parameter pattern, because the real write needs a `Context` and a
+  `ClipboardManager`. The other three rows are order-anchored source tripwires
+  (`Adr0017BoundaryGuardTest`'s instrument). 8 further inversions, all RED; two of them
+  first went red by COMPILE ERROR and were rewritten until the assertion itself failed.
+  No behaviour changed. Gates after: `cargo test --lib` 768, JVM 29 suites / 260 tests.
 - **Group 3, task 3 read as ADR-0016's `kein „"-History-Eintrag`**, not as "no history
   row at all" — see Implementation Notes. The Desktop twin writes a row on its degrade
   path, so "no row" would have been a new divergence.

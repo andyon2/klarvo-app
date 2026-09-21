@@ -14,8 +14,8 @@ structure on Linux only.
 |---|---|---|
 | baseline | `cd src-tauri && cargo test --lib` at `4e4bc00` | **749 passed, 0 failed** — the number the spec predicted |
 | Rust | `cd src-tauri && cargo test --lib` | **768 passed, 0 failed** (+19) |
-| JVM (device-free) | `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` in `src-tauri/gen/android`, after syncing `android/kotlin-src` + `android/kotlin-test` | **28 suites / 253 tests, 0 failures, 0 errors** (baseline 25 / 217) |
-| inversions | 10 Rust + 18 Kotlin deliberate breaks | **28/28 RED**, see `code-inversion-report.md` |
+| JVM (device-free) | `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` in `src-tauri/gen/android`, after syncing `android/kotlin-src` + `android/kotlin-test` | **29 suites / 260 tests, 0 failures, 0 errors** (baseline 25 / 217) |
+| inversions | 10 Rust + 18 Kotlin + 8 matrix-audit follow-up | **36/36 RED**, see `code-inversion-report.md` |
 | `npm run build` | not run | no `src/` file is touched by this story |
 
 `git status` after the last revert carries only this story's intended changes; no
@@ -57,6 +57,18 @@ inversion edit survived.
   unchanged: `advance_state` ANDs `energy_ok` into both thresholds, asserted); the
   Android auto-stop hangover fires on the (N+1)-th frame.
 
+## Matrix Test Audit follow-up (2026-09-21)
+
+An audit of the spec's I/O & Edge-Case Matrix found four rows whose only evidence was
+"read the diff": **D11**, **B1-Android**, **D6-Android** and the flush-time half of
+**E1**. `OverlayServiceSourceContractTest` (7 tests) closes them, and each assertion is
+inverted (A1-A8). D6's catch semantics now run through a real seam,
+`KlarvoOverlayService.guardedClipboardWrite`, which takes the write and the failure
+handler as parameters for the same reason `KlarvoAudioRecorder.vadGateDecision` takes
+`isSpeech` — the real bodies need a `Context` and a `ClipboardManager`. The other three
+rows are order-anchored source tripwires, the instrument `Adr0017BoundaryGuardTest`
+established; they prove the code says the right thing, never that the device does it.
+
 ## What these numbers do NOT cover
 
 Named, not implied:
@@ -64,11 +76,13 @@ Named, not implied:
 - **The real Whisper conditioning result for real audio (B4).** That two different
   strings reach the model is wiring; that the transcript's punctuation and casing change is a
   model behaviour only Andi's device can show.
-- **The banking guard against a real foreground app (B1-Android).** The reordering is a
-  statement about statement order inside `handler.post`; no JVM test observes it.
+- **The banking guard against a real foreground app (B1-Android).** The statement ORDER
+  is now asserted (`bankingVerdictPrecedesTheHistoryAndTursoWrites`); what no test can
+  see is a real blocklisted app in the foreground. Andi's check stands: dictate into one,
+  then look at History.
 - **The real clipboard and accessibility behaviour on a device (D4, D6-Android).** The
-  branch logic is decided; `setPrimaryClip` throwing and `ACTION_PASTE` being refused are
-  not producible off-device.
+  branch logic and the catch semantics are decided; a real `setPrimaryClip` throw and a
+  real refused `ACTION_PASTE` are not producible off-device.
 - **The real-audio effect of the VAD change (D-L19, D-L21).** D-L19 is **Weg 2,
   agent-verified only** — B6 carries no H+ (`ADR-0016:289`) and the per-frame verdict is
   provably unchanged, so there is nothing for Andi to observe. D-L21 shifts auto-stop by

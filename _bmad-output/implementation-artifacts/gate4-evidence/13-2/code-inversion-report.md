@@ -1,9 +1,11 @@
 # Story 13-2 — inversion evidence (code)
 
+**36 inversions, all RED**: 10 Rust, 18 Kotlin, 8 Kotlin matrix-audit follow-up.
+
 Every new or reshaped guard, sentinel, predicate and terminal decision was broken
 deliberately, run, shown RED, and reverted. Each row is a real edit to production
 source followed by a real test run, not a reading. The tree was re-confirmed green
-after the last revert (`cargo test --lib` 768 passed; JVM gate 28 suites / 253 tests,
+after the last revert (`cargo test --lib` 768 passed; JVM gate 29 suites / 260 tests,
 0 failures) and `git status` carries no stray edit.
 
 Driver scripts: `invert_rust.py` / `invert_kotlin.py` (scratchpad, not committed —
@@ -47,6 +49,37 @@ they are mechanical apply/run/revert loops over the tables below).
 | K17 | the dictation call site is fed config.customPrompt again (D-H4 returns) | `KlarvoOverlayService.kt` | `theJniGetsTheSttHintAndNotTheCleanupInstruction` | **RED** |
 | K18 | only the LIVE-PREVIEW call site is fed config.customPrompt again | `KlarvoOverlayService.kt` | `theJniGetsTheSttHintAndNotTheCleanupInstruction` | **RED** |
 
+## Kotlin — Matrix Test Audit follow-up (four rows that had no covering test)
+
+A Matrix Test Audit found four I/O & Edge-Case Matrix rows — **D11**, **B1-Android**,
+**D6-Android** and the flush-time half of **E1** — whose only evidence in the first pass
+was "read the diff". `OverlayServiceSourceContractTest` covers them; D6's catch semantics
+run through a real seam (`KlarvoOverlayService.guardedClipboardWrite`, the `vadGateDecision`
+parameter pattern), the other three are order-anchored source tripwires.
+
+| # | Deliberate break | File | Expected-red test | RED |
+|---|---|---|---|---|
+| A1 | D11: "No speech detected" is toasted again (a recognition result speaks) | `KlarvoOverlayService.kt` | `nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak` | **RED** |
+| A2 | D11 other half: "No audio recorded" is removed too (the capture fault goes silent) | `KlarvoOverlayService.kt` | `nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak` | **RED** |
+| A3 | B1-Android: the history/Turso worker moves back ahead of the banking verdict (Steps 3/3b) | `KlarvoOverlayService.kt` | `bankingVerdictPrecedesTheHistoryAndTursoWrites` | **RED** |
+| A4 | B1-Android: the writes run inline on the main looper instead of a worker thread | `KlarvoOverlayService.kt` | `theWritesAreStillOffTheMainLooper` | **RED** |
+| A5 | D6: guardedClipboardWrite rethrows instead of catching (the uncaught main-thread throw returns) | `KlarvoOverlayService.kt` | `clipboardWriteIsCaughtCountedAndNeverPropagates` | **RED** |
+| A6 | D6: copyToClipboard's failure handler stops incrementing pasteErrorCount | `KlarvoOverlayService.kt` | `copyToClipboardRoutesThroughTheSeamAndCountsTheFailure` | **RED** |
+| A7 | E1: the flush-time re-check moves BELOW the delta snapshot | `KlarvoOverlayService.kt` | `previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio` | **RED** |
+| A8 | E1: the flush-time re-check only logs and no longer returns | `KlarvoOverlayService.kt` | `previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio` | **RED** |
+
+**Two of these first went RED by COMPILE ERROR, which proves nothing about the test**, and
+were rewritten until the assertion itself failed: moving the history/Turso block ahead of
+`handler.post` left the `captured*` locals out of scope (the pre-13-2 shape uses the local
+names, so the inversion now substitutes them), and turning `Thread { … }.start()` into
+`run { … }.start()` does not type-check (the inversion now drops `.start()` too). Both are
+recorded above in their recompiled, assertion-RED form.
+
+Vacuity discipline for this batch: every assertion is either an ORDER assertion — which
+needs both needles to exist and cannot be satisfied by a second occurrence elsewhere, the
+failure mode that made two earlier tripwires pass — or two-sided (A1 vs A2: the toasts that
+must be gone AND the ones that must remain).
+
 ## Two inversions that came back GREEN first, and what they changed
 
 An inversion that passes is the point of running them. Two did, and both were
@@ -76,12 +109,15 @@ test defects, fixed before the table above was recorded:
   half that decides behaviour: the Kotlin classifier (K5) and the call-site tripwires
   (K17, K18). The Rust arm's placement before the catch-all is a reading of the match,
   recorded here as such.
-- **`copyToClipboard`'s try/catch.** The catch itself needs a throwing
-  `setPrimaryClip`, which is not producible on a JVM host and which the test provider
-  cannot inject. Its CONSEQUENCE is inverted (K9: `decideDelivery` ignoring
-  `clipboardOk`). ADR-0016 Amendment 4 already records D6 as agent-verified only.
-- **The Step 3/3b reordering (B1-Android / D-H3).** `saveToHistory` and `pushToTurso`
-  need a `Context` and SQLite; the move is a statement about statement order inside
-  `handler.post`, which no JVM test can observe. Verified by reading the diff, and it is
-  on Andi's device list ("dictate into a blocklisted app; History shows no entry").
+- **A REAL `setPrimaryClip` failure.** Not producible on a JVM host, and the test
+  provider cannot inject it; ADR-0016 Amendment 4 records D6 as agent-verified only. The
+  catch SEMANTICS are executed through `guardedClipboardWrite` (A5) and the counter
+  wiring is tripwired (A6), so what remains unverified is the device, not the code.
+- **That the device really behaves this way.** A source tripwire proves the code says the
+  right thing, never that HyperOS does it. The device half of B1-Android, D4, D6 and E1
+  is on Andi's list in `verdict.md`.
+
+*(This list was longer after the first pass. The Matrix Test Audit rows A1-A8 above closed
+the "diff-verified only" entries for D11, B1-Android, D6-Android and E1's flush-time
+re-check.)*
 
