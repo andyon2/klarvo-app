@@ -3559,6 +3559,51 @@ So that Andi can provoke "empty answer", "truncated answer", "malformed answer",
 **Out of scope:** any change to real provider behaviour. **DoD:** tests green; 🖥️📱 Andi selects
 "empty answer" on each device and sees the current (pre-13-2) behaviour, which proves the enabler.
 
+### Story 13.1b: Test provider operability
+
+**Key `13-1b` — Test provider: one row per chain, sticky Advanced save, feedback bubble off · S**
+
+**Source:** Andi's H+ device check of 13-1 (2026-09-21, Xiaomi + Windows) — three failed attempts,
+none a code defect. Findings and his decisions: `docs/backlog.md` "13-1 H+ device check" (1–4);
+evidence `gate4-evidence/RUN-2026-09-20.md`. Decisions are Andi's and closed — the spec does not
+re-open them.
+
+As Andi (tester on my own devices, not a developer),
+I want to switch the test provider on with **one** control per chain and save it with a button I can
+see,
+So that every H+ check in Epic 13 takes one attempt instead of three.
+
+**Acceptance Criteria (outcomes — full Given/When/Then in the build's planning step):**
+- **One row per chain.** Settings → Advanced → System (behind Expert mode) shows `Test provider (LLM)`
+  and `Test provider (STT)`, each one select: `off` / `ok` / `empty` / `truncated` / `malformed` /
+  `http429` / `http5xx` / `transport` (STT: its own subset from 13-1). The separate provider switch
+  rows and scenario rows from 13-1 are gone. A half-configured state (provider on, scenario
+  unsaved — or the reverse) is impossible by construction.
+- **Named `test`, not `debug`.** Label and persisted value no longer collide with `Log Level = debug`
+  (the row directly above, which Andi read as the switch on Windows). The spec picks the config
+  shape; whatever it picks, Rust twin, Kotlin twin and React read the **same** keys, an existing
+  `llmProvider="debug"` / `advanced.debug*Scenario` config migrates or is ignored **without** leaving
+  the user on a dead provider, and the log line still names the scenario that fired on both platforms.
+- **One save.** The test-provider rows are saved by exactly one button; choosing a value and pressing
+  that button persists it on Windows and Android (verified by reading `config.json`).
+- **Sticky Advanced save.** While the Advanced panel is dirty its `Save` is fully visible at the bottom
+  edge without scrolling, on the phone and on the desktop; never clipped by the settings card.
+- **Feedback bubble off, nothing covered.** The feedback FAB and its tooltip are not rendered
+  (switched off until needed; `FeedbackModal` stays in the tree, re-enabling is a one-line change),
+  and the settings card keeps enough bottom padding that no control is covered on the phone.
+- 13-1's guarantees hold unchanged: never in a production fallback ladder, never the default,
+  invisible in the normal provider picker, license gate untouched (13-4 owns it); Rust + JVM tests
+  cover the new shape; inversion check RED at writing time.
+
+**Surface story — control states:** the select is the shipped `KSelect`, the save button the shipped
+Advanced footer button, both reused verbatim (no new states to design).
+
+**Out of scope:** the unlicensed-Android gate on the test provider (13-4) · `KSelect` opening upward
+(struck by Andi) · the phone's signing line (tooling, `scripts/android-install-debug.sh`).
+**DoD:** tests green; 🖥️📱 Andi sets `Test provider (LLM)` = `empty` on each device in **one** attempt
+with no instructions beyond "Advanced → System", dictates, and sees the 13-1 behaviour
+(Desktop: "Cleanup failed", raw text in clipboard · Android: empty paste until 13-2).
+
 ### Story 13.2: Parity sweep: guards and silent loss
 
 **Key `13-2` — Parity sweep 1: guards, core output, silent loss · S rows**
@@ -3781,7 +3826,7 @@ text arrives. **Out of scope:** any Kotlin STT code.
 
 ## Proposed order (critical path, sprint-planning may reorder)
 
-13-1 → 13-2 (needs 13-1 for H+) → 13-3 (independent, visible on the Xiaomi) → 13-4 → 13-5
+13-1 → 13-1b (operability of the enabler, Andi 2026-09-21) → 13-2 (needs 13-1 for H+) → 13-3 (independent, visible on the Xiaomi) → 13-4 → 13-5
 (needs 13-4) → 13-6 · 13-7 · 13-8 · 13-9 (independent). Rationale: 13-2 carries the user-visible
 guard bugs (a dictionary term ≥ 10 chars deleted from every Android transcript), so it goes
 right after its enabler.

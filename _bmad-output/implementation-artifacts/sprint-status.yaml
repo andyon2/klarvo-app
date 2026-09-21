@@ -61,7 +61,7 @@
 # Epic 13 — Parity-Linie über Audit #2 [L3 brownfield; ADR-0016 Amendment 4] — Schnitt 2026-09-17 (Andi); Epic-File epics.md Part 9; Bau je Story = eigenes Go
 
 generated: '2026-05-30'
-last_updated: 2026-09-21
+last_updated: '2026-09-21'
 project: klarvo
 project_key: NOKEY
 tracking_system: file-system
@@ -177,6 +177,7 @@ development_status:
 
   epic-13: in-progress
   13-1-debug-test-provider-both-twins: done
+  13-1b-test-provider-operability: backlog
   13-2-parity-sweep-guards-and-silent-loss: backlog
   13-3-parity-sweep-android-gates-and-config-hygiene: backlog
   13-4-desktop-license-gate-and-one-free-tier: backlog

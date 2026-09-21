@@ -1615,7 +1615,7 @@ AC5 stop-path is CLOSED on the proxy (2026-09-10, after close-out): `minRecordin
    put the detour into a script: `android-build.sh` on the laptop, then `assembleUniversalDebug -x rustBuild*`,
    copy to powerhouse, `adb install -r` from powerhouse (laptop cannot reach the phone over Tailscale).
 
-Cut proposal: (1)+(2)+(3)+(4) = one small surface story BEFORE 13-2 (Andi uses the test provider in every
+**CUT 2026-09-21: (1)–(4) = Story 13.1b `13-1b-test-provider-operability` (`epics.md` Part 9, `backlog`, not built).** Was: (1)+(2)+(3)+(4) = one small surface story BEFORE 13-2 (Andi uses the test provider in every
 Epic-13 story); (7) = tooling quick-fix, no story.
 
 
