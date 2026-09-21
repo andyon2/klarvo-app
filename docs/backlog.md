@@ -1601,6 +1601,24 @@ AC5 stop-path is CLOSED on the proxy (2026-09-10, after close-out): `minRecordin
 
 ## 13-1 H+ device check — operability findings (2026-09-21, Xiaomi 23054RA19C + Windows)
 
+**DECIDED by Andi 2026-09-21 (not built yet — build needs his explicit Go):**
+1. Advanced `Save` footer -> **sticky** at the bottom edge while dirty (always visible).
+2. Two save buttons -> **one row per chain**: "Test provider: off / ok / empty / truncated ..."
+   replaces provider-switch + scenario row (LLM and STT each). Changes 13-1's data model
+   (`llmProvider="debug"` + `advanced.debug*Scenario`) -> needs a migration note + twin update (Kotlin reads the same keys).
+3. Naming -> the value/label is **`test`, not `debug`** (no more clash with `Log Level = debug`). Folds into (2).
+4. Feedback bubble -> card gets bottom padding so nothing is covered, **and the bubble is switched off
+   until it is needed** (`App.tsx` feedback FAB + tooltip; `FeedbackModal` stays in the tree, just unreachable).
+5. `KSelect` opening upward -> **struck**, normal component behaviour.
+6. Unlicensed Android gates the test provider -> **stays**, handled in 13-4.
+7. Signing line -> **phone stays on debug builds** (`run-as` config reads saved the H+ check twice);
+   put the detour into a script: `android-build.sh` on the laptop, then `assembleUniversalDebug -x rustBuild*`,
+   copy to powerhouse, `adb install -r` from powerhouse (laptop cannot reach the phone over Tailscale).
+
+Cut proposal: (1)+(2)+(3)+(4) = one small surface story BEFORE 13-2 (Andi uses the test provider in every
+Epic-13 story); (7) = tooling quick-fix, no story.
+
+
 Source: `gate4-evidence/RUN-2026-09-20.md` (H+ sections). All are design questions -> Andi decides;
 nothing built. They cost three failed test attempts, so they block a human from *using* the enabler.
 
