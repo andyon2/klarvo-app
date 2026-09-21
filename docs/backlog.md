@@ -1665,3 +1665,12 @@ Quelle: Pre-flight 13-1b, 2026-09-21. Eigene Regeln: 4450 Woerter (`SKILL.md` 22
 - **Detektor 1 prueft nur ausgefuehrte Befehle** (`tool_use` Bash), nicht den ganzen Mitschrift-Text: Lauf 13-1b lieferte 5 Fehltreffer aus geladenem Text (Memory-Index, Vertrag), 0 mit der Befehls-Pruefung.
 - Prosa bleibt nur fuer Urteile: Spec-Gate, Ergebnis-Tabelle.
 - Regel fuer die Arbeit: jeder neue Absatz ersetzt einen alten; keine Regel ohne Pruefung gegen die bestehenden.
+
+### FOUND 2026-09-21 — Android: Build-Stempel in „Ueber" zeigt das Jahr 2009 (Andi, H+ 13-1b)
+
+Quelle: Andis Geraete-Check 13-1b auf dem Xiaomi (Debug-Build `20cf02b`). Vorbestand, nicht von 13-1b.
+Ursache im Code belegt: `get_build_info` (`src-tauri/src/commands/misc.rs:310`) nimmt die mtime von
+`current_exe()`. Auf Android ist das der System-Prozess (`app_process`), nicht die App; dessen Datei
+traegt das Datum des System-Images. Nicht gemessen: ob der Release-Build dasselbe zeigt (Andi meint, dort
+war es gefixt -- der Code kennt keinen Unterschied zwischen Debug und Release).
+Richtung: Build-Zeit zur Build-Zeit festhalten (`build.rs`, wie schon `KLARVO_BUILD_HASH`) statt zur Laufzeit raten.
