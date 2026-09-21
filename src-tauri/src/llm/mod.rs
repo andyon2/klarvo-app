@@ -600,7 +600,7 @@ impl OpenAiCompatibleCleanup {
 
     /// Sends a `ChatRequest` to the endpoint and parses the response.
     ///
-    /// The response half lives in [`map_chat_http_response`] so `DebugCleanup`
+    /// The response half lives in [`map_chat_http_response`] so `TestCleanup`
     /// can drive the *same* mapping from a synthesised response (story 13-1).
     async fn send_request(&self, body: &ChatRequest<'_>) -> Result<CleanupResult, LlmError> {
         let response = self
@@ -616,7 +616,7 @@ impl OpenAiCompatibleCleanup {
 }
 
 // ---------------------------------------------------------------------------
-// Response → Result mapping (shared by the real providers and DebugCleanup)
+// Response → Result mapping (shared by the real providers and TestCleanup)
 // ---------------------------------------------------------------------------
 
 /// Maps an OpenAI-compatible chat HTTP response to a [`CleanupResult`].
@@ -1286,24 +1286,33 @@ impl CleanupProvider for AnthropicCleanup {
 }
 
 // ---------------------------------------------------------------------------
-// DebugCleanup -- canned wire responses for reproducing provider anomalies
-// (Story 13-1, the H+ enabler for drift rows D2/D-H19, D3/D-M16, D10/D-M2)
+// TestCleanup -- canned wire responses for reproducing provider anomalies
+// (Story 13-1, the H+ enabler for drift rows D2/D-H19, D3/D-M16, D10/D-M2;
+//  reshaped and renamed by story 13-1b)
 // ---------------------------------------------------------------------------
 
-/// The `llm_provider` / `stt_provider` config value that selects the debug
-/// provider. Never a default, never a fallback candidate, and never offered by
-/// the normal provider picker.
-pub const DEBUG_PROVIDER_NAME: &str = "debug";
+/// The name this provider reports for itself: its `model()` id, the word its
+/// log line carries, and the Kotlin twin's `LlmProviderInfo.providerName`.
+///
+/// It is **not** a `llm_provider` / `stt_provider` config value any more (story
+/// 13-1b): selection moved to `advanced.testProviderLlm` / `::testProviderStt`,
+/// where the value *is* the state. Never a default, never a fallback candidate,
+/// never offered by the normal provider picker.
+///
+/// Named `test`, not `debug`, so it cannot be mistaken for the `Log Level =
+/// debug` row that sits one line above it in Advanced → System — the confusion
+/// that cost story 13-1's device check an attempt.
+pub const TEST_PROVIDER_NAME: &str = "test";
 
 /// Endpoint the `transport` scenario talks to: the loopback discard port.
 ///
 /// `transport` means *no response at all*, so there is nothing to synthesise.
 /// A real request to `127.0.0.1:1` produces a genuine transport error through
 /// the real client code and keeps every byte on the device.
-pub(crate) const DEBUG_TRANSPORT_URL: &str = "http://127.0.0.1:1/";
+pub(crate) const TEST_TRANSPORT_URL: &str = "http://127.0.0.1:1/";
 
 /// Turns a canned `(status, body)` pair into a real, in-memory
-/// [`reqwest::Response`] so the debug providers can hand it to the very same
+/// [`reqwest::Response`] so the test providers can hand it to the very same
 /// response-mapping code a network answer goes through.
 ///
 /// `reqwest::Response` has no public constructor for a network response, but
@@ -1317,7 +1326,7 @@ pub(crate) const DEBUG_TRANSPORT_URL: &str = "http://127.0.0.1:1/";
 /// caller feeds it a literal from a closed canned table, so that branch is
 /// unreachable in practice; it is a fail-soft `Option` rather than a panic
 /// because this code ships in the product binary.
-pub(crate) fn debug_canned_response(status: u16, body: &str) -> Option<reqwest::Response> {
+pub(crate) fn test_canned_response(status: u16, body: &str) -> Option<reqwest::Response> {
     http::Response::builder()
         .status(status)
         .body(body.as_bytes().to_vec())
@@ -1325,17 +1334,17 @@ pub(crate) fn debug_canned_response(status: u16, body: &str) -> Option<reqwest::
         .map(reqwest::Response::from)
 }
 
-/// The canned `(status, body)` pair for a debug LLM scenario.
+/// The canned `(status, body)` pair for a test LLM scenario.
 ///
 /// `None` means "no response at all" — the caller performs the loopback request
-/// described on [`DEBUG_TRANSPORT_URL`] instead.
+/// described on [`TEST_TRANSPORT_URL`] instead.
 ///
 /// An unrecognised scenario resolves like `"ok"`, matching the fail-soft rule
 /// every other provider-name/table lookup in this module follows.
 ///
 /// The bodies are the single source of truth shared with the Kotlin twin
-/// through `test-fixtures/debug-provider-scenario-vectors.json`.
-pub(crate) fn debug_llm_canned_wire(scenario: &str) -> Option<(u16, &'static str)> {
+/// through `test-fixtures/test-provider-scenario-vectors.json`.
+pub(crate) fn test_llm_canned_wire(scenario: &str) -> Option<(u16, &'static str)> {
     match scenario {
         // 200 + a well-formed envelope whose content is the empty string.
         "empty" => Some((
@@ -1379,8 +1388,12 @@ pub(crate) fn debug_llm_canned_wire(scenario: &str) -> Option<(u16, &'static str
 }
 
 /// A cleanup provider that never talks to a real LLM: it yields the canned wire
-/// response selected by `advanced.debugLlmScenario` and lets the *real* mapping
+/// response named by `advanced.testProviderLlm` and lets the *real* mapping
 /// ([`map_chat_http_response`]) decide the outcome.
+///
+/// Story 13-1b: that one key both switches this provider on and selects the
+/// scenario — the value IS the state, so this type is only ever constructed when
+/// the key is something other than `config::TEST_PROVIDER_OFF`.
 ///
 /// Why the wire and not the trait: the defect story 13-2 fixes lives in the
 /// mapping (Kotlin returns `""` for an empty answer and never inspects
@@ -1397,17 +1410,20 @@ pub(crate) fn debug_llm_canned_wire(scenario: &str) -> Option<(u16, &'static str
 ///   `KlarvoApi.cleanupChunked`);
 /// - above `CHUNK_THRESHOLD` the provider is called once **per chunk**, so the
 ///   canned answer comes back per chunk, not per dictation.
-pub struct DebugCleanup {
+pub struct TestCleanup {
     scenario: String,
 }
 
-impl DebugCleanup {
+impl TestCleanup {
     /// Model ID reported by [`CleanupProvider::model`] — what `Klarvo.log` names
-    /// for a debug run. The scenario is logged separately on each call.
-    pub const DEFAULT_MODEL: &'static str = "debug";
+    /// for a test run. The scenario is logged separately on each call.
+    ///
+    /// Derived from [`TEST_PROVIDER_NAME`] rather than repeated, so there is one
+    /// value-definition site for the word the whole feature is named after.
+    pub const DEFAULT_MODEL: &'static str = TEST_PROVIDER_NAME;
 
     pub fn new(scenario: impl Into<String>) -> Self {
-        DebugCleanup {
+        TestCleanup {
             scenario: scenario.into(),
         }
     }
@@ -1415,16 +1431,16 @@ impl DebugCleanup {
     /// Runs the canned wire response through the real mapping.
     async fn canned(&self) -> Result<CleanupResult, LlmError> {
         log::info!(
-            "[llm] DEBUG cleanup provider active: scenario={}",
+            "[llm] TEST cleanup provider active: scenario={}",
             self.scenario
         );
-        match debug_llm_canned_wire(&self.scenario) {
-            Some((status, body)) => match debug_canned_response(status, body) {
+        match test_llm_canned_wire(&self.scenario) {
+            Some((status, body)) => match test_canned_response(status, body) {
                 // The synthesised response goes through the REAL mapping, so the
                 // outcome is whatever the live path would produce for these bytes.
                 Some(response) => map_chat_http_response(response).await,
                 None => Err(LlmError::ResponseFormat(format!(
-                    "Debug provider: invalid canned status {status}"
+                    "Test provider: invalid canned status {status}"
                 ))),
             },
             None => {
@@ -1438,14 +1454,14 @@ impl DebugCleanup {
                 // of hanging the pipeline (and `cargo test --lib`) forever. Plus
                 // `.no_proxy()`: with `HTTP_PROXY` set, reqwest would otherwise
                 // route this probe through the proxy and the "no byte leaves the
-                // device" claim on `DEBUG_TRANSPORT_URL` would be false.
+                // device" claim on `TEST_TRANSPORT_URL` would be false.
                 let response = reqwest::Client::builder()
                     .connect_timeout(std::time::Duration::from_secs(15))
                     .timeout(std::time::Duration::from_secs(30))
                     .no_proxy()
                     .build()
                     .unwrap_or_else(|_| reqwest::Client::new())
-                    .post(DEBUG_TRANSPORT_URL)
+                    .post(TEST_TRANSPORT_URL)
                     .send()
                     .await?;
                 // Unreachable in practice (nothing listens on the discard port);
@@ -1458,7 +1474,7 @@ impl DebugCleanup {
 }
 
 #[async_trait::async_trait]
-impl CleanupProvider for DebugCleanup {
+impl CleanupProvider for TestCleanup {
     fn model(&self) -> &str {
         Self::DEFAULT_MODEL
     }
@@ -1557,11 +1573,13 @@ pub fn effective_cleanup_model(provider: &str, override_raw: &str) -> String {
         "openai" => OpenAiCleanup::DEFAULT_MODEL,
         "groq" => GroqCleanup::DEFAULT_MODEL,
         "anthropic" => AnthropicCleanup::DEFAULT_MODEL,
-        // Story 13-1: without this arm the debug provider falls into the
-        // catch-all and this table reports `deepseek-chat` for a run that never
-        // touches DeepSeek — a wrong model ID in `Klarvo.log` and in anything
-        // that later asks this function what `"debug"` resolves to.
-        DEBUG_PROVIDER_NAME => DebugCleanup::DEFAULT_MODEL,
+        // Story 13-1b: the story-13-1 arm for the test provider is GONE, not
+        // moved. This function resolves a model for a *provider name*, and since
+        // selection left the provider name (`advanced.testProviderLlm` decides
+        // now) no caller can ever pass the test provider's name here. Keeping a
+        // dead arm would imply a reachable path that does not exist. The runtime
+        // still reports the right model: `TestCleanup::model()` returns
+        // `TEST_PROVIDER_NAME`, and that is what `Klarvo.log` reads.
         // "deepseek" and any unrecognised value
         _ => DeepSeekCleanup::DEFAULT_MODEL,
     }
@@ -2953,32 +2971,32 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Story 13-1 — debug test provider (LLM half)
+    // Story 13-1/13-1b — test provider (LLM half)
     //
-    // Driven by test-fixtures/debug-provider-scenario-vectors.json (repo root) —
-    // the SAME fixture the Kotlin twin's `DebugProviderScenarioTest` reads and
-    // the same file `stt/mod.rs`'s `spec_debug_stt_*` tests read for the STT
+    // Driven by test-fixtures/test-provider-scenario-vectors.json (repo root) —
+    // the SAME fixture the Kotlin twin's `TestProviderScenarioTest` reads and
+    // the same file `stt/mod.rs`'s `spec_test_stt_*` tests read for the STT
     // half. Every assertion compares a PRODUCTION seam
-    // (`debug_llm_canned_wire`, `DebugCleanup::cleanup`) against the FIXTURE
+    // (`test_llm_canned_wire`, `TestCleanup::cleanup`) against the FIXTURE
     // literal — never against another production symbol, which would agree no
     // matter what both said.
     // -----------------------------------------------------------------------
 
-    fn load_debug_vectors() -> Vec<serde_json::Value> {
+    fn load_test_vectors() -> Vec<serde_json::Value> {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
         let path = std::path::Path::new(&manifest_dir)
             .parent()
             .expect("workspace root")
-            .join("test-fixtures/debug-provider-scenario-vectors.json");
+            .join("test-fixtures/test-provider-scenario-vectors.json");
         let content = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
         serde_json::from_str(&content)
-            .expect("debug-provider-scenario-vectors.json must be a JSON array")
+            .expect("test-provider-scenario-vectors.json must be a JSON array")
     }
 
     /// Throwing lookup — a missing id must fail loudly, never skip the assertion
     /// (the vacuous-default defect recorded as 7-2 R3-P2).
-    fn debug_vector(vectors: &[serde_json::Value], id: &str) -> serde_json::Value {
+    fn test_vector(vectors: &[serde_json::Value], id: &str) -> serde_json::Value {
         vectors
             .iter()
             .find(|v| v["id"].as_str() == Some(id))
@@ -3004,8 +3022,8 @@ mod tests {
     /// the canned bytes it puts on the wire, and the verdict the real mapping
     /// returns for them.
     async fn assert_llm_vector(id: &str) {
-        let vectors = load_debug_vectors();
-        let v = debug_vector(&vectors, id);
+        let vectors = load_test_vectors();
+        let v = test_vector(&vectors, id);
         assert_eq!(v["surface"].as_str(), Some("llm"), "{id} is not an llm vector");
         let scenario = v["scenario"].as_str().expect("scenario");
 
@@ -3013,7 +3031,7 @@ mod tests {
         let wire = &v["wire"];
         match wire["kind"].as_str().expect("wire.kind") {
             "canned" => {
-                let (status, body) = debug_llm_canned_wire(scenario)
+                let (status, body) = test_llm_canned_wire(scenario)
                     .unwrap_or_else(|| panic!("{id}: {scenario} must produce a canned wire"));
                 assert_eq!(
                     u64::from(status),
@@ -3028,11 +3046,11 @@ mod tests {
             }
             "loopback" => {
                 assert!(
-                    debug_llm_canned_wire(scenario).is_none(),
+                    test_llm_canned_wire(scenario).is_none(),
                     "{id}: {scenario} must have NO canned wire (it performs a real loopback request)"
                 );
                 assert_eq!(
-                    DEBUG_TRANSPORT_URL,
+                    TEST_TRANSPORT_URL,
                     wire["url"].as_str().expect("wire.url"),
                     "{id}: loopback URL must match the fixture"
                 );
@@ -3041,7 +3059,7 @@ mod tests {
         }
 
         // (b) the verdict the REAL mapping returns, against the fixture literal.
-        let provider = DebugCleanup::new(scenario);
+        let provider = TestCleanup::new(scenario);
         let result = provider
             .cleanup("some dictated text", CleanupStyle::Polished, None, None)
             .await;
@@ -3081,7 +3099,7 @@ mod tests {
                     );
                 }
                 // (c) whether the PRODUCTION ladder fires for this shape. The
-                // verdict comes from the real predicate, never from the debug
+                // verdict comes from the real predicate, never from the test
                 // provider — that is the whole point of injecting at the wire.
                 if let Some(want) = expected["retryable"].as_bool() {
                     assert_eq!(
@@ -3096,25 +3114,25 @@ mod tests {
     }
 
     #[test]
-    fn spec_debug_fixture_is_complete_and_self_describing() {
-        let vectors = load_debug_vectors();
+    fn spec_test_fixture_is_complete_and_self_describing() {
+        let vectors = load_test_vectors();
         let expected = [
-            "DEBUG-LLM-OK-001",
-            "DEBUG-LLM-EMPTY-001",
-            "DEBUG-LLM-TRUNCATED-001",
-            "DEBUG-LLM-MALFORMED-001",
-            "DEBUG-LLM-HTTP429-001",
-            "DEBUG-LLM-HTTP5XX-001",
-            "DEBUG-LLM-TRANSPORT-001",
-            "DEBUG-STT-OK-001",
-            "DEBUG-STT-EMPTY-001",
-            "DEBUG-STT-MALFORMED-001",
-            "DEBUG-STT-HTTP429-001",
-            "DEBUG-STT-HTTP5XX-001",
-            "DEBUG-STT-TRANSPORT-001",
-            "DEBUG-STT-NO-TRUNCATED-001",
-            "DEBUG-LLM-PROVIDER-OPTIONS-001",
-            "DEBUG-STT-PROVIDER-OPTIONS-001",
+            "TEST-LLM-OK-001",
+            "TEST-LLM-EMPTY-001",
+            "TEST-LLM-TRUNCATED-001",
+            "TEST-LLM-MALFORMED-001",
+            "TEST-LLM-HTTP429-001",
+            "TEST-LLM-HTTP5XX-001",
+            "TEST-LLM-TRANSPORT-001",
+            "TEST-STT-OK-001",
+            "TEST-STT-EMPTY-001",
+            "TEST-STT-MALFORMED-001",
+            "TEST-STT-HTTP429-001",
+            "TEST-STT-HTTP5XX-001",
+            "TEST-STT-TRANSPORT-001",
+            "TEST-STT-NO-TRUNCATED-001",
+            "TEST-PROVIDER-LLM-OPTIONS-001",
+            "TEST-PROVIDER-STT-OPTIONS-001",
         ];
         assert_eq!(
             vectors.len(),
@@ -3123,7 +3141,7 @@ mod tests {
             expected.len()
         );
         for id in expected {
-            let v = debug_vector(&vectors, id);
+            let v = test_vector(&vectors, id);
             let desc = v["description"].as_str().unwrap_or("");
             assert!(
                 desc.contains("PINS:") && desc.contains("DOES NOT PIN:"),
@@ -3137,8 +3155,8 @@ mod tests {
     /// silently behave like `ok`; a canned wire with no picker option would be
     /// unreachable.
     #[test]
-    fn spec_debug_llm_scenario_set_is_the_seven_offered() {
-        let vectors = load_debug_vectors();
+    fn spec_test_llm_scenario_set_is_the_seven_offered() {
+        let vectors = load_test_vectors();
         let from_fixture: Vec<&str> = vectors
             .iter()
             .filter(|v| v["surface"].as_str() == Some("llm"))
@@ -3154,10 +3172,10 @@ mod tests {
     /// An unrecognised scenario string must resolve like `ok` (fail-soft), never
     /// panic and never invent an outcome.
     #[tokio::test]
-    async fn spec_debug_llm_unknown_scenario_falls_back_to_ok() {
-        let vectors = load_debug_vectors();
-        let ok = debug_vector(&vectors, "DEBUG-LLM-OK-001");
-        let r = DebugCleanup::new("no-such-scenario")
+    async fn spec_test_llm_unknown_scenario_falls_back_to_ok() {
+        let vectors = load_test_vectors();
+        let ok = test_vector(&vectors, "TEST-LLM-OK-001");
+        let r = TestCleanup::new("no-such-scenario")
             .cleanup("text", CleanupStyle::Polished, None, None)
             .await
             .expect("unknown scenario must behave like ok");
@@ -3165,18 +3183,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spec_debug_llm_ok() {
-        assert_llm_vector("DEBUG-LLM-OK-001").await;
+    async fn spec_test_llm_ok() {
+        assert_llm_vector("TEST-LLM-OK-001").await;
     }
 
     #[tokio::test]
-    async fn spec_debug_llm_empty() {
-        assert_llm_vector("DEBUG-LLM-EMPTY-001").await;
+    async fn spec_test_llm_empty() {
+        assert_llm_vector("TEST-LLM-EMPTY-001").await;
     }
 
     #[tokio::test]
-    async fn spec_debug_llm_truncated() {
-        assert_llm_vector("DEBUG-LLM-TRUNCATED-001").await;
+    async fn spec_test_llm_truncated() {
+        assert_llm_vector("TEST-LLM-TRUNCATED-001").await;
     }
 
     /// Drift row D10 / D-M2, Desktop column. The canned body does not
@@ -3187,19 +3205,19 @@ mod tests {
     /// (`rust.error == "Request"`, `rust.retryable == true`).
     ///
     /// Inversion (verified RED at writing time): setting the `malformed` arm of
-    /// `debug_llm_canned_wire` back to a well-formed `{"choices":[]}` envelope
+    /// `test_llm_canned_wire` back to a well-formed `{"choices":[]}` envelope
     /// makes this fail with `ResponseFormat` and `is_retryable_llm_error ==
     /// false` — i.e. exactly the misrepresentation this amendment removes.
     #[tokio::test]
-    async fn spec_debug_llm_malformed() {
-        assert_llm_vector("DEBUG-LLM-MALFORMED-001").await;
+    async fn spec_test_llm_malformed() {
+        assert_llm_vector("TEST-LLM-MALFORMED-001").await;
     }
 
     /// Discriminating half of the row above: the other canned scenarios must NOT
     /// all be retryable, or the assertion there would pass vacuously.
     #[tokio::test]
-    async fn spec_debug_llm_empty_is_not_retryable() {
-        let err = DebugCleanup::new("empty")
+    async fn spec_test_llm_empty_is_not_retryable() {
+        let err = TestCleanup::new("empty")
             .cleanup("text", CleanupStyle::Polished, None, None)
             .await
             .expect_err("the empty scenario must produce an error");
@@ -3210,43 +3228,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spec_debug_llm_http429() {
-        assert_llm_vector("DEBUG-LLM-HTTP429-001").await;
+    async fn spec_test_llm_http429() {
+        assert_llm_vector("TEST-LLM-HTTP429-001").await;
     }
 
     #[tokio::test]
-    async fn spec_debug_llm_http5xx() {
-        assert_llm_vector("DEBUG-LLM-HTTP5XX-001").await;
+    async fn spec_test_llm_http5xx() {
+        assert_llm_vector("TEST-LLM-HTTP5XX-001").await;
     }
 
     /// Performs a REAL request to the loopback discard port. No byte leaves the
     /// device and nothing listens there, so this is hermetic and fast.
     #[tokio::test]
-    async fn spec_debug_llm_transport() {
-        assert_llm_vector("DEBUG-LLM-TRANSPORT-001").await;
+    async fn spec_test_llm_transport() {
+        assert_llm_vector("TEST-LLM-TRANSPORT-001").await;
     }
 
-    /// The debug provider reports its own model ID, so `Klarvo.log` cannot name
+    /// The test provider reports its own model ID, so `Klarvo.log` cannot name
     /// `deepseek-chat` for a run that never touched DeepSeek.
+    ///
+    /// Story 13-1b: this is now the ONLY place that answer comes from.
+    /// `effective_cleanup_model` resolves a model for a real provider NAME, and
+    /// since selection left the provider name no caller can pass the test
+    /// provider's name to it — the story-13-1 arm was deleted rather than left
+    /// as dead code, and this test pins that deletion from both sides.
     #[test]
-    fn spec_debug_cleanup_model_is_its_own_entry() {
-        assert_eq!(DebugCleanup::new("ok").model(), DebugCleanup::DEFAULT_MODEL);
-        assert_eq!(effective_cleanup_model(DEBUG_PROVIDER_NAME, ""), "debug");
-        assert_eq!(effective_cleanup_model(DEBUG_PROVIDER_NAME, "   "), "debug");
-        // The catch-all must NOT be what answers for "debug".
-        assert_ne!(
-            effective_cleanup_model(DEBUG_PROVIDER_NAME, ""),
-            DeepSeekCleanup::DEFAULT_MODEL
+    fn spec_test_cleanup_model_comes_only_from_the_provider() {
+        assert_eq!(TestCleanup::new("ok").model(), TestCleanup::DEFAULT_MODEL);
+        assert_eq!(TestCleanup::DEFAULT_MODEL, TEST_PROVIDER_NAME);
+        assert_eq!(TEST_PROVIDER_NAME, "test");
+
+        // `effective_cleanup_model` is closed to it: the name falls into the
+        // catch-all like any other unrecognised string, which is correct
+        // precisely because no runtime path can reach it with this name.
+        assert_eq!(
+            effective_cleanup_model(TEST_PROVIDER_NAME, ""),
+            DeepSeekCleanup::DEFAULT_MODEL,
+            "the test provider must not have a special arm here any more"
         );
+        // The name is NOT a config provider value either — a stored one is
+        // normalized away at load.
+        assert!(!crate::config::VALID_LLM_PROVIDERS.contains(&TEST_PROVIDER_NAME));
+        assert!(!crate::config::VALID_STT_PROVIDERS.contains(&TEST_PROVIDER_NAME));
+        assert!(!crate::config::VALID_LLM_PROVIDERS.contains(&"debug"));
+        assert!(!crate::config::VALID_STT_PROVIDERS.contains(&"debug"));
     }
 
-    /// Synthesises the response the same way `DebugCleanup` does, so the tests
+    /// Synthesises the response the same way `TestCleanup` does, so the tests
     /// below drive the extraction through the exact code path the provider uses.
     fn canned(status: u16, body: &str) -> reqwest::Response {
-        debug_canned_response(status, body).expect("canned status must be valid")
+        test_canned_response(status, body).expect("canned status must be valid")
     }
 
-    /// The extraction that made the debug provider possible must not have moved
+    /// The extraction that made the test provider possible must not have moved
     /// the real mapping: the same wire bytes `send_request` would see yield the
     /// same verdicts they yielded before.
     ///
@@ -3305,31 +3339,33 @@ mod tests {
         }
     }
 
-    /// The two provider rows in Advanced → System offer exactly the values the
-    /// config allowlist accepts — pinned through the fixture, so the React list,
-    /// the Rust constant and the proxy harness all read the same literal.
+    /// The two test-provider rows in Advanced → System offer exactly the values
+    /// `migrate_and_normalize` accepts — pinned through the fixture, so the
+    /// React list, the Rust constant and the proxy harness all read the same
+    /// literal.
     ///
-    /// Without this, a row could offer a provider `migrate_and_normalize`
-    /// rewrites at load (the value would silently revert), or omit one and
-    /// become a one-way door out of which `debug` cannot be switched back.
+    /// Without this, a row could offer a value the config normalizes away at
+    /// load (the selection would silently revert to `off`), or omit `off` and
+    /// become a one-way door with no way back to the real provider.
     ///
-    /// Inversion (verified RED at writing time): dropping `"debug"` from either
-    /// fixture array, or from either `VALID_*_PROVIDERS` constant, fails here.
+    /// Inversion (verified RED at writing time): dropping `"off"` or any
+    /// scenario from either fixture array, or from either
+    /// `VALID_TEST_PROVIDER_*` constant, fails here.
     #[test]
-    fn spec_debug_provider_option_lists_match_the_config_allowlists() {
-        let vectors = load_debug_vectors();
+    fn spec_test_provider_option_lists_match_the_config_allowlists() {
+        let vectors = load_test_vectors();
 
         for (id, constant) in [
             (
-                "DEBUG-LLM-PROVIDER-OPTIONS-001",
-                crate::config::VALID_LLM_PROVIDERS,
+                "TEST-PROVIDER-LLM-OPTIONS-001",
+                crate::config::VALID_TEST_PROVIDER_LLM,
             ),
             (
-                "DEBUG-STT-PROVIDER-OPTIONS-001",
-                crate::config::VALID_STT_PROVIDERS,
+                "TEST-PROVIDER-STT-OPTIONS-001",
+                crate::config::VALID_TEST_PROVIDER_STT,
             ),
         ] {
-            let v = debug_vector(&vectors, id);
+            let v = test_vector(&vectors, id);
             let from_fixture: Vec<&str> = v["options"]
                 .as_array()
                 .unwrap_or_else(|| panic!("{id}: options must be an array"))
@@ -3340,11 +3376,50 @@ mod tests {
                 from_fixture, constant,
                 "{id}: the row's option list must equal its config allowlist"
             );
-            assert!(
-                from_fixture.contains(&DEBUG_PROVIDER_NAME),
-                "{id}: the row must be able to select the debug provider at all"
+            assert_eq!(
+                from_fixture.first(),
+                Some(&crate::config::TEST_PROVIDER_OFF),
+                "{id}: `off` must be the FIRST option — it is the default and \
+                 the only way back to the real provider"
             );
         }
+
+        // The scenario half of the contract, from the OTHER side of the same
+        // fixture: every non-`off` LLM option is a scenario the provider knows,
+        // and the STT list is that set minus `truncated`. A value list and a
+        // scenario table that disagreed would make a row option behave like
+        // `ok` without saying so.
+        let llm_scenarios: Vec<&str> = vectors
+            .iter()
+            .filter(|v| v["surface"].as_str() == Some("llm"))
+            .map(|v| v["scenario"].as_str().expect("scenario"))
+            .collect();
+        let llm_values: Vec<&str> = crate::config::VALID_TEST_PROVIDER_LLM
+            .iter()
+            .copied()
+            .filter(|v| *v != crate::config::TEST_PROVIDER_OFF)
+            .collect();
+        assert_eq!(
+            llm_values, llm_scenarios,
+            "VALID_TEST_PROVIDER_LLM minus `off` must equal the fixture's llm scenario set"
+        );
+        let stt_values: Vec<&str> = crate::config::VALID_TEST_PROVIDER_STT
+            .iter()
+            .copied()
+            .filter(|v| *v != crate::config::TEST_PROVIDER_OFF)
+            .collect();
+        let stt_scenarios: Vec<&str> = vectors
+            .iter()
+            .filter(|v| {
+                v["surface"].as_str() == Some("stt")
+                    && v["wire"]["kind"].as_str() != Some("not_offered")
+            })
+            .map(|v| v["scenario"].as_str().expect("scenario"))
+            .collect();
+        assert_eq!(
+            stt_values, stt_scenarios,
+            "VALID_TEST_PROVIDER_STT minus `off` must equal the fixture's stt scenario set"
+        );
     }
 
     /// Reads a file from the repo root. Panics loudly — a tripwire that cannot
@@ -3390,97 +3465,229 @@ mod tests {
 
     /// Source-text tripwire over the React surface.
     ///
-    /// The four option arrays in `AdvancedSettingsPanel.tsx` and the two
-    /// `"debug"` guards in `SettingsPanel.tsx` are load-bearing but pinned by
-    /// nothing a recurring gate runs: `npm run build` only type-checks
+    /// The two option arrays in `AdvancedSettingsPanel.tsx` are load-bearing but
+    /// pinned by nothing a recurring gate runs: `npm run build` only type-checks
     /// `string[]`, the JVM gate never sees TypeScript, and the sole DOM↔fixture
     /// reader is a throwaway puppeteer harness that no script, gradle task or CI
-    /// invokes. Measured before writing this: deleting `"debug"` from
-    /// `VALID_LLM_PROVIDERS` reddens three tests, deleting it from
-    /// `LLM_PROVIDER_OPTIONS` reddened none — and the enabler silently becomes
-    /// unselectable.
+    /// invokes. Measured at story 13-1: deleting a value from a Rust allowlist
+    /// reddens several tests, deleting it from the TS array reddened none — and
+    /// the enabler silently becomes unselectable.
     ///
     /// Same technique as `Adr0017BoundaryGuardTest`: read the production source
     /// as text and assert on it.
     ///
-    /// Inversion (verified RED at writing time): removing `"debug"` from
-    /// `LLM_PROVIDER_OPTIONS`, or dropping either `"debug"` guard in
-    /// `SettingsPanel.tsx`, fails here.
+    /// Story 13-1b adds the negative half. The four story-13-1 identifiers and
+    /// both story-13-1 `"debug"` guards must be GONE, because leaving either
+    /// behind would leave a second, provider-name-shaped way to reach the test
+    /// provider — the two-writer split whose removal is this story's whole point.
+    ///
+    /// Inversion (verified RED at writing time): removing `"off"` from
+    /// `TEST_PROVIDER_LLM_OPTIONS`, or re-adding `LLM_PROVIDER_OPTIONS` /
+    /// either `"debug"` guard, fails here.
     #[test]
-    fn spec_react_option_arrays_and_debug_guards_are_pinned_to_rust() {
+    fn spec_react_test_provider_arrays_are_pinned_to_rust() {
         const ADV: &str = "src/components/AdvancedSettingsPanel.tsx";
         const PANEL: &str = "src/components/SettingsPanel.tsx";
         let adv = read_repo_file(ADV);
         let panel = read_repo_file(PANEL);
 
-        // (1) The two provider rows offer exactly the config allowlists.
-        let llm_providers = ts_string_array(&adv, "LLM_PROVIDER_OPTIONS", ADV);
-        let llm_providers: Vec<&str> = llm_providers.iter().map(String::as_str).collect();
+        // (1) The two rows offer exactly the config value allowlists.
+        let llm_options = ts_string_array(&adv, "TEST_PROVIDER_LLM_OPTIONS", ADV);
+        let llm_options: Vec<&str> = llm_options.iter().map(String::as_str).collect();
         assert_eq!(
-            llm_providers,
-            crate::config::VALID_LLM_PROVIDERS,
-            "{ADV}: LLM_PROVIDER_OPTIONS must equal VALID_LLM_PROVIDERS"
-        );
-        let stt_providers = ts_string_array(&adv, "STT_PROVIDER_OPTIONS", ADV);
-        let stt_providers: Vec<&str> = stt_providers.iter().map(String::as_str).collect();
-        assert_eq!(
-            stt_providers,
-            crate::config::VALID_STT_PROVIDERS,
-            "{ADV}: STT_PROVIDER_OPTIONS must equal VALID_STT_PROVIDERS"
+            llm_options,
+            crate::config::VALID_TEST_PROVIDER_LLM,
+            "{ADV}: TEST_PROVIDER_LLM_OPTIONS must equal VALID_TEST_PROVIDER_LLM"
         );
 
-        // (2) The two scenario rows offer exactly the fixture's scenario sets.
-        let vectors = load_debug_vectors();
-        let fixture_llm: Vec<&str> = vectors
-            .iter()
-            .filter(|v| v["surface"].as_str() == Some("llm"))
-            .map(|v| v["scenario"].as_str().expect("scenario"))
-            .collect();
-        let fixture_stt: Vec<&str> = vectors
-            .iter()
-            .filter(|v| {
-                v["surface"].as_str() == Some("stt")
-                    && v["wire"]["kind"].as_str() != Some("not_offered")
-            })
-            .map(|v| v["scenario"].as_str().expect("scenario"))
-            .collect();
-
-        let llm_scenarios = ts_string_array(&adv, "DEBUG_LLM_SCENARIOS", ADV);
-        let llm_scenarios: Vec<&str> = llm_scenarios.iter().map(String::as_str).collect();
-        assert_eq!(
-            llm_scenarios, fixture_llm,
-            "{ADV}: DEBUG_LLM_SCENARIOS must equal the fixture's llm scenario set"
-        );
-
-        // `DEBUG_STT_SCENARIOS` is derived, not listed. Pin the derivation itself,
-        // then evaluate it — otherwise a changed filter would go unnoticed.
-        let derivation =
-            "const DEBUG_STT_SCENARIOS = DEBUG_LLM_SCENARIOS.filter((s) => s !== \"truncated\");";
+        // `TEST_PROVIDER_STT_OPTIONS` is derived, not listed. Pin the derivation
+        // itself, then evaluate it — otherwise a changed filter would go
+        // unnoticed.
+        let derivation = "const TEST_PROVIDER_STT_OPTIONS = TEST_PROVIDER_LLM_OPTIONS.filter((s) => s !== \"truncated\");";
         assert!(
             adv.contains(derivation),
-            "{ADV}: DEBUG_STT_SCENARIOS is no longer derived as `{derivation}` — \
+            "{ADV}: TEST_PROVIDER_STT_OPTIONS is no longer derived as `{derivation}` — \
              the STT row's option list is now unpinned"
         );
-        let stt_scenarios: Vec<&str> = llm_scenarios
+        let stt_options: Vec<&str> = llm_options
             .iter()
             .copied()
             .filter(|s| *s != "truncated")
             .collect();
         assert_eq!(
-            stt_scenarios, fixture_stt,
-            "{ADV}: the derived DEBUG_STT_SCENARIOS must equal the fixture's stt scenario set"
+            stt_options,
+            crate::config::VALID_TEST_PROVIDER_STT,
+            "{ADV}: the derived TEST_PROVIDER_STT_OPTIONS must equal VALID_TEST_PROVIDER_STT"
         );
 
-        // (3) Both places that would otherwise overwrite a stored `debug`.
-        for guard in [
-            format!("llmProv !== \"{DEBUG_PROVIDER_NAME}\""),
-            format!("prev === \"{DEBUG_PROVIDER_NAME}\""),
+        // (2) The story-13-1 shape is GONE from the panel. Each of these was a
+        // way to reach the provider by NAME, saved by a different button than
+        // the scenario beside it — the reachable half-configured state 13-1b
+        // removes by construction.
+        for gone in [
+            "LLM_PROVIDER_OPTIONS",
+            "STT_PROVIDER_OPTIONS",
+            "DEBUG_LLM_SCENARIOS",
+            "DEBUG_STT_SCENARIOS",
         ] {
             assert!(
-                panel.contains(&guard),
-                "{PANEL}: the guard `{guard}` is gone — a stored `{DEBUG_PROVIDER_NAME}` \
-                 is rewritten to a keyed provider and the enabler cannot stay switched on"
+                !adv.contains(gone),
+                "{ADV}: `{gone}` is back — the story-13-1 provider/scenario split \
+                 makes a half-configured state reachable again"
             );
         }
+
+        // (3) And so are the two guards that existed only to protect a stored
+        // provider-name `"debug"`. With selection in `advanced`, the re-seed
+        // effect can go back to its pre-13-1 condition; a surviving guard would
+        // be dead code that silently blesses a value nothing can store.
+        for gone in ["llmProv !== \"debug\"", "prev === \"debug\""] {
+            assert!(
+                !panel.contains(gone),
+                "{PANEL}: the story-13-1 guard `{gone}` is back — \
+                 `debug` is not a provider name any more"
+            );
+        }
+        // …and the panel no longer receives the four provider props.
+        for gone in ["onLlmProviderChange", "onSttProviderChange"] {
+            assert!(
+                !panel.contains(gone),
+                "{PANEL}: `{gone}` is back — the Advanced panel must not write \
+                 `llmProvider` / `sttProvider` at all"
+            );
+        }
+
+        // (4) Each row writes its OWN key. A crossed wiring would type-check,
+        // render correctly, pass the option-list checks and pass the harness's
+        // style comparison — and then save the STT scenario into the LLM chain.
+        // Both rows are otherwise identical, so nothing else can catch it.
+        for (row, key) in [
+            ("Test provider (LLM)", "testProviderLlm"),
+            ("Test provider (STT)", "testProviderStt"),
+        ] {
+            let at = adv.find(row).unwrap_or_else(|| {
+                panic!("{ADV}: the row label `{row}` is gone — renamed or deleted")
+            });
+            // The `set(...)` call belongs to this row: it is the first one after
+            // the label and before the next row's label.
+            let rest = &adv[at..];
+            let setter = format!("set(\"{key}\"");
+            let found = rest.find(&setter).unwrap_or_else(|| {
+                panic!("{ADV}: the `{row}` row does not call `{setter}…)` — \
+                        it writes the wrong key or no key at all")
+            });
+            let other_key = if key == "testProviderLlm" { "testProviderStt" } else { "testProviderLlm" };
+            if let Some(crossed) = rest.find(&format!("set(\"{other_key}\"")) {
+                assert!(
+                    found < crossed,
+                    "{ADV}: the `{row}` row writes `{other_key}` before `{key}` — \
+                     the two rows are crossed, and every other gate would stay green"
+                );
+            }
+        }
+
+        // (5) The sticky footer — this story's second headline fix, and observed
+        // otherwise only by a throwaway harness that no script, gradle task or CI
+        // invokes. Embedded, the panel's root has no height bound, so without
+        // `sticky bottom-0` the Save button is simply the last item of
+        // SettingsPanel's scroller and can sit below the fold — which is what
+        // cost the 13-1 device check an attempt.
+        for token in ["sticky bottom-0", "embedded ?"] {
+            assert!(
+                adv.contains(token),
+                "{ADV}: `{token}` is gone — the embedded Advanced Save footer is no \
+                 longer pinned to the bottom edge of the settings card's scroll area"
+            );
+        }
+        // …and it is applied to the FOOTER, not to something else: the token has
+        // to appear AFTER the `isDirty &&` footer block opens. (The rationale
+        // comment above that block names the token too, so the search starts at
+        // the block, not at the top of the file.)
+        let footer = adv
+            .find("{isDirty && (")
+            .unwrap_or_else(|| panic!("{ADV}: the `isDirty` Save footer block is gone"));
+        assert!(
+            adv[footer..].contains("sticky bottom-0"),
+            "{ADV}: `sticky bottom-0` does not appear inside the Save-footer block — \
+             the pin is somewhere else, or only in prose"
+        );
+    }
+
+    /// Story 13-1b, the surface half that is not about the test provider: the
+    /// feedback FAB is OFF, and `FeedbackModal` stays mounted.
+    ///
+    /// The DOM half of this AC is the throwaway proxy harness's; this is the
+    /// recurring half, in the same source-text style as the tripwire above. The
+    /// FAB covered the settings controls at phone width, which is one of the
+    /// three things that cost story 13-1's device check its attempts, so it must
+    /// not come back by accident — and the modal must not be deleted along with
+    /// it, because the panel still has to render when `panels.showFeedback` is
+    /// true.
+    ///
+    /// `npm run build` already proves `FeedbackModal` is REFERENCED (TS strict
+    /// runs with `noUnusedLocals`); what it cannot see is whether the reference
+    /// sits inside the FAB guard.
+    ///
+    /// Inversion (verified RED at writing time): flipping `SHOW_FEEDBACK_FAB` to
+    /// `true`, or deleting the guard, fails here.
+    #[test]
+    fn spec_react_feedback_fab_is_off_and_its_modal_stays_mounted() {
+        const APP: &str = "src/App.tsx";
+        let app = read_repo_file(APP);
+
+        assert!(
+            app.contains("const SHOW_FEEDBACK_FAB = false;"),
+            "{APP}: the feedback FAB flag is gone or no longer `false` — \
+             the floating button covered the settings controls on the phone"
+        );
+        assert!(
+            app.contains("{SHOW_FEEDBACK_FAB && ("),
+            "{APP}: the FAB block is no longer guarded by SHOW_FEEDBACK_FAB"
+        );
+        // The button and its tooltip are INSIDE the guard: the guard opens before
+        // the aria-label and closes after it.
+        let guard = app
+            .find("{SHOW_FEEDBACK_FAB && (")
+            .expect("guard present, asserted above");
+        let fab = app
+            .find(r#"aria-label="Send feedback""#)
+            .unwrap_or_else(|| panic!("{APP}: the FAB button is gone entirely — \
+                 13-1b switched it OFF, it did not delete it"));
+        // BOTH sides of the containment. `guard < fab` alone only proves the
+        // button comes after the guard OPENS — a FAB moved below the guard's
+        // closing `)}` would still pass, and the button would be back on the
+        // phone, which is the exact regression this tripwire exists to catch.
+        // The next sibling block after the guard closes is the marker for the
+        // upper bound.
+        const AFTER_GUARD: &str = "{/* ── Preview Comments overlay ── */}";
+        let after_guard = app.find(AFTER_GUARD).unwrap_or_else(|| {
+            panic!("{APP}: the `{AFTER_GUARD}` marker that bounds the FAB block is gone")
+        });
+        assert!(
+            guard < after_guard,
+            "{APP}: the SHOW_FEEDBACK_FAB guard no longer precedes `{AFTER_GUARD}` — \
+             the bound is meaningless"
+        );
+        assert!(
+            guard < fab && fab < after_guard,
+            "{APP}: the `aria-label=\"Send feedback\"` button is not inside the \
+             SHOW_FEEDBACK_FAB guard (guard at {guard}, button at {fab}, \
+             block ends before {after_guard})"
+        );
+
+        // …and the modal host is NOT inside it.
+        let modal = app
+            .find("<FeedbackModal")
+            .unwrap_or_else(|| panic!("{APP}: the FeedbackModal host is gone — \
+                 the panel must still render when panels.showFeedback is true"));
+        assert!(
+            modal < guard,
+            "{APP}: the FeedbackModal host moved inside the FAB guard — \
+             switching the button off would then switch the panel off too"
+        );
+        assert!(
+            app.contains("import { FeedbackModal }"),
+            "{APP}: FeedbackModal is no longer imported"
+        );
     }
 }

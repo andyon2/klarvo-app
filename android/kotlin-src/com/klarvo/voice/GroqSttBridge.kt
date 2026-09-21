@@ -45,15 +45,25 @@ object GroqSttBridge {
      * @param customPrompt     User custom STT hint (or empty).
      * @param sttModel         Groq model name (e.g. "whisper-large-v3-turbo").
      * @param temperature      Whisper sampling temperature (0.0 = deterministic).
-     * @param sttProvider      `config.sttProvider`, passed through verbatim. The
-     *                         Rust side decides what it means; Kotlin carries the
-     *                         value and nothing else (ADR-0017 -- STT request and
-     *                         guard logic live only in the shared Rust core).
-     * @param debugSttScenario `config.debugSttScenario`, passed through verbatim.
-     *                         Only read on the Rust side, and only when
-     *                         `sttProvider == "debug"` (story 13-1). Ignored
-     *                         otherwise.
+     * @param testProviderStt `config.advanced.testProviderStt`, passed through
+     *                         verbatim. The Rust side decides what it means;
+     *                         Kotlin carries the value and nothing else
+     *                         (ADR-0017 -- STT request and guard logic live only
+     *                         in the shared Rust core). Story 13-1b: anything but
+     *                         `"off"` selects the canned-wire test provider with
+     *                         that value as its scenario; `"off"` keeps Groq.
+     *                         It replaced the story-13-1 pair
+     *                         (`sttProvider` + `debugSttScenario`), because the
+     *                         value is now the state.
      * @return Transcribed text, or an error code string (see class-level doc).
+     *
+     * ⚠️ 8 parameters since story 13-1b (was 9). `#[no_mangle]` exports the JNI
+     * symbol by SHORT NAME with no signature suffix, so this declaration and
+     * `Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe` in
+     * `src-tauri/src/stt/groq_jni.rs` must change in the SAME commit -- a
+     * one-sided edit, or a stale `libklarvo_lib.so`, misbinds silently instead
+     * of throwing. Rebuild with `scripts/android-install-debug.sh <ip:port>
+     * --full`; a plain install pairs new Kotlin with the old `.so`.
      */
     @JvmStatic
     external fun nativeTranscribe(
@@ -64,8 +74,7 @@ object GroqSttBridge {
         customPrompt: String,
         sttModel: String,
         temperature: Float,
-        sttProvider: String,
-        debugSttScenario: String
+        testProviderStt: String
     ): String
 
     /**

@@ -117,9 +117,10 @@ const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
   logLevel: "info",
   uiScale: "medium",
   expertMode: false,
-  // Story 13-1: the benign scenario, matching the Rust serde default.
-  debugLlmScenario: "ok",
-  debugSttScenario: "ok",
+  // Story 13-1b: off, matching the Rust serde default -- the preview surface
+  // shows the same state a clean install has.
+  testProviderLlm: "off",
+  testProviderStt: "off",
 };
 
 const MOCK_HISTORY: HistoryEntry[] = [

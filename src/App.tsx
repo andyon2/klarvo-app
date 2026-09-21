@@ -43,6 +43,20 @@ import { useLicense } from "./hooks/useLicense";
 import { useUiScale } from "./hooks/useUiScale";
 import { useCopyFeedback, copyLabel, copyColorClassName, UNDO_WINDOW_MS } from "./hooks/useCopyFeedback";
 
+// Story 13-1b: the floating feedback button is off. It sat on top of the
+// settings controls at phone width and covered them -- one of the three things
+// that cost story 13-1's device check its attempts.
+//
+// A constant rather than a deletion: the block below is intact and one edit away
+// from returning, and `FeedbackModal` and its host stay MOUNTED, so the panel
+// still renders whenever `panels.showFeedback` is true.
+//
+// Stated rather than implied: the FAB was that flag's only trigger, so with it
+// off the feedback panel currently has no UI entry point. Removing the button
+// that covered the controls is what was asked for; giving feedback a new home is
+// a separate decision, not this story's.
+const SHOW_FEEDBACK_FAB = false;
+
 // --- Helpers -----------------------------------------------------------------
 
 function formatHotkeyDisplay(hotkey: string): string {
@@ -1090,7 +1104,17 @@ export default function App() {
       {/* ── Theme Switcher (preview only) ── */}
       <ThemeSwitcher />
 
-      {/* ── Feedback FAB (floating, always visible) ── */}
+      {/* ── Feedback FAB (floating) ──
+          Story 13-1b: OFF. On the phone it covered the settings controls it sat
+          on top of, which is one of the three things that cost the 13-1 device
+          check its attempts. Gated by a constant rather than deleted: the whole
+          block is still here to be switched back on, and the guard keeps
+          showFeedbackTooltip / dismissFeedbackTooltip / FeedbackIcon referenced,
+          which TS strict (noUnusedLocals) requires.
+
+          The FeedbackModal host stays MOUNTED and outside this guard -- it still
+          renders whenever panels.showFeedback is true. */}
+      {SHOW_FEEDBACK_FAB && (
       <div className="fixed right-5 z-[9990] flex flex-col items-end gap-2" style={{ bottom: isMobile ? '128px' : '1.25rem' }}>
         {/* Tooltip — shown every start until permanently dismissed */}
         {showFeedbackTooltip && !panels.showFeedback && (
@@ -1123,6 +1147,7 @@ export default function App() {
           <FeedbackIcon className={isMobile ? "w-9 h-9" : "w-7 h-7"} />
         </button>
       </div>
+      )}
 
       {/* ── Preview Comments overlay ── */}
       {isPreviewMode && <PreviewComments />}

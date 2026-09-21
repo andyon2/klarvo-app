@@ -1131,7 +1131,21 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 
 ## [Gate-Lücke, medium] Kein geräte-freies Gate prüft die JNI-Signatur von `nativeTranscribe` (2026-09-20)
 
-**Quelle:** Story 13-1, Spec `deferred` (`spec-13-1-debug-test-provider-both-twins-2.md`). `GroqSttBridge.nativeTranscribe` (Kotlin, `GroqSttBridge.kt:59`) und `groq_jni.rs:202` (Rust) haben seit `e0da32a` 9 Parameter. Nichts vergleicht Anzahl und Reihenfolge. Eine einseitige Änderung oder eine veraltete `.so` bindet still falsch: der STT-Testanbieter fällt dann ohne Fehler und ohne Log-Zeile auf echtes Groq zurück. Schließen braucht einen adb-/Emulator-Schritt, der `nativeTranscribe` nach dem Rebuild einmal aufruft.
+**Quelle:** Story 13-1, Spec `deferred` (`spec-13-1-debug-test-provider-both-twins-2.md`). `GroqSttBridge.nativeTranscribe` (Kotlin, `GroqSttBridge.kt::nativeTranscribe`) und `groq_jni.rs::Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe` (Rust) haben seit `e0da32a` dieselbe, ungeprüfte Signatur. Nichts vergleicht Anzahl und Reihenfolge. Eine einseitige Änderung oder eine veraltete `.so` bindet still falsch: der STT-Testanbieter fällt dann ohne Fehler und ohne Log-Zeile auf echtes Groq zurück. Schließen braucht einen adb-/Emulator-Schritt, der `nativeTranscribe` nach dem Rebuild einmal aufruft.
+
+**Aktualisiert 2026-09-21 (Story 13-1b):** die Signatur ist jetzt **8-stellig** (`sttProvider` + `debugSttScenario` zu einem `testProviderStt` zusammengezogen) — beide Seiten in einem Commit, aber die Lücke bleibt offen und ist mit diesem Schnitt einmal mehr **scharf**: Andis Android-Reproduktion muss `scripts/android-install-debug.sh <ip:port> --full` benutzen, weil ein Install ohne `--full` neues Kotlin mit der alten `libklarvo_lib.so` paart.
+
+## [Lücke, medium] Der Feedback-Panel hat seit 13-1b gar keinen UI-Einstieg mehr (2026-09-21)
+
+**Quelle:** Story 13-1b (`spec-13-1b-test-provider-operability.md`, Task „`src/App.tsx` — add `const SHOW_FEEDBACK_FAB = false;`"). Der schwebende Feedback-Knopf ist aus, weil er auf dem Telefon die Settings-Regler verdeckt hat (einer der drei Gründe, warum Andis 13-1-Geräte-Check drei Anläufe brauchte). `FeedbackModal` und sein Host bleiben montiert und rendern weiter, sobald `panels.showFeedback` true ist — aber der FAB war der **einzige** Auslöser dieses Flags, also ist das Panel jetzt aus der laufenden App nicht mehr erreichbar. Das Entfernen des verdeckenden Knopfes war bestellt; ein neuer Ort für Feedback ist eine eigene Entscheidung und wurde nicht getroffen. Rückweg: `SHOW_FEEDBACK_FAB = true` in `src/App.tsx` (ein Wort), gepinnt von `llm::tests::spec_react_feedback_fab_is_off_and_its_modal_stays_mounted`.
+
+## [Lizenz-Lücke, medium] Desktop-Lizenz-Gate über dem Testanbieter ist mit 13-1b weggefallen (2026-09-21)
+
+**Quelle:** Story 13-1b, im Review gefunden, **bewusst nicht behoben** — Lizenz-Code gehört 13-4 (G1a). Unter 13-1 war der Testanbieter ein *Provider-Name*: `sttProvider = "debug"` ließ `commands/recording.rs::active_stt_provider_id` (liest `cfg.stt_provider`) `!= "groq"` melden und `require_license!(AlternativeProviders)` greifen. Seit 13-1b behält `sttProvider` seinen echten Wert, während `advanced.testProviderStt` die Auswahl trifft — das Gate sieht den Testanbieter also nicht mehr, und ein **unlizenzierter Desktop-Nutzer kann den Test-STT-Anbieter fahren**. Die Android-Hälfte desselben Gates wurde in 13-1b ausdrücklich mitgenommen (`KlarvoApi.gateProvidersForLicense` zwingt beide neuen Keys auf `off`); die Desktop-Hälfte nicht, weil auf dem Desktop bisher überhaupt kein Diktat-Pipeline-Gate existiert (genau das ist G1a/13-4). Schaden begrenzt: der Testanbieter macht keinen echten Request und kostet kein Kontingent. Beim Bau von 13-4 mitnehmen: das Desktop-Gate muss `advanced.testProvider*` lesen, nicht `stt_provider`.
+
+## [Gate-Lücke, low] Die beiden Hot-Reload-Aufrufe in `save_advanced_settings` laufen in keinem Test (2026-09-21)
+
+**Quelle:** Story 13-1b, im Review gefunden. `save_advanced_settings` ruft `hot_reload_cleanup_provider` **und** `hot_reload_stt_provider` — das ist die Verdrahtung hinter der Kopf-AC „ein Druck auf Save wirkt auf beide Ketten". Beide Helfer werden direkt getestet, der **Aufruf** aber von nichts: das Command braucht ein Tauri-`AppState` (Audio-Recorder + SQLite-Handle), und weil die Helfer im Test-Modul per `use super::{…}` referenziert bleiben, meldet nicht einmal Dead-Code-Warnung, wenn man einen Aufruf löscht (gemessen: Suite bleibt grün, 748 passed). Ersatz-Gate bis dahin: die Quelltext-Sonde `commands::settings::tests::spec_save_advanced_settings_rebuilds_both_runtime_slots` liest den Funktionsrumpf und verlangt beide Aufrufe. Schließen braucht einen `AppState`-Harness.
 
 ## [Test-Schuld, low] Das Test-Modul von `groq_jni.rs` ist nie gelaufen, eine Erwartung ist falsch (2026-09-20)
 
@@ -1648,5 +1662,15 @@ Quelle: Pre-flight 13-1b, 2026-09-21. Eigene Regeln: 4450 Woerter (`SKILL.md` 22
 - **Dubletten:** „Proxy-gruen ist kein Design-Urteil" steht fuenfmal (`persistent_facts` 0/1/2, `decides`/`not_decides`/`pixel_note`) → ein Satz.
 - **Vertrags-Kommentare:** Vorfaelle, Korrekturen, Daten raus (stehen in `git log`); nur Schluessel + Werte.
 - **Deterministisch:** Pre-flight-Pruefungen, Detektoren, Buchung je ein Skript mit Exit-Code statt Skill-Prosa.
+- **Detektor 1 prueft nur ausgefuehrte Befehle** (`tool_use` Bash), nicht den ganzen Mitschrift-Text: Lauf 13-1b lieferte 5 Fehltreffer aus geladenem Text (Memory-Index, Vertrag), 0 mit der Befehls-Pruefung.
 - Prosa bleibt nur fuer Urteile: Spec-Gate, Ergebnis-Tabelle.
 - Regel fuer die Arbeit: jeder neue Absatz ersetzt einen alten; keine Regel ohne Pruefung gegen die bestehenden.
+
+### FOUND 2026-09-21 — Android: Build-Stempel in „Ueber" zeigt das Jahr 2009 (Andi, H+ 13-1b)
+
+Quelle: Andis Geraete-Check 13-1b auf dem Xiaomi (Debug-Build `20cf02b`). Vorbestand, nicht von 13-1b.
+Ursache im Code belegt: `get_build_info` (`src-tauri/src/commands/misc.rs:310`) nimmt die mtime von
+`current_exe()`. Auf Android ist das der System-Prozess (`app_process`), nicht die App; dessen Datei
+traegt das Datum des System-Images. Nicht gemessen: ob der Release-Build dasselbe zeigt (Andi meint, dort
+war es gefixt -- der Code kennt keinen Unterschied zwischen Debug und Release).
+Richtung: Build-Zeit zur Build-Zeit festhalten (`build.rs`, wie schon `KLARVO_BUILD_HASH`) statt zur Laufzeit raten.

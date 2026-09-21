@@ -1,0 +1,35 @@
+{
+  "container": "overflow-y-auto flex-1 min-h-0 p-4 flex flex-col gap-5",
+  "scrollHeight": 412,
+  "clientHeight": 350,
+  "overflows": 62,
+  "sticky": "static",
+  "top": {
+    "scrollTop": 0,
+    "button": {
+      "top": 453,
+      "bottom": 495,
+      "height": 42
+    },
+    "scroller": {
+      "top": 111,
+      "bottom": 461
+    },
+    "containedTop": true,
+    "containedBottom": false
+  },
+  "bottom": {
+    "scrollTop": 62,
+    "button": {
+      "top": 391,
+      "bottom": 433,
+      "height": 42
+    },
+    "scroller": {
+      "top": 111,
+      "bottom": 461
+    },
+    "containedTop": true,
+    "containedBottom": true
+  }
+}

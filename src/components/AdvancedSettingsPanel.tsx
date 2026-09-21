@@ -8,29 +8,30 @@ import { isMobile } from "../platform";
 import { MobileTextarea } from "./MobileTextarea";
 import { KSelect } from "./settings/FormControls";
 
-// Story 13-1: the debug test provider's scenarios. Option labels ARE the
-// scenario strings -- derived from the config values, not composed prose,
-// exactly as the Log Level row labels its own options. The LLM list is the
-// contract with Rust's `llm::debug_llm_canned_wire` / Kotlin's
-// `KlarvoApi.debugCannedWire`; the STT list is that set minus `truncated`,
-// because the Rust `SttError` has no truncation variant (see
-// `stt::debug_stt_canned_wire`).
-const DEBUG_LLM_SCENARIOS = ["ok", "empty", "truncated", "malformed", "http429", "http5xx", "transport"];
-const DEBUG_STT_SCENARIOS = DEBUG_LLM_SCENARIOS.filter((s) => s !== "truncated");
-
-// Story 13-1: the two provider rows offer exactly what the Rust config
-// allowlists accept -- `config::VALID_LLM_PROVIDERS` / `::VALID_STT_PROVIDERS`
-// in src-tauri/src/config/mod.rs -- pinned from both sides by
-// test-fixtures/debug-provider-scenario-vectors.json
-// (DEBUG-LLM-PROVIDER-OPTIONS-001 / DEBUG-STT-PROVIDER-OPTIONS-001). Deriving
-// the list from the allowlist rather than composing one is what lets the row
-// switch BACK out of "debug": anything outside the allowlist is rewritten at
-// config load, and a two-option debug/off row would be a one-way door.
+// Story 13-1b: the test provider's values. THE VALUE IS THE STATE -- `off`
+// means "use the real provider", every other value both switches the test
+// provider on and names the canned wire response it returns. One row per chain,
+// saved by one button, so "provider on but scenario unsaved" cannot be
+// expressed at all.
 //
-// These rows are a diagnostics control, NOT the normal provider picker. That
-// one lives in settings/RecordingAudioContent.tsx and must never offer "debug".
-const LLM_PROVIDER_OPTIONS = ["deepseek", "openai", "anthropic", "groq", "openrouter", "debug"];
-const STT_PROVIDER_OPTIONS = ["groq", "openai", "local", "debug"];
+// Option labels ARE the config values -- derived, not composed prose, exactly
+// as the Log Level row labels its own options.
+//
+// The list is the contract with Rust's `config::VALID_TEST_PROVIDER_LLM` /
+// `::VALID_TEST_PROVIDER_STT`, pinned from both sides by
+// test-fixtures/test-provider-scenario-vectors.json
+// (TEST-PROVIDER-LLM-OPTIONS-001 / TEST-PROVIDER-STT-OPTIONS-001) and by
+// `llm::tests::spec_react_test_provider_arrays_are_pinned_to_rust`. A value
+// outside the allowlist is normalized to `off` at config load, so the row would
+// silently revert.
+//
+// These rows are a diagnostics control, NOT the normal provider picker. That one
+// lives in settings/RecordingAudioContent.tsx and never offers a test value --
+// the test provider has no provider-name form any more.
+const TEST_PROVIDER_LLM_OPTIONS = ["off", "ok", "empty", "truncated", "malformed", "http429", "http5xx", "transport"];
+// `truncated` has no STT counterpart: the Rust `SttError` has no truncation
+// variant, so there would be nothing for it to map to.
+const TEST_PROVIDER_STT_OPTIONS = TEST_PROVIDER_LLM_OPTIONS.filter((s) => s !== "truncated");
 
 const ADVANCED_DEFAULTS: AdvancedSettings = {
   sttPromptDe: "",
@@ -52,9 +53,9 @@ const ADVANCED_DEFAULTS: AdvancedSettings = {
   logLevel: "info",
   uiScale: "medium",
   expertMode: false,
-  // Story 13-1: the benign scenario, matching the Rust serde default.
-  debugLlmScenario: "ok",
-  debugSttScenario: "ok",
+  // Story 13-1b: off, matching the Rust serde default.
+  testProviderLlm: "off",
+  testProviderStt: "off",
 };
 
 type ActiveSection = "home" | "stt" | "llm" | "audio" | "system";
@@ -66,17 +67,6 @@ interface AdvancedSettingsPanelProps {
   /** When true: no outer container/shadow and no header are rendered.
    *  Use this when embedding inside another panel (e.g. SettingsPanel). */
   embedded?: boolean;
-  /** Story 13-1. `llmProvider` / `sttProvider` are NOT part of `AdvancedSettings`
-   *  -- they live in `AppConfig` and are written by `save_settings` from state
-   *  the parent owns. The two provider rows below therefore read and write that
-   *  ONE owner through these props. A second writer (a narrow Tauri command, or
-   *  this panel calling `saveSettings` itself) would leave the parent's
-   *  mount-time snapshot stale, and its next Save would write the stale value
-   *  back over "debug". */
-  llmProvider: string;
-  sttProvider: string;
-  onLlmProviderChange: (value: string) => void;
-  onSttProviderChange: (value: string) => void;
 }
 
 export function AdvancedSettingsPanel({
@@ -84,10 +74,6 @@ export function AdvancedSettingsPanel({
   isPaid,
   isTrial = false,
   embedded = false,
-  llmProvider,
-  sttProvider,
-  onLlmProviderChange,
-  onSttProviderChange,
 }: AdvancedSettingsPanelProps) {
   const [settings, setSettings] = useState<AdvancedSettings>(ADVANCED_DEFAULTS);
   const [loadedSettings, setLoadedSettings] = useState<AdvancedSettings>(ADVANCED_DEFAULTS);
@@ -449,63 +435,50 @@ export function AdvancedSettingsPanel({
             <option value="error">error</option>
           </select>
         </div>
-        {/* Debug test provider (story 13-1) -- the four rows that make a
-            misbehaving provider reproducible ON THE DEVICE, with no computer
-            attached and no hand-edited config file: two that select the
-            provider, two that select the canned answer it returns. Behind the
-            same expertMode gate the Audio home-tree entry uses, because these
-            are footguns: picking "debug" stops real dictation working until it
-            is picked back.
+        {/* Test provider (story 13-1, reshaped by 13-1b) -- the two rows that
+            make a misbehaving provider reproducible ON THE DEVICE, with no
+            computer attached and no hand-edited config file.
 
-            All four reuse the shipped KSelect verbatim -- no new class, variant,
-            state or token. The provider rows write the parent's state through
-            props (see AdvancedSettingsPanelProps) and are saved by the Settings
-            footer; the scenario rows are part of AdvancedSettings and are saved
-            by this panel's own footer. Both orders converge, but only
-            save_settings rebuilds the STT slot, so the reproduction path presses
-            the Settings Save last. */}
+            ONE row per chain, and the value IS the state: "off" uses the real
+            provider, anything else both switches the test provider on and names
+            the canned answer it returns. There is no second field that could be
+            out of step and no provider-name coupling, so a half-configured state
+            is impossible BY CONSTRUCTION rather than avoided by care -- and both
+            keys live in AdvancedSettings, so this panel's own Save (below, and
+            pinned to the bottom edge while dirty) is the only button involved.
+
+            Behind the same expertMode gate the Audio home-tree entry uses,
+            because these are footguns: a non-"off" value stops real dictation
+            working until it is set back.
+
+            Both reuse the shipped KSelect verbatim -- no new class, variant,
+            state or token. Labels say "Test provider", never "Debug": "debug" is
+            a value of the Log Level row directly above, and confusing the two
+            cost story 13-1's device check an attempt. */}
         {expertMode && (
           <>
             <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-              <span className={LABEL_CLS}>LLM Provider</span>
+              <span className={LABEL_CLS}>Test provider (LLM)</span>
               <KSelect
-                value={llmProvider}
-                onChange={onLlmProviderChange}
-                options={LLM_PROVIDER_OPTIONS.map((p) => ({ value: p, label: p }))}
+                value={settings.testProviderLlm}
+                onChange={(v) => set("testProviderLlm", v)}
+                options={TEST_PROVIDER_LLM_OPTIONS.map((o) => ({ value: o, label: o }))}
                 className={isMobile ? "w-full" : "w-auto"}
               />
             </div>
             <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-              <span className={LABEL_CLS}>STT Provider</span>
+              <span className={LABEL_CLS}>Test provider (STT)</span>
               <KSelect
-                value={sttProvider}
-                onChange={onSttProviderChange}
-                options={STT_PROVIDER_OPTIONS.map((p) => ({ value: p, label: p }))}
-                className={isMobile ? "w-full" : "w-auto"}
-              />
-            </div>
-            <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-              <span className={LABEL_CLS}>Debug LLM Scenario</span>
-              <KSelect
-                value={settings.debugLlmScenario}
-                onChange={(v) => set("debugLlmScenario", v)}
-                options={DEBUG_LLM_SCENARIOS.map((s) => ({ value: s, label: s }))}
-                className={isMobile ? "w-full" : "w-auto"}
-              />
-            </div>
-            <div className={`flex gap-3 ${isMobile ? "flex-col" : "items-center justify-between"}`}>
-              <span className={LABEL_CLS}>Debug STT Scenario</span>
-              <KSelect
-                value={settings.debugSttScenario}
-                onChange={(v) => set("debugSttScenario", v)}
-                options={DEBUG_STT_SCENARIOS.map((s) => ({ value: s, label: s }))}
+                value={settings.testProviderStt}
+                onChange={(v) => set("testProviderStt", v)}
+                options={TEST_PROVIDER_STT_OPTIONS.map((o) => ({ value: o, label: o }))}
                 className={isMobile ? "w-full" : "w-auto"}
               />
             </div>
           </>
         )}
         {/* Expert mode -- reveals the raw audio thresholds and, since story
-            13-1, the four debug-test-provider rows above (story 7-9 removed the
+            13-1b, the two test-provider rows above (story 7-9 removed the
             chunking and STT-temperature rows, which were dead config) */}
         <div className="flex items-center justify-between gap-3 pt-3 mt-1 border-t border-klarvo-border/40">
           <div className="flex flex-col gap-0.5">
@@ -558,9 +531,21 @@ export function AdvancedSettingsPanel({
         {activeSection === "home" ? renderHome() : renderSectionContent()}
       </div>
 
-      {/* Save footer -- only shown when there are unsaved changes */}
+      {/* Save footer -- only shown when there are unsaved changes.
+
+          Story 13-1b: when EMBEDDED, this footer is pinned to the bottom edge of
+          the host's scroll area while dirty. Embedded, the panel's root has no
+          height bound, so its `flex-1 min-h-0` scroller is inert and the footer
+          is simply the last item of SettingsPanel's scroll container -- which is
+          why the Save button could sit below the fold and never be pressed
+          (three failed device attempts, 2026-09-21). `sticky bottom-0` inside
+          that scroller pins it without touching the standalone branch, and it is
+          the same "save sits at the bottom edge" behaviour SettingsPanel's own
+          footer already ships by flex layout. It needs the card background and a
+          z-index, or the rows would scroll through it; `mobile-safe-bottom`
+          stays, because extra padding BELOW a pinned button never hides it. */}
       {isDirty && (
-        <div className={`px-4 py-3 border-t border-klarvo-border/40 ${isMobile ? "mobile-safe-bottom" : ""}`}>
+        <div className={`px-4 py-3 border-t border-klarvo-border/40 ${isMobile ? "mobile-safe-bottom" : ""} ${embedded ? "sticky bottom-0 z-10 bg-klarvo-surface" : ""}`}>
           <button
             onClick={handleSave}
             disabled={saving}

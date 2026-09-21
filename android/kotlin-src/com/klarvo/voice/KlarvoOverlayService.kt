@@ -1767,8 +1767,7 @@ class KlarvoOverlayService : Service() {
                     config.dictionaryTerms,
                     config.customPrompt,
                     null, // preview chunks are display-only -- no pending-WAV backup needed
-                    config.sttProvider,
-                    config.debugSttScenario
+                    config.testProviderStt
                 )
                 if (text.isBlank()) return@execute
                 if (GroqSttBridge.nativeIsHallucination(text)) {
@@ -2006,7 +2005,20 @@ class KlarvoOverlayService : Service() {
 
         try {
             // Step 1: STT -- cloud (Groq) or local (whisper.cpp via JNI)
-            val transcript = if (config.sttProvider == "local") {
+            //
+            // Story 13-1b: the TEST provider wins over `sttProvider`, exactly as
+            // the Rust twin's `pipeline::resolve_stt_provider` returns it BEFORE
+            // it reads `stt_provider`. Without the second condition a stored
+            // `sttProvider = "local"` would take the local-whisper branch and the
+            // `Test provider (STT)` row would silently do nothing on Android --
+            // a state that was unreachable under 13-1 (`"debug"` is not
+            // `"local"`) and became reachable when selection moved to its own
+            // key. The value itself is still carried through uninspected: the
+            // cloud branch below hands it to the Rust core (ADR-0017).
+            val transcript = if (
+                config.sttProvider == "local" &&
+                config.testProviderStt == KlarvoApi.TEST_PROVIDER_OFF
+            ) {
                 val tLocalStart = System.currentTimeMillis()
 
                 // Resolve model file path (shared with the automatic Groq-failure
@@ -2078,8 +2090,7 @@ class KlarvoOverlayService : Service() {
                         config.dictionaryTerms,
                         config.customPrompt,
                         pendingWavFile,
-                        config.sttProvider,
-                        config.debugSttScenario
+                        config.testProviderStt
                     )
                 } catch (sttEx: IOException) {
                     // AC3: automatic local-Whisper safety net after Groq's retries are
@@ -2728,8 +2739,7 @@ class KlarvoOverlayService : Service() {
         dictionaryTerms: String,
         customPrompt: String,
         pendingWavFile: File?,
-        sttProvider: String,
-        debugSttScenario: String
+        testProviderStt: String
     ): String {
         val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
         val retryDelaysMs = listOf(2_000L, 5_000L)
@@ -2744,13 +2754,12 @@ class KlarvoOverlayService : Service() {
                 customPrompt = customPrompt,
                 sttModel = sttModel,
                 temperature = 0.0f,
-                // Story 13-1: both values are carried through UNINSPECTED. The
-                // Rust core decides whether "debug" means anything -- ADR-0017
-                // keeps every STT request and guard decision out of Kotlin, and
-                // a canned transcript forged here would produce the __ERROR_*
-                // sentinels instead of the real code emitting them.
-                sttProvider = sttProvider,
-                debugSttScenario = debugSttScenario
+                // Story 13-1b: ONE value now, carried through UNINSPECTED. The
+                // Rust core decides whether a non-"off" value means anything --
+                // ADR-0017 keeps every STT request and guard decision out of
+                // Kotlin, and a canned transcript forged here would produce the
+                // __ERROR_* sentinels instead of the real code emitting them.
+                testProviderStt = testProviderStt
             )
 
             when {
