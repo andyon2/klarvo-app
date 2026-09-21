@@ -1662,5 +1662,6 @@ Quelle: Pre-flight 13-1b, 2026-09-21. Eigene Regeln: 4450 Woerter (`SKILL.md` 22
 - **Dubletten:** „Proxy-gruen ist kein Design-Urteil" steht fuenfmal (`persistent_facts` 0/1/2, `decides`/`not_decides`/`pixel_note`) → ein Satz.
 - **Vertrags-Kommentare:** Vorfaelle, Korrekturen, Daten raus (stehen in `git log`); nur Schluessel + Werte.
 - **Deterministisch:** Pre-flight-Pruefungen, Detektoren, Buchung je ein Skript mit Exit-Code statt Skill-Prosa.
+- **Detektor 1 prueft nur ausgefuehrte Befehle** (`tool_use` Bash), nicht den ganzen Mitschrift-Text: Lauf 13-1b lieferte 5 Fehltreffer aus geladenem Text (Memory-Index, Vertrag), 0 mit der Befehls-Pruefung.
 - Prosa bleibt nur fuer Urteile: Spec-Gate, Ergebnis-Tabelle.
 - Regel fuer die Arbeit: jeder neue Absatz ersetzt einen alten; keine Regel ohne Pruefung gegen die bestehenden.
