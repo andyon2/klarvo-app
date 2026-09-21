@@ -1639,3 +1639,14 @@ nothing built. They cost three failed test attempts, so they block a human from 
 - **Android install path:** the phone carried a debug-signed build; the signed release APK from
   `android-build.sh` fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Used: debug APK assembled from the
   same fresh `libklarvo_lib.so`. Decide one signing line for Andi's device. (low)
+
+## Conductor-Regeln entschlacken — Prosa raus, Skripte rein (DECIDED 2026-09-21, Andi; nicht gebaut)
+
+Quelle: Pre-flight 13-1b, 2026-09-21. Eigene Regeln: 4450 Woerter (`SKILL.md` 2289, `bmad-conductor.toml`
+1233, `bmad-build-auto.toml` 928); BMAD schreibt davon nichts vor. Canon-Sonde schon gestrichen.
+
+- **Dubletten:** „Proxy-gruen ist kein Design-Urteil" steht fuenfmal (`persistent_facts` 0/1/2, `decides`/`not_decides`/`pixel_note`) → ein Satz.
+- **Vertrags-Kommentare:** Vorfaelle, Korrekturen, Daten raus (stehen in `git log`); nur Schluessel + Werte.
+- **Deterministisch:** Pre-flight-Pruefungen, Detektoren, Buchung je ein Skript mit Exit-Code statt Skill-Prosa.
+- Prosa bleibt nur fuer Urteile: Spec-Gate, Ergebnis-Tabelle.
+- Regel fuer die Arbeit: jeder neue Absatz ersetzt einen alten; keine Regel ohne Pruefung gegen die bestehenden.
