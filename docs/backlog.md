@@ -1119,6 +1119,24 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 
 **Fix (klein, aber eigener Scope):** `.focus-klarvo` → `.focus-klarvo:focus-visible` (oder die Nutzung auf einen `:focus`-Modifier umstellen). ACHTUNG: `focus-klarvo` wird surface-übergreifend genutzt (Bar, Preview, Onboarding, Settings) — der Fix berührt die geteilte Token-Schicht und braucht einen eigenen Smoke über alle Flächen. Darum **eigene Story / Teil von 8-7**, nicht in 8-2 geschmuggelt.
 
+**Wiedergefunden 2026-09-20 (Story 13-1, Spec `deferred`):** betrifft auch KToggle (`FormControls.tsx:40`), KSelect (l.361), KSegmented (l.463). 13-1 behebt ihn nicht (Vorbestands-Regel).
+
+---
+
+## [Defekt, vorbestehend] Advanced → System: Log-Level-Zeile nutzt ein rohes `<select>` statt `KSelect` (2026-09-20)
+
+**Quelle:** Story 13-1, Spec-Frontmatter `deferred` (`spec-13-1-debug-test-provider-both-twins.md`), severity low. `src/components/AdvancedSettingsPanel.tsx:397` stammt aus der Zeit vor dem Control-System von Story 8.2. Kandidat für 8-7 (Fidelity-Pass).
+
+---
+
+## [Gate-Lücke, medium] Kein geräte-freies Gate prüft die JNI-Signatur von `nativeTranscribe` (2026-09-20)
+
+**Quelle:** Story 13-1, Spec `deferred` (`spec-13-1-debug-test-provider-both-twins-2.md`). `GroqSttBridge.nativeTranscribe` (Kotlin, `GroqSttBridge.kt:59`) und `groq_jni.rs:202` (Rust) haben seit `e0da32a` 9 Parameter. Nichts vergleicht Anzahl und Reihenfolge. Eine einseitige Änderung oder eine veraltete `.so` bindet still falsch: der STT-Testanbieter fällt dann ohne Fehler und ohne Log-Zeile auf echtes Groq zurück. Schließen braucht einen adb-/Emulator-Schritt, der `nativeTranscribe` nach dem Rebuild einmal aufruft.
+
+## [Test-Schuld, low] Das Test-Modul von `groq_jni.rs` ist nie gelaufen, eine Erwartung ist falsch (2026-09-20)
+
+**Quelle:** Story 13-1, Spec `deferred`. `src-tauri/src/stt/groq_jni.rs::tests` ist android-gated und kompiliert weder unter `cargo test --lib` noch auf Android. Entgated wird `test_panic_safety_is_hallucination_unusual_inputs` rot (`is_hallucination("\0")` ist false). Erwartung aus Story 7-3, kein Produkt-Defekt.
+
 ---
 
 ## Story 11-6 GATE-4 — Nebenbefunde (2026-08-11, alle bewusst AUSSERHALB 11-6 gehalten)
@@ -1580,3 +1598,26 @@ AC5 stop-path is CLOSED on the proxy (2026-09-10, after close-out): `minRecordin
   `UnsatisfiedLinkError` (hit 2026-09-10 on the 7-2 stop-path oracle; the VAD-config cases never reach
   JNI, so the smoke stayed green). `android-emulator-smoke.sh` already does it right. Fix direction:
   when `BMAD_CONDUCTOR=1` / serial matches `emulator-*`, install with `--abi arm64-v8a -r -g`.
+
+## 13-1 H+ device check — operability findings (2026-09-21, Xiaomi 23054RA19C + Windows)
+
+Source: `gate4-evidence/RUN-2026-09-20.md` (H+ sections). All are design questions -> Andi decides;
+nothing built. They cost three failed test attempts, so they block a human from *using* the enabler.
+
+- **Advanced Save button is clipped on Android.** The Advanced panel's own `Save` footer appears only
+  when dirty and sits below the fold of the settings card; only its top edge is visible
+  (screenshot: scenario changed, `Save` cut at the card's bottom edge). Andi never found it; the
+  scenario was never persisted until the agent scrolled and tapped it via adb. (medium)
+- **Two save buttons for four adjacent rows.** `LLM Provider`/`STT Provider` are saved by
+  `Save Settings`, the two scenario rows by the Advanced footer. Variants to decide: (a) show the
+  scenario rows only while the provider is `debug` and save all four through one button;
+  (b) one row "Test provider: off / ok / empty / truncated ..." replacing switch + scenario. (medium)
+- **`Log Level = debug` sits directly above `LLM Provider`.** On Windows Andi read the Log Level value
+  as the test-provider switch. Rename or separate. (low)
+- **Feedback bubble overlaps `Save` and the `Expert mode` toggle** in Advanced -> System on Android. (low)
+- **`KSelect` list of `Debug LLM Scenario` opens upward and covers the `LLM Provider` row** on Android. (low)
+- **Unlicensed Android gates `debug` to `groq`** (`KlarvoApi.readConfig`, allowlist gate): the enabler is
+  unreachable on a fresh/unlicensed device. Input for 13-4 (license gate, both sides). (medium)
+- **Android install path:** the phone carried a debug-signed build; the signed release APK from
+  `android-build.sh` fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Used: debug APK assembled from the
+  same fresh `libklarvo_lib.so`. Decide one signing line for Andi's device. (low)

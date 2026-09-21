@@ -23,6 +23,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hound = "3.5"
 reqwest = { version = "0.12", features = ["json", "multipart", "rustls-tls"], default-features = false }
+# Direct dependency purely so an in-memory `http::Response` can be converted into a
+# `reqwest::Response` (`impl<T: Into<Body>> From<http::Response<T>> for Response`), which
+# reqwest does not re-export. Story 13-1's debug provider needs that to drive the REAL
+# response mapping from a canned (status, body) pair. Already resolved as a transitive
+# dependency of reqwest -- this adds zero crates.
+http = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 anyhow = "1"
 thiserror = "2"

@@ -723,6 +723,13 @@ fn cleanup_provider_reload_needed(
         || previous.llm_model_openai != next.llm_model_openai
         || previous.llm_model_groq != next.llm_model_groq
         || previous.llm_model_anthropic != next.llm_model_anthropic
+        // Story 13-1: `DebugCleanup` is built with its scenario baked in, so a
+        // scenario change has to rebuild the provider or the next dictation
+        // still replays the old canned answer. The clause can fire for a
+        // non-debug provider too — the Advanced row renders whenever expert mode
+        // is on — but the expensive local-model case still returns early above,
+        // so the GGUF-reload guard keeps its protection.
+        || previous.debug_llm_scenario != next.debug_llm_scenario
 }
 
 /// Rebuilds `slot`'s cleanup provider from `new_cfg` when
@@ -2348,5 +2355,60 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Story 13-1: `DebugCleanup` is constructed with its scenario baked in, so
+    /// a scenario change has to rebuild the provider — otherwise picking a new
+    /// scenario in Advanced → System silently replays the previous canned answer
+    /// until the app restarts, and the H+ reproduction path lies.
+    ///
+    /// PINS: a changed `debugLlmScenario` alone triggers the rebuild, and the
+    /// rebuilt provider answers with the NEW scenario. DOES NOT PIN: the STT
+    /// side — `save_advanced_settings` never rebuilds the STT slot, so a changed
+    /// `debugSttScenario` takes effect on the next `save_settings` or app
+    /// restart (recorded, not fixed here).
+    #[test]
+    fn spec_debug_llm_scenario_change_rebuilds_the_cleanup_provider() {
+        let base = AppConfig {
+            llm_provider: "debug".to_string(),
+            ..AppConfig::default()
+        };
+        let mut changed = base.clone();
+        changed.advanced.debug_llm_scenario = "empty".to_string();
+
+        assert!(
+            cleanup_provider_reload_needed(
+                &base.advanced,
+                &changed.advanced,
+                &changed.llm_provider
+            ),
+            "a changed debugLlmScenario must rebuild the cleanup provider"
+        );
+
+        // Discriminating half: an unchanged scenario must NOT trigger a rebuild,
+        // so the assertion above cannot pass by always returning true.
+        assert!(
+            !cleanup_provider_reload_needed(&base.advanced, &base.advanced, &base.llm_provider),
+            "an unchanged advanced block must not rebuild the cleanup provider"
+        );
+
+        // …and the rebuild really installs the new scenario.
+        let slot: std::sync::RwLock<Arc<dyn crate::llm::CleanupProvider>> =
+            std::sync::RwLock::new(crate::pipeline::resolve_cleanup_provider(&base));
+        let swapped = hot_reload_cleanup_provider(&slot, &base.advanced, &changed)
+            .expect("swap must succeed");
+        assert!(swapped, "the swap must have happened");
+        let rebuilt = slot.read().expect("slot").clone();
+        let err = tauri::async_runtime::block_on(rebuilt.cleanup(
+            "text",
+            CleanupStyle::Polished,
+            None,
+            None,
+        ))
+        .expect_err("the empty scenario must produce an error after the swap");
+        assert!(
+            matches!(err, crate::llm::LlmError::ResponseFormat(_)),
+            "the NEW scenario must be live after the swap, got {err:?}"
+        );
     }
 }

@@ -292,7 +292,13 @@ export function SettingsPanel({
         groq: loadedSettings.groqApiKeyMasked,
         openrouter: loadedSettings.openrouterApiKeyMasked,
       };
-      if (!llmKeyMap[llmProv]) {
+      // Story 13-1: the debug test provider carries NO API key by design, so the
+      // "stored provider has no key" re-seed below would rewrite a persisted
+      // "debug" to the first keyed provider on every refresh of this panel — and
+      // the next Save would persist that rewrite, so the enabler could never
+      // stay switched on. Preserve it verbatim; the Advanced → System row is the
+      // only place it can be set, and it is not a key-bearing provider.
+      if (llmProv !== "debug" && !llmKeyMap[llmProv]) {
         const fallback = ["deepseek", "openai", "groq", "anthropic", "openrouter"].find(p => llmKeyMap[p]);
         setLocalLlmProvider(fallback ?? llmProv);
       } else {
@@ -485,7 +491,12 @@ export function SettingsPanel({
         (hasGroq && "groq") ||
         (hasOpenrouter && "openrouter") ||
         "deepseek";
-      setLocalLlmProvider(fallback);
+      // Story 13-1: same guard as the re-seed effect above. RecordingAudioContent
+      // calls this from the cloud STT *Model* picker as well as the Cloud/Offline
+      // toggle, so without it, touching either silently destroys a selected
+      // llmProvider = "debug". Functional form: no extra dependency, no stale
+      // closure over localLlmProvider.
+      setLocalLlmProvider((prev) => (prev === "debug" ? prev : fallback));
     }
   }, [loadedSettings]);
 
@@ -875,7 +886,22 @@ export function SettingsPanel({
               />
             )}
             {activeCategory === "advanced" && (
-              <AdvancedSettingsPanel isPaid={isPaid} isTrial={isTrial} embedded />
+              /* Story 13-1: the Advanced panel's two provider rows read and
+                 write THIS component's state, which is the single client-side
+                 owner of llmProvider / sttProvider and the state
+                 saveCurrentSettings sends. Passing the value and its setter down
+                 rules out the clobber structurally: any second writer would
+                 leave the snapshot here stale and the next Save would overwrite
+                 the new value. */
+              <AdvancedSettingsPanel
+                isPaid={isPaid}
+                isTrial={isTrial}
+                embedded
+                llmProvider={localLlmProvider}
+                sttProvider={localSttProvider}
+                onLlmProviderChange={setLocalLlmProvider}
+                onSttProviderChange={setLocalSttProvider}
+              />
             )}
           </div>
         </>

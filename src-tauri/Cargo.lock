@@ -2528,6 +2528,7 @@ dependencies = [
  "futures",
  "hmac",
  "hound",
+ "http",
  "insta",
  "jni",
  "llama-cpp-2",

@@ -1,0 +1,73 @@
+# Story 13-1 — desktop proxy gate
+
+Run: 2026-09-20T15:01:59.787Z
+Checks: 66 (derived from the result records, not hand-counted)
+Ordinary checks: 66, failed: 0
+Result: PASS
+
+- [x] **boot** — onboarding skipped
+- [x] **reference instance found** — Settings → Language carries 2 KSelect(s); using #0 ("Dictation language")
+- [x] **[expert OFF] Recording & Audio picker actually read** — 3 dropdown(s), 8 option label(s) — a zero-element scan would prove nothing
+- [x] **[expert OFF] no 'debug' option in the normal provider picker (Recording & Audio)** — options: ["DeepSeek (no key)","OpenAI (no key)","Groq (Llama) (no key)","OpenRouter (no key)","Local (Offline)","System Default","Default Microphone","USB Headset"]
+- [x] **[expert OFF] AI & Providers page rendered** — its own 'Cleanup Instructions' and 'App Profiles' sections are present — the scan below is of a real page, not an empty one
+- [x] **[expert OFF] AI & Providers controls actually read** — 2 control(s), 6 option label(s) after adding a profile — a zero-element scan would prove nothing
+- [x] **[expert OFF] AI & Providers carries no provider picker** — 2 control(s): [{"tag":"button","label":"Polished"},{"tag":"button","label":"Polished"}]; option labels: ["Polished","Verbatim","Chat","Auto","DE","EN"]; provider-shaped labels: []
+- [x] **[expert OFF] no 'debug' option in AI & Providers** — options: ["Polished","Verbatim","Chat","Auto","DE","EN"]
+- [x] **all four rows absent with Expert mode OFF** — absent: ["LLM Provider","STT Provider","Debug LLM Scenario","Debug STT Scenario"]; KSelect count on the System page = 0 (expected 0)
+- [x] **Expert-mode switch found** — role=switch count = 1
+- [x] **all four rows present with Expert mode ON** — labels found: ["LLM Provider","STT Provider","Debug LLM Scenario","Debug STT Scenario"]
+- [x] **exactly four KSelect rows added** — [{"i":0,"label":"LLM Provider","text":"deepseek"},{"i":1,"label":"STT Provider","text":"groq"},{"i":2,"label":"Debug LLM Scenario","text":"ok"},{"i":3,"label":"Debug STT Scenario","text":"ok"}]
+- [x] **[LLM Provider] options equal the fixture, element-wise** — rendered ["deepseek","openai","anthropic","groq","openrouter","debug"] vs fixture ["deepseek","openai","anthropic","groq","openrouter","debug"]
+- [x] **[STT Provider] options equal the fixture, element-wise** — rendered ["groq","openai","local","debug"] vs fixture ["groq","openai","local","debug"]
+- [x] **[Debug LLM Scenario] options equal the fixture, element-wise** — rendered ["ok","empty","truncated","malformed","http429","http5xx","transport"] vs fixture ["ok","empty","truncated","malformed","http429","http5xx","transport"]
+- [x] **[Debug STT Scenario] options equal the fixture, element-wise** — rendered ["ok","empty","malformed","http429","http5xx","transport"] vs fixture ["ok","empty","malformed","http429","http5xx","transport"]
+- [x] **[LLM Provider] state 'idle' equals the reference instance** — all 13 properties equal
+- [x] **[LLM Provider] state 'hover' equals the reference instance** — all 13 properties equal
+- [x] **[LLM Provider] state 'focused' equals the reference instance** — all 13 properties equal
+- [x] **[LLM Provider] state 'open' equals the reference instance** — all 13 properties equal
+- [x] **[LLM Provider] state 'listbox' equals the reference instance** — all 13 properties equal
+- [x] **[LLM Provider] state 'optionSelected' equals the reference instance** — all 13 properties equal
+- [x] **[LLM Provider] keyboard-focused option compared like-for-like** — new aria-selected=false (idx 1), reference aria-selected=false (idx 2)
+- [x] **[LLM Provider] state 'optionKeyboardFocused' equals the reference instance** — all 13 properties equal
+- [x] **[LLM Provider] open state: aria-expanded=true + chevron rotated** — {"ariaExpanded":"true","chevronRotated":true}
+- [x] **[LLM Provider] state 'pressed' (= open) equals the reference instance** — the shipped KSelect defines no distinct pressed styling
+- [x] **[STT Provider] state 'idle' equals the reference instance** — all 13 properties equal
+- [x] **[STT Provider] state 'hover' equals the reference instance** — all 13 properties equal
+- [x] **[STT Provider] state 'focused' equals the reference instance** — all 13 properties equal
+- [x] **[STT Provider] state 'open' equals the reference instance** — all 13 properties equal
+- [x] **[STT Provider] state 'listbox' equals the reference instance** — all 13 properties equal
+- [x] **[STT Provider] state 'optionSelected' equals the reference instance** — all 13 properties equal
+- [x] **[STT Provider] keyboard-focused option compared like-for-like** — new aria-selected=false (idx 1), reference aria-selected=false (idx 2)
+- [x] **[STT Provider] state 'optionKeyboardFocused' equals the reference instance** — all 13 properties equal
+- [x] **[STT Provider] open state: aria-expanded=true + chevron rotated** — {"ariaExpanded":"true","chevronRotated":true}
+- [x] **[STT Provider] state 'pressed' (= open) equals the reference instance** — the shipped KSelect defines no distinct pressed styling
+- [x] **[Debug LLM Scenario] state 'idle' equals the reference instance** — all 13 properties equal
+- [x] **[Debug LLM Scenario] state 'hover' equals the reference instance** — all 13 properties equal
+- [x] **[Debug LLM Scenario] state 'focused' equals the reference instance** — all 13 properties equal
+- [x] **[Debug LLM Scenario] state 'open' equals the reference instance** — all 13 properties equal
+- [x] **[Debug LLM Scenario] state 'listbox' equals the reference instance** — all 13 properties equal
+- [x] **[Debug LLM Scenario] state 'optionSelected' equals the reference instance** — all 13 properties equal
+- [x] **[Debug LLM Scenario] keyboard-focused option compared like-for-like** — new aria-selected=false (idx 1), reference aria-selected=false (idx 2)
+- [x] **[Debug LLM Scenario] state 'optionKeyboardFocused' equals the reference instance** — all 13 properties equal
+- [x] **[Debug LLM Scenario] open state: aria-expanded=true + chevron rotated** — {"ariaExpanded":"true","chevronRotated":true}
+- [x] **[Debug LLM Scenario] state 'pressed' (= open) equals the reference instance** — the shipped KSelect defines no distinct pressed styling
+- [x] **[Debug STT Scenario] state 'idle' equals the reference instance** — all 13 properties equal
+- [x] **[Debug STT Scenario] state 'hover' equals the reference instance** — all 13 properties equal
+- [x] **[Debug STT Scenario] state 'focused' equals the reference instance** — all 13 properties equal
+- [x] **[Debug STT Scenario] state 'open' equals the reference instance** — all 13 properties equal
+- [x] **[Debug STT Scenario] state 'listbox' equals the reference instance** — all 13 properties equal
+- [x] **[Debug STT Scenario] state 'optionSelected' equals the reference instance** — all 13 properties equal
+- [x] **[Debug STT Scenario] keyboard-focused option compared like-for-like** — new aria-selected=false (idx 1), reference aria-selected=false (idx 2)
+- [x] **[Debug STT Scenario] state 'optionKeyboardFocused' equals the reference instance** — all 13 properties equal
+- [x] **[Debug STT Scenario] open state: aria-expanded=true + chevron rotated** — {"ariaExpanded":"true","chevronRotated":true}
+- [x] **[Debug STT Scenario] state 'pressed' (= open) equals the reference instance** — the shipped KSelect defines no distinct pressed styling
+- [x] **boot (after mock edit)** — onboarding skipped
+- [x] **throwaway mock edit took effect (expertMode=true is loaded, not clicked)** — the four rows render without touching the switch — so the picker scan below really runs with Expert mode ON
+- [x] **[expert ON] Recording & Audio picker actually read** — 3 dropdown(s), 8 option label(s) — a zero-element scan would prove nothing
+- [x] **[expert ON] no 'debug' option in the normal provider picker (Recording & Audio)** — options: ["DeepSeek (no key)","OpenAI (no key)","Groq (Llama) (no key)","OpenRouter (no key)","Local (Offline)","System Default","Default Microphone","USB Headset"]
+- [x] **[expert ON] AI & Providers page rendered** — its own 'Cleanup Instructions' and 'App Profiles' sections are present — the scan below is of a real page, not an empty one
+- [x] **[expert ON] AI & Providers controls actually read** — 2 control(s), 6 option label(s) after adding a profile — a zero-element scan would prove nothing
+- [x] **[expert ON] AI & Providers carries no provider picker** — 2 control(s): [{"tag":"button","label":"Polished"},{"tag":"button","label":"Polished"}]; option labels: ["Polished","Verbatim","Chat","Auto","DE","EN"]; provider-shaped labels: []
+- [x] **[expert ON] no 'debug' option in AI & Providers** — options: ["Polished","Verbatim","Chat","Auto","DE","EN"]
+- [x] **throwaway mock edit restored** — /home/andyon2/workspace/products/klarvo/src/tauri-commands.ts rewritten to its original bytes
+- [x] **no page errors** — none

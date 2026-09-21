@@ -117,6 +117,9 @@ const MOCK_ADVANCED_SETTINGS: AdvancedSettings = {
   logLevel: "info",
   uiScale: "medium",
   expertMode: false,
+  // Story 13-1: the benign scenario, matching the Rust serde default.
+  debugLlmScenario: "ok",
+  debugSttScenario: "ok",
 };
 
 const MOCK_HISTORY: HistoryEntry[] = [

@@ -43,6 +43,10 @@ use crate::setup_audio_level_emitter;
 pub fn resolve_stt_provider(cfg: &AppConfig, app_data_dir: &std::path::Path) -> Arc<dyn SttProvider> {
     match cfg.stt_provider.as_str() {
         "openai" => Arc::new(stt::OpenAiWhisper::new(&cfg.openai_api_key)),
+        // Story 13-1 (llm::DEBUG_PROVIDER_NAME): canned wire responses, no
+        // network. Explicit arm because the catch-all below silently resolves an
+        // unknown value to Groq.
+        llm::DEBUG_PROVIDER_NAME => Arc::new(stt::DebugStt::new(&cfg.advanced.debug_stt_scenario)),
         #[cfg(any(target_os = "windows", target_os = "android"))]
         "local" => build_local_whisper_provider(cfg, app_data_dir),
         #[cfg(not(any(target_os = "windows", target_os = "android")))]
@@ -237,6 +241,13 @@ pub(crate) fn cleanup_provider_for(
             "https://openrouter.ai/api/v1/chat/completions",
             "deepseek/deepseek-chat",
         )),
+        // Story 13-1 (llm::DEBUG_PROVIDER_NAME): canned wire responses, no
+        // network, no API key. Explicit arm because the catch-all below silently
+        // resolves an unknown value to DeepSeek. This is a *constructible*
+        // provider only — it is NOT in `resolve_fallback_provider`'s candidate
+        // array, exactly as Anthropic is constructible here without being a
+        // fallback candidate.
+        llm::DEBUG_PROVIDER_NAME => Arc::new(llm::DebugCleanup::new(&advanced.debug_llm_scenario)),
         // "deepseek" and any unrecognised value
         _ => Arc::new(
             llm::DeepSeekCleanup::new(api_key)
@@ -260,6 +271,10 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
         "anthropic" => cleanup_provider_for("anthropic", &cfg.anthropic_api_key, &cfg.advanced),
         "groq" => cleanup_provider_for("groq", &cfg.groq_api_key, &cfg.advanced),
         "openrouter" => cleanup_provider_for("openrouter", &cfg.openrouter_api_key, &cfg.advanced),
+        // Story 13-1: the debug provider needs no API key.
+        llm::DEBUG_PROVIDER_NAME => {
+            cleanup_provider_for(llm::DEBUG_PROVIDER_NAME, "", &cfg.advanced)
+        }
         #[cfg(target_os = "windows")]
         "local" => {
             let model_dir = std::env::var("APPDATA")
@@ -3055,6 +3070,122 @@ mod tests {
         };
         let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
         assert!(!offline);
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 13-1 — the `debug` provider is REACHABLE but never a FALLBACK
+    // -----------------------------------------------------------------------
+
+    /// `llm_provider = "debug"` must reach `DebugCleanup`, not silently become
+    /// DeepSeek via the catch-all. Observable without a network call: only the
+    /// debug provider reports `model() == "debug"`.
+    ///
+    /// Inversion (verified RED at writing time): delete the `"debug"` arm from
+    /// `resolve_cleanup_provider` and the resolved model becomes `deepseek-chat`.
+    #[test]
+    fn spec_debug_llm_provider_resolves_to_the_debug_provider() {
+        let cfg = AppConfig {
+            llm_provider: "debug".to_string(),
+            // A DeepSeek key is present precisely so a silent fall-through to
+            // the catch-all would still build a usable provider and hide itself.
+            deepseek_api_key: "ds-key".to_string(),
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            resolve_cleanup_provider(&cfg).model(),
+            llm::DebugCleanup::DEFAULT_MODEL
+        );
+        // Discriminating half: any other value must NOT resolve to the debug
+        // provider, so the assertion above cannot pass vacuously.
+        let deepseek = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            ..AppConfig::default()
+        };
+        assert_ne!(
+            resolve_cleanup_provider(&deepseek).model(),
+            llm::DebugCleanup::DEFAULT_MODEL
+        );
+    }
+
+    /// `cleanup_provider_for("debug", …)` reads the scenario out of the
+    /// `advanced` block it is already handed — the same block every other arm
+    /// reads its model override from.
+    #[tokio::test]
+    async fn spec_debug_llm_provider_reads_its_scenario_from_advanced() {
+        let advanced = config::AdvancedSettings {
+            debug_llm_scenario: "truncated".to_string(),
+            ..config::AdvancedSettings::default()
+        };
+        let provider = cleanup_provider_for("debug", "", &advanced);
+        let err = provider
+            .cleanup("text", llm::CleanupStyle::Polished, None, None)
+            .await
+            .expect_err("the truncated scenario must produce an error");
+        assert!(
+            matches!(err, llm::LlmError::OutputTruncated),
+            "the configured scenario must reach the provider, got {err:?}"
+        );
+    }
+
+    /// `stt_provider = "debug"` must reach `DebugStt`, not silently become Groq.
+    ///
+    /// Inversion (verified RED at writing time): delete the `"debug"` arm from
+    /// `resolve_stt_provider` and the canned transcript is replaced by a real
+    /// Groq request (here: an auth error, never the canned text).
+    #[tokio::test]
+    async fn spec_debug_stt_provider_resolves_to_the_debug_provider() {
+        let cfg = AppConfig {
+            stt_provider: "debug".to_string(),
+            groq_api_key: "gsk-key".to_string(),
+            ..AppConfig::default()
+        };
+        let provider = resolve_stt_provider(&cfg, std::path::Path::new("/nonexistent"));
+        let text = provider
+            .transcribe(b"not-a-real-wav", "de", None)
+            .await
+            .expect("the debug STT provider must answer without a network call");
+        assert_eq!(text, "Debug provider canned transcript.");
+    }
+
+    /// AC: `debug` must never appear as a cleanup-fallback candidate, so a debug
+    /// 429/5xx fires the PRODUCTION ladder (deepseek → openai → openrouter) and
+    /// the debug provider can never rescue itself.
+    #[test]
+    fn spec_debug_is_never_a_cleanup_fallback_candidate() {
+        let cfg = AppConfig {
+            llm_provider: "debug".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            openai_api_key: "sk-openai".to_string(),
+            openrouter_api_key: "sk-or".to_string(),
+            groq_api_key: "gsk-key".to_string(),
+            anthropic_api_key: "sk-ant".to_string(),
+            ..AppConfig::default()
+        };
+        for primary in ["debug", "deepseek", "openai", "openrouter", "groq", ""] {
+            if let Some((_, name)) = resolve_fallback_provider(&cfg, primary) {
+                assert_ne!(
+                    name, "debug",
+                    "primary={primary}: debug must never be the selected fallback"
+                );
+            }
+        }
+        // With `debug` as the primary and every real key present, the ladder
+        // must still hand back its first real candidate.
+        let (_, first) = resolve_fallback_provider(&cfg, "debug")
+            .expect("a debug primary must still find a real fallback");
+        assert_eq!(first, "deepseek", "the production ladder starts at DeepSeek");
+
+        // Discriminating half: with NO real key at all there is no candidate —
+        // a `debug` entry in the list would make this `Some`.
+        let debug_only = AppConfig {
+            llm_provider: "debug".to_string(),
+            ..AppConfig::default()
+        };
+        assert!(
+            resolve_fallback_provider(&debug_only, "debug").is_none(),
+            "the debug provider must not be able to nominate itself"
+        );
     }
 
     /// Default stt_provider is "groq", so offline flag is false by default.
