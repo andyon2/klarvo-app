@@ -2,13 +2,13 @@
 title: '13-1b Test provider operability'
 type: 'feature'
 created: '2026-09-21'
-status: 'ready-for-review'
+status: 'in-review'
 baseline_revision: '1b3621fe7fa98a316ff7ed82eb35b2cdb5a1f189'
 route: 'full'
 route_source: 'pinned'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-alignment']
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
@@ -503,6 +503,85 @@ revert.
 
 ## Review Triage Log
 
+### 2026-09-21 — Review pass (4 lenses), 13 findings, all PATCHED
+
+No finding was rejected. Two were product defects the story itself introduced, one was a
+false claim in this story's own evidence, and one was a gate that had never been able to
+fail.
+
+**Product defects introduced by this story (2)**
+
+1. `[high]` **The fallback ladder lost its first rung while the test provider ran.**
+   `pipeline.rs` passed `cfg.llm_provider` as `resolve_fallback_provider`'s `excluding`
+   argument, so with the test provider active the ladder excluded DeepSeek and started at
+   OpenAI — against the AC ("candidates unchanged"), and diverging from the Kotlin twin,
+   which passes `llmProvider.providerName`. It also misnamed the provider in two
+   `[pipeline]` log lines. Fixed by extracting `effective_llm_provider_name(&cfg)` and
+   using it at the call site; the ladder test now asserts the call the RUNTIME makes, plus
+   a discriminating half proving a REAL primary IS excluded from its own ladder.
+2. `[high]` **`Test provider (STT)` was inert on Android with offline STT.**
+   `KlarvoOverlayService`'s `if (config.sttProvider == "local")` never consulted the new
+   key, while the Rust twin returns the test provider BEFORE reading `stt_provider`. The
+   state was unreachable under 13-1 (`"debug"` is not `"local"`) and became reachable with
+   the reshape. Fixed with one added condition and a source-walk tripwire
+   (`localSttBranchIsTakenOnlyWhileTheTestProviderIsOff`).
+
+**Ordering / parity defects (2)**
+
+3. `[medium]` `cleanup_provider_reload_needed`'s Windows `"local"` early return sat ABOVE
+   the new test clause, so on Windows — Andi's own H+ platform — Save persisted the key and
+   the slot kept `LocalLlmCleanup` until restart. Clause moved above the guard. ⚠️ The
+   defect is invisible to a Linux `cfg!`, so the ORDERING is additionally pinned as source
+   text.
+4. `[medium]` `KlarvoApi.parseTestProvider` accepted any non-blank string, so a stored
+   `"banana"` (or `"truncated"` on the STT chain) left the test provider ACTIVE on Android
+   while Rust normalized it to `off`. Added `VALID_TEST_PROVIDER_LLM` / `_STT` as the twin
+   of the Rust constants, filtered per chain, and pinned both lists against the fixture.
+
+**Evidence that was not true (2)**
+
+5. `[medium]` Inversion row 7 claimed "save_advanced_settings stops rebuilding the STT
+   slot" made a test RED. It did not: that test drives `hot_reload_stt_provider` directly,
+   and deleting the CALL leaves the suite green (measured: 748 passed). Row corrected,
+   row 7b added, and the wire is now covered by
+   `spec_save_advanced_settings_rebuilds_both_runtime_slots`; the call-site gap is filed.
+6. `[medium]` **The `hover` state had never been exercised.** Tailwind v4 wraps `hover:`
+   utilities in `@media (hover: hover)`, headless Chromium has no pointing device, so both
+   sides recorded `hover` byte-identical to `idle` and the equality passed for the wrong
+   reason. Four escapes were measured and none works. The harness now probes
+   `(hover: hover)`, DROPS `hover` from the comparison, reports it as NOT EXERCISED, and
+   substitutes a structural hover-variant check. Not reported green.
+
+**Gates that could not fail (3)**
+
+7. `[medium]` The FAB tripwire's containment was one-sided (`guard < fab` only), so a FAB
+   moved below the guard's close still passed. Upper bound added; inverted RED.
+8. `[medium]` Nothing pinned the sticky footer — this story's second headline fix — nor
+   that each row writes its MATCHING key (a crossed wiring would have passed every gate).
+   Both added to the React tripwire; both inverted RED.
+9. `[low]` `spec_test_cleanup_model_is_its_own_entry` asserted the opposite of its name.
+   Renamed to `spec_test_cleanup_model_comes_only_from_the_provider`.
+
+**Documentation that had gone stale or wrong (4)**
+
+10. `[low]` Three production doc comments still named `advanced.debug*Scenario`, and
+    `TestStt`'s doc described the OLD 5-arg selector with a now-INVERTED claim
+    (`"groq"` no longer keeps Groq — `"off"`/`""` do). All three corrected.
+11. `[low]` `hot_reload_stt_provider` called itself a twin without recording that it
+    deliberately has no `"local"` exception. One sentence added, with the measured cost.
+12. `[low]` Three fixture DESCRIPTIONS still said `debug`. Prose only; every `wire` /
+    `rust` / `kotlin` payload re-verified byte-identical afterwards.
+13. `[medium]` `epic-13-context.md` still said "Neither 13.1b nor 13.3 may touch that
+    gate", which this commit contradicts. Corrected to record what 13-1b carried across
+    (behaviour preserved, log predicate widened) and what stays 13-4's (the decision) —
+    plus the desktop half that lapsed.
+
+**Filed, not fixed** (`docs/backlog.md`, all with source refs): the feedback panel has no
+UI entry point since the FAB was its only trigger · the DESKTOP license gate over the test
+provider lapsed (`active_stt_provider_id` reads `cfg.stt_provider`, which no longer carries
+it) — 13-4's subject, no license code touched · the two hot-reload CALLS in
+`save_advanced_settings` run in no executing test (needs an `AppState` harness).
+
 ## Design Notes
 
 **Why one key per chain rather than a switch plus a dependent row.** Andi's decision (2) is "one row
@@ -619,26 +698,27 @@ Blocking condition: none
 
 Every gate re-run from the tree after the last edit (and after the last inversion revert).
 
-- `cd src-tauri && cargo test --lib` — **748 passed, 0 failed**.
+- `cd src-tauri && cargo test --lib` — **749 passed, 0 failed** (748 before the review fixes).
   Baseline measured first at `baseline_revision` `1b3621fe7fa98a316ff7ed82eb35b2cdb5a1f189`:
   **744 passed, 0 failed**. No baseline exception was needed.
 - Device-free JVM gate — `android/kotlin-{src,test}` delete-then-copied into
   `src-tauri/gen/android/app/src/{main,test}/java/com/klarvo/voice/`,
   `testImplementation("org.json:json:20231013")` confirmed present, `ANDROID_HOME` set,
-  `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` — **25 suites, 214 tests,
-  0 failures, 0 errors**, counted from
-  `app/build/test-results/testUniversalDebugUnitTest/*.xml` (13-1 measured 25/211).
-  `Adr0017BoundaryGuardTest` 3/3 green; `TestProviderScenarioTest` 20/20 green.
+  `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` — **25 suites, 217 tests,
+  0 failures, 0 errors** after the review fixes (214 before them; 13-1 measured 25/211),
+  counted from `app/build/test-results/testUniversalDebugUnitTest/*.xml`.
+  `Adr0017BoundaryGuardTest` 3/3 green; `TestProviderScenarioTest` 23/23 green.
 - `npm run build` — TS strict green with the two renamed `AdvancedSettings` fields, the
   four removed props and the FAB guard keeping its locals referenced.
 - Desktop proxy gate against `npm run preview` (port 1422, real Chromium) —
-  green run **59 checks, 0 failed, exit 0**; inversion run **4/4 groups RED, 20 ordinary
-  checks, 0 failed, exit 0**. `git status` on `src/tauri-commands.ts` verified clean of
+  green run **59 checks, 0 failed, exit 0** plus one NOT-EXERCISED note (`hover`, see the
+  Review Triage Log); inversion run **4/4 groups RED, 20 ordinary checks, 0 failed,
+  exit 0**. `git status` on `src/tauri-commands.ts` verified clean of
   the throwaway edit after both runs. Evidence + coverage statement:
   `gate4-evidence/13-1b/{report.md,inversion-report.md,verdict.md}` plus the style maps,
   the three geometry JSONs and the screenshots.
 - Inversion evidence for the Rust and Kotlin guards — **10/10 Rust and 3/3 Kotlin
-  inversions RED**, each a real edit + real run + real revert:
+  inversions RED**, plus **6/6 Rust and 3/3 Kotlin** for the guards the review fixes added, each a real edit + real run + real revert:
   `gate4-evidence/13-1b/code-inversion-report.md`.
 
 ### Decisions taken during implementation

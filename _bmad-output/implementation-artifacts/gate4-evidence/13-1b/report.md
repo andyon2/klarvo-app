@@ -1,6 +1,6 @@
 # Story 13-1b — desktop proxy gate
 
-Run: 2026-09-21T10:27:44.729Z
+Run: 2026-09-21T11:10:32.878Z
 Checks: 59 (derived from the result records, not hand-counted)
 Ordinary checks: 59, failed: 0
 Result: PASS
@@ -22,8 +22,8 @@ Result: PASS
 - [x] **[Test provider (LLM)] options equal the fixture, element-wise** — rendered ["off","ok","empty","truncated","malformed","http429","http5xx","transport"] vs fixture ["off","ok","empty","truncated","malformed","http429","http5xx","transport"]
 - [x] **[Test provider (STT)] options equal the fixture, element-wise** — rendered ["off","ok","empty","malformed","http429","http5xx","transport"] vs fixture ["off","ok","empty","malformed","http429","http5xx","transport"]
 - [x] **[desktop] no feedback FAB and no feedback tooltip anywhere** — aria-label="Send feedback": 0, title="Send Feedback": 0, tooltip text: false
+- [x] **[Test provider (LLM)] hover VARIANT matches the reference instance (structural; computed hover not exercisable — trap #7)** — measured "hover:border-klarvo-border-2" vs reference "hover:border-klarvo-border-2"
 - [x] **[Test provider (LLM)] state 'idle' equals the reference instance** — all 13 properties equal
-- [x] **[Test provider (LLM)] state 'hover' equals the reference instance** — all 13 properties equal
 - [x] **[Test provider (LLM)] state 'focused' equals the reference instance** — all 13 properties equal
 - [x] **[Test provider (LLM)] state 'open' equals the reference instance** — all 13 properties equal
 - [x] **[Test provider (LLM)] state 'listbox' equals the reference instance** — all 13 properties equal
@@ -32,8 +32,8 @@ Result: PASS
 - [x] **[Test provider (LLM)] state 'optionKeyboardFocused' equals the reference instance** — all 13 properties equal
 - [x] **[Test provider (LLM)] open state: aria-expanded=true + chevron rotated** — {"ariaExpanded":"true","chevronRotated":true}
 - [x] **[Test provider (LLM)] state 'pressed' (= open) equals the reference instance** — the shipped KSelect defines no distinct pressed styling
+- [x] **[Test provider (STT)] hover VARIANT matches the reference instance (structural; computed hover not exercisable — trap #7)** — measured "hover:border-klarvo-border-2" vs reference "hover:border-klarvo-border-2"
 - [x] **[Test provider (STT)] state 'idle' equals the reference instance** — all 13 properties equal
-- [x] **[Test provider (STT)] state 'hover' equals the reference instance** — all 13 properties equal
 - [x] **[Test provider (STT)] state 'focused' equals the reference instance** — all 13 properties equal
 - [x] **[Test provider (STT)] state 'open' equals the reference instance** — all 13 properties equal
 - [x] **[Test provider (STT)] state 'listbox' equals the reference instance** — all 13 properties equal
@@ -64,3 +64,8 @@ Result: PASS
 - [x] **[phone] Save button fully inside the scroll container at scrollTop=max** — button 443..485 vs container 115..557 (scrollTop=123, footer position=sticky)
 - [x] **throwaway mock edit restored** — /home/andyon2/workspace/products/klarvo/src/tauri-commands.ts rewritten to its original bytes
 - [x] **no page errors** — none
+
+## NOT EXERCISED (neither passed nor failed — stated, per project-context
+"a number states what it covers")
+
+- HOVER NOT EXERCISED — `(hover: hover)` is false in headless Chromium (no pointing device), and Tailwind v4 wraps every `hover:` utility in that media query, so `hover:border-klarvo-border-2` cannot apply. Emulation.setEmulatedMedia, --blink-settings=…HoverType… and CSS.forcePseudoState were all measured and none changes it. The `hover` state is therefore DROPPED from the computed-style comparison rather than compared as two idle samples; a structural check that both controls carry the same hover variant class runs instead. The rendered hover colour remains Andi's real-screen gate.

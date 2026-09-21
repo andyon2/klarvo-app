@@ -123,6 +123,24 @@ object KlarvoApi {
     // `config::TEST_PROVIDER_OFF` / `default_test_provider()`.
     internal const val TEST_PROVIDER_OFF = "off"
 
+    // The accepted values per chain -- Rust↔Kotlin TWIN of
+    // `config::VALID_TEST_PROVIDER_LLM` / `::VALID_TEST_PROVIDER_STT`.
+    //
+    // Kotlin needs its own copy because Android never runs Rust's
+    // `migrate_and_normalize`: it reads config.json directly, so without this an
+    // out-of-set value (a hand-edited file, or a key written by a newer build)
+    // would leave the test provider ACTIVE here while the Rust twin had
+    // normalized it to `off` at load. Fail-safe means OFF -- the test provider
+    // makes no real request, so "active with a scenario nobody chose" would
+    // silently replace every dictation with a canned answer.
+    //
+    // The STT list is the LLM list MINUS `truncated`: `SttError` has no
+    // truncation variant, so there is nothing for it to map to.
+    internal val VALID_TEST_PROVIDER_LLM = listOf(
+        TEST_PROVIDER_OFF, "ok", "empty", "truncated", "malformed", "http429", "http5xx", "transport"
+    )
+    internal val VALID_TEST_PROVIDER_STT = VALID_TEST_PROVIDER_LLM.filter { it != "truncated" }
+
     // Endpoint the `transport` scenario talks to: the loopback discard port.
     // Nothing listens there, so the request fails to connect and yields a
     // GENUINE IOException through the real client. Loopback only -- no byte
@@ -664,14 +682,16 @@ object KlarvoApi {
      *
      * `key` is the camelCase key under `advanced` (Rust serializes
      * `AdvancedSettings` with `rename_all = "camelCase"`). An absent `advanced`
-     * object, an absent key, a non-String value and a blank string all yield
-     * [TEST_PROVIDER_OFF] — which is the FAIL-SAFE direction now that the value
-     * is the state: an unreadable value must leave the test provider inactive,
-     * never active with a scenario nobody chose.
+     * object, an absent key, a non-String value, a blank string and ANY value
+     * outside the chain's allowlist all yield [TEST_PROVIDER_OFF] — the
+     * FAIL-SAFE direction now that the value is the state: an unrecognised value
+     * must leave the test provider inactive, never active with a scenario nobody
+     * chose.
      *
-     * That is a real mirror of the Rust twin since 13-1b, not an agreement:
-     * `""` is outside `config::VALID_TEST_PROVIDER_*`, so `migrate_and_normalize`
-     * step (f) rewrites it to `"off"` there with a warning.
+     * The allowlist is chosen BY KEY, because the two chains differ:
+     * `"truncated"` is legal on the LLM chain and not on the STT one. That makes
+     * this a real mirror of the Rust twin's `migrate_and_normalize` step (f),
+     * which Android never runs — it reads config.json directly.
      *
      * A config file written by story 13-1 carries `debugLlmScenario` /
      * `debugSttScenario` instead. Those keys are simply not read — the test
@@ -679,9 +699,10 @@ object KlarvoApi {
      * the whole old-shape story on this twin too.
      */
     internal fun parseTestProvider(json: JSONObject, key: String): String {
+        val allowed = if (key == "testProviderStt") VALID_TEST_PROVIDER_STT else VALID_TEST_PROVIDER_LLM
         val advanced = json.optJSONObject("advanced") ?: return TEST_PROVIDER_OFF
         val value = advanced.opt(key) as? String ?: return TEST_PROVIDER_OFF
-        return value.ifBlank { TEST_PROVIDER_OFF }
+        return if (value in allowed) value else TEST_PROVIDER_OFF
     }
 
     /**

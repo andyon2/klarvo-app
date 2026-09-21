@@ -513,8 +513,12 @@ pub(crate) fn test_stt_canned_wire(scenario: &str) -> Option<(u16, &'static str)
 }
 
 /// An STT provider that never talks to a real API: it yields the canned wire
-/// response selected by `advanced.debugSttScenario` and lets the *real* mapping
+/// response named by `advanced.testProviderStt` and lets the *real* mapping
 /// ([`map_transcription_http_response`]) decide the outcome.
+///
+/// Story 13-1b: that one key both switches this provider on and selects the
+/// scenario — the value IS the state, so this type is only ever constructed when
+/// the key is something other than `config::TEST_PROVIDER_OFF`.
 ///
 /// Lives in Rust only — ADR-0017 makes STT shared core, so Android consumes
 /// this same provider through `stt::groq_jni::nativeTranscribe` and the
@@ -524,9 +528,10 @@ pub(crate) fn test_stt_canned_wire(scenario: &str) -> Option<(u16, &'static str)
 /// The provider ignores `audio`, `language` and `prompt` entirely — the
 /// scenario alone decides the answer, and in particular there is **no
 /// `EmptyAudio` guard**. That is load-bearing: it lets a Rust unit test drive
-/// `groq_jni::select_stt_provider("debug", …)` with empty audio and still reach
-/// the canned mapping, while the same call with `"groq"` stops at `EmptyAudio`
-/// before any socket is opened.
+/// `groq_jni::select_stt_provider("ok", "", model, 0.0)` with empty audio and
+/// still reach the canned mapping, while the same call with `"off"` (or `""`,
+/// the JNI caller's fail-soft value) keeps the Groq path and stops at
+/// `EmptyAudio` before any socket is opened.
 pub struct TestStt {
     scenario: String,
 }

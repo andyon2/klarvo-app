@@ -2005,7 +2005,20 @@ class KlarvoOverlayService : Service() {
 
         try {
             // Step 1: STT -- cloud (Groq) or local (whisper.cpp via JNI)
-            val transcript = if (config.sttProvider == "local") {
+            //
+            // Story 13-1b: the TEST provider wins over `sttProvider`, exactly as
+            // the Rust twin's `pipeline::resolve_stt_provider` returns it BEFORE
+            // it reads `stt_provider`. Without the second condition a stored
+            // `sttProvider = "local"` would take the local-whisper branch and the
+            // `Test provider (STT)` row would silently do nothing on Android --
+            // a state that was unreachable under 13-1 (`"debug"` is not
+            // `"local"`) and became reachable when selection moved to its own
+            // key. The value itself is still carried through uninspected: the
+            // cloud branch below hands it to the Rust core (ADR-0017).
+            val transcript = if (
+                config.sttProvider == "local" &&
+                config.testProviderStt == KlarvoApi.TEST_PROVIDER_OFF
+            ) {
                 val tLocalStart = System.currentTimeMillis()
 
                 // Resolve model file path (shared with the automatic Groq-failure

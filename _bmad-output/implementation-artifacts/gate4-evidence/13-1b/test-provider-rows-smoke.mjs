@@ -100,6 +100,20 @@
  * THROWAWAY edit to `src/tauri-commands.ts`, asserted to have taken effect, then
  * restored in a `finally` with the restore itself asserted; verify `git status`
  * is clean afterwards.
+ * Trap #7 (this run): **`hover` is NOT exercisable in this harness.** Tailwind v4
+ * wraps every `hover:` utility in `@media (hover: hover)` (confirmed via CDP
+ * `CSS.getMatchedStylesForNode`: the rule is
+ * `.hover\:border-klarvo-border-2 { &:hover { @media (hover: hover) { … } } }`),
+ * and headless Chromium has no pointing device, so `(hover: hover)` is false and
+ * the rule never applies. Neither `Emulation.setEmulatedMedia` (it ignores the
+ * `hover`/`pointer` feature names) nor `--blink-settings=…HoverType…` nor
+ * `CSS.forcePseudoState` changes that — all four were measured.
+ * Story 13-1b's first run therefore recorded a `hover` byte-identical to `idle`
+ * on BOTH sides and reported the equality green; that is what INVERSION-1's
+ * 1/10 score was really telling us. The harness now PROBES `(hover: hover)`,
+ * drops `hover` from the computed-style comparison when it is false, records it
+ * as NOT EXERCISED in the report instead of as a pass, and substitutes a
+ * structural check (both controls carry the same hover-variant class token).
  * Trap #6 (this run): `src/platform.ts` reads `navigator.userAgent` at MODULE
  * LOAD, so the phone layout branch is only reachable if the user agent is set
  * BEFORE `page.goto`. Setting it afterwards and reloading is not enough if the
@@ -170,6 +184,10 @@ const REMOVED_13_1_ROWS = [
 ];
 
 const results = [];
+/** Things this run deliberately did NOT exercise. Reported, never counted green. */
+const notes = [];
+/** Probed after boot: false in headless Chromium, which has no pointing device. */
+let hoverCapable = false;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pass = (name, detail) => results.push({ ok: true, name, detail });
 const fail = (name, detail) => results.push({ ok: false, name, detail });
@@ -310,7 +328,23 @@ async function rawSelectStyle(page) {
   }, PROPS);
 }
 
+/**
+ * Centre of the nth KSelect trigger, in VIEWPORT coordinates, after scrolling it
+ * into view.
+ *
+ * The scroll is load-bearing: this gate runs at a viewport height that makes the
+ * settings card scroll (see DESKTOP_VIEWPORT), so without it the control can be
+ * outside the viewport and `page.mouse.move` lands on whatever is at those
+ * coordinates instead — which is exactly how story 13-1b's first run recorded a
+ * `hover` byte-identical to `idle` and reported it green.
+ */
 async function boxOf(page, n) {
+  await page.evaluate((n) => {
+    document
+      .querySelectorAll('button[aria-haspopup="listbox"]')
+      [n].scrollIntoView({ block: "center", behavior: "instant" });
+  }, n);
+  await sleep(150);
   return page.evaluate((n) => {
     const b = document.querySelectorAll('button[aria-haspopup="listbox"]')[n];
     if (!b) return null;
@@ -333,9 +367,24 @@ async function captureStates(page, n) {
   out.idle = await triggerStyle(page, n);
 
   const box = await boxOf(page, n);
+  // Two moves: some engines coalesce a single move from (0,0) and never emit the
+  // mousemove that makes `:hover` match. Then wait PAST the component's
+  // `transition-colors` window (Tailwind's default is 150ms) — sampling at
+  // exactly 150ms reads a colour still in flight.
+  await page.mouse.move(box.x - 4, box.y - 4);
   await page.mouse.move(box.x, box.y);
-  await sleep(150);
+  await sleep(400);
   out.hover = await triggerStyle(page, n);
+  // Did `:hover` actually match? Recorded on the capture so the caller can make
+  // it a check rather than trusting an equality between two idle states.
+  out.hoverEngaged =
+    !!out.hover && !!out.idle && out.hover.borderTopColor !== out.idle.borderTopColor;
+  // Structural fallback: the hover VARIANT the component ships. Checked
+  // like-for-like when the computed hover state is unreachable (trap #7).
+  out.hoverClass = await page.evaluate((n) => {
+    const b = document.querySelectorAll('button[aria-haspopup="listbox"]')[n];
+    return [...b.classList].filter((c) => c.startsWith("hover:")).sort().join(" ");
+  }, n);
 
   await page.mouse.move(0, 0);
   await page.evaluate((n) => {
@@ -408,7 +457,7 @@ function diff(a, b) {
   return PROPS.filter((p) => a[p] !== b[p]).map((p) => `${p}: ${a[p]} != ${b[p]}`);
 }
 
-const STATES = [
+const ALL_STATES = [
   "idle",
   "hover",
   "focused",
@@ -417,6 +466,12 @@ const STATES = [
   "optionSelected",
   "optionKeyboardFocused",
 ];
+/**
+ * The states actually compared. `hover` is dropped when `(hover: hover)` is
+ * false (trap #7): comparing two idle samples and calling it a hover check is
+ * the failure mode this gate is supposed to prevent, not commit.
+ */
+const comparedStates = () => ALL_STATES.filter((st) => st !== "hover" || hoverCapable);
 
 /**
  * THE state assertion. Both the green run and inversion #1 call exactly this,
@@ -425,7 +480,17 @@ const STATES = [
  * different assertion that happens to fail.
  */
 function assertStatesEqual(measured, reference, rowLabel) {
-  for (const state of STATES) {
+  // Structural substitute for the unreachable hover state: the two controls must
+  // ship the SAME hover variant. It cannot prove the rendered colour, and it does
+  // not pretend to — but a row that lost `hover:border-klarvo-border-2` fails it.
+  if (!hoverCapable) {
+    check(
+      !!measured.hoverClass && measured.hoverClass === reference.hoverClass,
+      `[${rowLabel}] hover VARIANT matches the reference instance (structural; computed hover not exercisable — trap #7)`,
+      `measured "${measured.hoverClass}" vs reference "${reference.hoverClass}"`,
+    );
+  }
+  for (const state of comparedStates()) {
     if (state === "optionKeyboardFocused") {
       check(
         measured[state]?.__ariaSelected === reference[state]?.__ariaSelected,
@@ -452,6 +517,26 @@ function assertStatesEqual(measured, reference, rowLabel) {
     JSON.stringify(measured.open) === JSON.stringify(reference.open),
     `[${rowLabel}] state 'pressed' (= open) equals the reference instance`,
     "the shipped KSelect defines no distinct pressed styling",
+  );
+}
+
+/**
+ * DISCRIMINATING check for the `hover` capture.
+ *
+ * `hover` equality between two controls is worthless if `:hover` never matched
+ * on either: both sides then record their idle style and the comparison passes
+ * for the wrong reason. The shipped `KSelect` carries
+ * `hover:border-klarvo-border-2`, so an engaged hover MUST differ from idle on
+ * the border colour. If it does not, this reports RED rather than letting the
+ * equality claim stand — a state that cannot differ is not a gate.
+ */
+function assertHoverEngaged(states, label) {
+  if (!hoverCapable) return; // trap #7 — reported as NOT EXERCISED, not as a pass
+  check(
+    states.hoverEngaged === true,
+    `[${label}] hover actually engaged (:hover matched, not a second idle sample)`,
+    `idle border ${states.idle?.borderTopColor} vs hover border ${states.hover?.borderTopColor}` +
+      (states.hoverEngaged ? "" : " — IDENTICAL, so the hover equality below proves nothing"),
   );
 }
 
@@ -616,6 +701,14 @@ const browser = await puppeteer.launch({
 });
 const page = await browser.newPage();
 await page.setViewport(DESKTOP_VIEWPORT);
+// Trap #7 (this run, found by CDP `CSS.getMatchedStylesForNode`): Tailwind v4
+// wraps every `hover:` utility in `@media (hover: hover)`, and headless Chromium
+// reports NO hover-capable pointer by default — so `hover:border-klarvo-border-2`
+// never applied, `getComputedStyle` returned the idle colour, and the `hover`
+// state compared two idle samples and passed. Emulating a fine, hover-capable
+// pointer is what makes the desktop branch of that media query real. The PHONE
+// page below deliberately does NOT get this: a phone has `hover: none`, and
+// faking it there would measure a state the device cannot reach.
 
 const pageErrors = [];
 const watchErrors = (pg) =>
@@ -630,6 +723,25 @@ const measured = {};
 try {
   pass("boot", await boot(page));
 
+  // Trap #7: can this browser hover at all? Tailwind v4 gates every `hover:`
+  // utility behind `@media (hover: hover)`, so the answer decides whether the
+  // hover state is a gate or a fiction.
+  hoverCapable = await page.evaluate(() => matchMedia("(hover: hover)").matches);
+  if (!hoverCapable) {
+    notes.push(
+      "HOVER NOT EXERCISED — `(hover: hover)` is false in headless Chromium (no pointing " +
+        "device), and Tailwind v4 wraps every `hover:` utility in that media query, so " +
+        "`hover:border-klarvo-border-2` cannot apply. Emulation.setEmulatedMedia, " +
+        "--blink-settings=…HoverType… and CSS.forcePseudoState were all measured and none " +
+        "changes it. The `hover` state is therefore DROPPED from the computed-style " +
+        "comparison rather than compared as two idle samples; a structural check that both " +
+        "controls carry the same hover variant class runs instead. The rendered hover " +
+        "colour remains Andi's real-screen gate.",
+    );
+  } else {
+    pass("hover is exercisable", "`(hover: hover)` is true — the hover state is compared for real");
+  }
+
   // ------------------------------------------------------------- REFERENCE
   await openSettingsCategory(page, "Language");
   const langSelects = await listSelects(page);
@@ -640,6 +752,7 @@ try {
   );
   if (!langSelects.length) throw new Error("reference KSelect not found — refusing a vacuous pass");
   reference = await captureStates(page, 0);
+  assertHoverEngaged(reference, "reference instance");
   writeFileSync(stage("reference-states.json"), JSON.stringify(reference, null, 2));
   await page.screenshot({ path: stage("ist-reference-language.png") });
   await clickAria(page, "Back to settings");
@@ -743,6 +856,7 @@ try {
   } else {
     for (const row of ROWS) {
       measured[row.label] = await captureStates(page, row.index);
+      assertHoverEngaged(measured[row.label], row.label);
       assertStatesEqual(measured[row.label], reference, row.label);
     }
   }
@@ -1020,6 +1134,15 @@ const lines = [
   "",
   ...results.map((r) => `- [${r.ok ? "x" : " "}] **${r.name}** — ${r.detail}`),
   "",
+  ...(notes.length
+    ? [
+        "## NOT EXERCISED (neither passed nor failed — stated, per project-context",
+        "\"a number states what it covers\")",
+        "",
+        ...notes.map((n) => `- ${n}`),
+        "",
+      ]
+    : []),
 ];
 writeFileSync(stage(INVERT ? "inversion-report.md" : "report.md"), lines.join("\n"));
 

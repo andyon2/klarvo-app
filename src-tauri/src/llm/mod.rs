@@ -1388,8 +1388,12 @@ pub(crate) fn test_llm_canned_wire(scenario: &str) -> Option<(u16, &'static str)
 }
 
 /// A cleanup provider that never talks to a real LLM: it yields the canned wire
-/// response selected by `advanced.debugLlmScenario` and lets the *real* mapping
+/// response named by `advanced.testProviderLlm` and lets the *real* mapping
 /// ([`map_chat_http_response`]) decide the outcome.
+///
+/// Story 13-1b: that one key both switches this provider on and selects the
+/// scenario — the value IS the state, so this type is only ever constructed when
+/// the key is something other than `config::TEST_PROVIDER_OFF`.
 ///
 /// Why the wire and not the trait: the defect story 13-2 fixes lives in the
 /// mapping (Kotlin returns `""` for an empty answer and never inspects
@@ -3249,7 +3253,7 @@ mod tests {
     /// provider's name to it — the story-13-1 arm was deleted rather than left
     /// as dead code, and this test pins that deletion from both sides.
     #[test]
-    fn spec_test_cleanup_model_is_its_own_entry() {
+    fn spec_test_cleanup_model_comes_only_from_the_provider() {
         assert_eq!(TestCleanup::new("ok").model(), TestCleanup::DEFAULT_MODEL);
         assert_eq!(TestCleanup::DEFAULT_MODEL, TEST_PROVIDER_NAME);
         assert_eq!(TEST_PROVIDER_NAME, "test");
@@ -3552,6 +3556,61 @@ mod tests {
                  `llmProvider` / `sttProvider` at all"
             );
         }
+
+        // (4) Each row writes its OWN key. A crossed wiring would type-check,
+        // render correctly, pass the option-list checks and pass the harness's
+        // style comparison — and then save the STT scenario into the LLM chain.
+        // Both rows are otherwise identical, so nothing else can catch it.
+        for (row, key) in [
+            ("Test provider (LLM)", "testProviderLlm"),
+            ("Test provider (STT)", "testProviderStt"),
+        ] {
+            let at = adv.find(row).unwrap_or_else(|| {
+                panic!("{ADV}: the row label `{row}` is gone — renamed or deleted")
+            });
+            // The `set(...)` call belongs to this row: it is the first one after
+            // the label and before the next row's label.
+            let rest = &adv[at..];
+            let setter = format!("set(\"{key}\"");
+            let found = rest.find(&setter).unwrap_or_else(|| {
+                panic!("{ADV}: the `{row}` row does not call `{setter}…)` — \
+                        it writes the wrong key or no key at all")
+            });
+            let other_key = if key == "testProviderLlm" { "testProviderStt" } else { "testProviderLlm" };
+            if let Some(crossed) = rest.find(&format!("set(\"{other_key}\"")) {
+                assert!(
+                    found < crossed,
+                    "{ADV}: the `{row}` row writes `{other_key}` before `{key}` — \
+                     the two rows are crossed, and every other gate would stay green"
+                );
+            }
+        }
+
+        // (5) The sticky footer — this story's second headline fix, and observed
+        // otherwise only by a throwaway harness that no script, gradle task or CI
+        // invokes. Embedded, the panel's root has no height bound, so without
+        // `sticky bottom-0` the Save button is simply the last item of
+        // SettingsPanel's scroller and can sit below the fold — which is what
+        // cost the 13-1 device check an attempt.
+        for token in ["sticky bottom-0", "embedded ?"] {
+            assert!(
+                adv.contains(token),
+                "{ADV}: `{token}` is gone — the embedded Advanced Save footer is no \
+                 longer pinned to the bottom edge of the settings card's scroll area"
+            );
+        }
+        // …and it is applied to the FOOTER, not to something else: the token has
+        // to appear AFTER the `isDirty &&` footer block opens. (The rationale
+        // comment above that block names the token too, so the search starts at
+        // the block, not at the top of the file.)
+        let footer = adv
+            .find("{isDirty && (")
+            .unwrap_or_else(|| panic!("{ADV}: the `isDirty` Save footer block is gone"));
+        assert!(
+            adv[footer..].contains("sticky bottom-0"),
+            "{ADV}: `sticky bottom-0` does not appear inside the Save-footer block — \
+             the pin is somewhere else, or only in prose"
+        );
     }
 
     /// Story 13-1b, the surface half that is not about the test provider: the
@@ -3594,10 +3653,26 @@ mod tests {
             .find(r#"aria-label="Send feedback""#)
             .unwrap_or_else(|| panic!("{APP}: the FAB button is gone entirely — \
                  13-1b switched it OFF, it did not delete it"));
+        // BOTH sides of the containment. `guard < fab` alone only proves the
+        // button comes after the guard OPENS — a FAB moved below the guard's
+        // closing `)}` would still pass, and the button would be back on the
+        // phone, which is the exact regression this tripwire exists to catch.
+        // The next sibling block after the guard closes is the marker for the
+        // upper bound.
+        const AFTER_GUARD: &str = "{/* ── Preview Comments overlay ── */}";
+        let after_guard = app.find(AFTER_GUARD).unwrap_or_else(|| {
+            panic!("{APP}: the `{AFTER_GUARD}` marker that bounds the FAB block is gone")
+        });
         assert!(
-            guard < fab,
+            guard < after_guard,
+            "{APP}: the SHOW_FEEDBACK_FAB guard no longer precedes `{AFTER_GUARD}` — \
+             the bound is meaningless"
+        );
+        assert!(
+            guard < fab && fab < after_guard,
             "{APP}: the `aria-label=\"Send feedback\"` button is not inside the \
-             SHOW_FEEDBACK_FAB guard"
+             SHOW_FEEDBACK_FAB guard (guard at {guard}, button at {fab}, \
+             block ends before {after_guard})"
         );
 
         // …and the modal host is NOT inside it.

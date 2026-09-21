@@ -273,6 +273,28 @@ pub(crate) fn cleanup_provider_for(
 /// all, and needs no API key. The value is the state, so `llm_provider` keeps
 /// whatever real provider the user configured and the test provider can be
 /// switched back off without having to remember what was there before.
+/// The name of the cleanup provider that will ACTUALLY run for `cfg`.
+///
+/// Story 13-1b. Two consumers need it and both are correctness-bearing:
+/// - `resolve_fallback_provider`'s `excluding` argument — passing the configured
+///   name while the test provider runs would exclude the real provider from its
+///   own ladder, and the AC says the candidates stay `deepseek -> openai ->
+///   openrouter`;
+/// - the two `[pipeline]` log lines that name the provider, which would
+///   otherwise report DeepSeek for a run that never touched it.
+///
+/// Twin of the Kotlin `llmProvider.providerName` that
+/// `KlarvoOverlayService::processAudio` passes to `resolveFallbackLlmProvider`.
+/// Extracted rather than inlined so the value the runtime uses is the value a
+/// test can drive.
+pub(crate) fn effective_llm_provider_name(cfg: &AppConfig) -> String {
+    if cfg.advanced.test_provider_llm != config::TEST_PROVIDER_OFF {
+        llm::TEST_PROVIDER_NAME.to_string()
+    } else {
+        cfg.llm_provider.clone()
+    }
+}
+
 pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
     if cfg.advanced.test_provider_llm != config::TEST_PROVIDER_OFF {
         return Arc::new(llm::TestCleanup::new(&cfg.advanced.test_provider_llm));
@@ -1824,7 +1846,15 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         // Cleanup parameters (used only on the normal-dictation path), resolved
         // from this same cfg snapshot. The "profile matched" log is deferred to
         // process_audio so it only fires when cleanup actually runs.
-        let llm_provider_name = cfg.llm_provider.clone();
+        // Story 13-1b: the EFFECTIVE provider name, not the configured one.
+        // This value feeds `resolve_fallback_provider`'s `excluding` argument and
+        // two log lines. With the test provider active, passing the configured
+        // name would exclude the real provider from its own ladder (the AC says
+        // the candidates stay `deepseek -> openai -> openrouter`) and would name
+        // DeepSeek in a line about a run that never touched it. The Kotlin twin
+        // passes `llmProvider.providerName` for the same reason
+        // (`KlarvoOverlayService::processAudio`), so this keeps the twins equal.
+        let llm_provider_name = effective_llm_provider_name(&cfg);
         let prev_title = state.prev_window_title.lock().ok().and_then(|t| t.clone());
         let matched = prev_title.as_deref().and_then(|title| {
             let title_lower = title.to_lowercase();
@@ -3249,10 +3279,37 @@ mod tests {
             }
         }
         // With the test provider active and every real key present, the ladder
-        // must still hand back its first real candidate, in the shipped order.
-        let (_, first) = resolve_fallback_provider(&cfg, llm::TEST_PROVIDER_NAME)
+        // must still hand back its first real candidate, in the shipped order —
+        // and this asserts it for the call the RUNTIME makes, not for a literal
+        // a production path no longer produces. `run_pipeline` passes
+        // `effective_llm_provider_name(&cfg)` as `excluding`; passing
+        // `cfg.llm_provider` instead would exclude DeepSeek from its own ladder
+        // and silently start it at OpenAI.
+        assert_eq!(
+            effective_llm_provider_name(&cfg),
+            llm::TEST_PROVIDER_NAME,
+            "an active test provider must report ITSELF as the effective provider"
+        );
+        let (_, first) = resolve_fallback_provider(&cfg, &effective_llm_provider_name(&cfg))
             .expect("an active test provider must still find a real fallback");
         assert_eq!(first, "deepseek", "the production ladder starts at DeepSeek");
+
+        // Discriminating half: with the key `off` the effective name is the
+        // configured one again, and the ladder then correctly skips it.
+        let off = AppConfig {
+            llm_provider: "deepseek".to_string(),
+            deepseek_api_key: "ds-key".to_string(),
+            openai_api_key: "sk-openai".to_string(),
+            ..AppConfig::default()
+        };
+        assert_eq!(effective_llm_provider_name(&off), "deepseek");
+        let (_, after_deepseek) = resolve_fallback_provider(&off, &effective_llm_provider_name(&off))
+            .expect("a real primary must still find a fallback");
+        assert_eq!(
+            after_deepseek, "openai",
+            "a REAL primary is excluded from its own ladder — which is why the \
+             effective name has to be the test provider when the test provider runs"
+        );
 
         // Discriminating half: with NO real key at all there is no candidate —
         // a test-provider entry in the list would make this `Some`.

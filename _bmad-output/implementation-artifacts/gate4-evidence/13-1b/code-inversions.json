@@ -55,13 +55,14 @@
       ]
     },
     {
-      "inversion": "save_advanced_settings stops rebuilding the STT slot",
+      "inversion": "`stt_provider_reload_needed` is forced to return `false`",
       "file": "src-tauri/src/commands/settings.rs",
       "filter": "spec_test_provider_stt_change_rebuilds_the_stt_provider",
       "RED": true,
       "evidence": [
         "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.00s"
-      ]
+      ],
+      "note": "Corrected 2026-09-21 after review: this row previously read \"save_advanced_settings stops rebuilding the STT slot\", which is NOT what was inverted. `spec_test_provider_stt_change_rebuilds_the_stt_provider` calls `hot_reload_stt_provider` DIRECTLY, so deleting the CALL from the command leaves the suite green (measured: 748 passed) -- the helper stays referenced by the test module's `use super::{..}`, so no dead-code warning fires either. That wire is now covered by the source-text tripwire `spec_save_advanced_settings_rebuilds_both_runtime_slots`, which was itself inverted RED by deleting the call."
     },
     {
       "inversion": "select_stt_provider's comparison is flipped",
@@ -118,6 +119,92 @@
       "RED": true,
       "failed_tests": [
         "testProviderBranchIsTakenBeforeTheProviderUrlIsBuilt"
+      ]
+    }
+  ],
+  "rust_round2_review_fixes": [
+    {
+      "inversion": "`effective_llm_provider_name` reverts to the CONFIGURED provider name",
+      "file": "src-tauri/src/pipeline.rs",
+      "filter": "spec_test_provider_is_never_a_cleanup_fallback_candidate",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 748 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "the test-provider clause moves BACK below the Windows local-model guard",
+      "file": "src-tauri/src/commands/settings.rs",
+      "filter": "spec_save_advanced_settings_rebuilds_both_runtime_slots",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 748 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "`sticky bottom-0` is dropped from the embedded Advanced footer",
+      "file": "src/components/AdvancedSettingsPanel.tsx",
+      "filter": "spec_react_test_provider_arrays_are_pinned_to_rust",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 748 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "the two test-provider rows are CROSSED (each writes the other's key)",
+      "file": "src/components/AdvancedSettingsPanel.tsx",
+      "filter": "spec_react_test_provider_arrays_are_pinned_to_rust",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 748 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "the `hot_reload_stt_provider(` CALL is deleted from `save_advanced_settings`",
+      "file": "src-tauri/src/commands/settings.rs",
+      "filter": "spec_save_advanced_settings_rebuilds_both_runtime_slots",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed (message named hot_reload_stt_provider)"
+      ]
+    },
+    {
+      "inversion": "the FAB block is moved BELOW the guard's closing `)}`",
+      "file": "src/App.tsx",
+      "filter": "spec_react_feedback_fab_is_off_and_its_modal_stays_mounted",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed (containment upper bound)"
+      ]
+    }
+  ],
+  "kotlin_round2_review_fixes": [
+    {
+      "inversion": "`parseTestProvider` drops the value allowlist",
+      "file": "KlarvoApi.kt",
+      "expected_red_test": "jsonParse_testProvider_normalizesOutOfSetValuesToOffPerChain",
+      "RED": true,
+      "failed_tests": [
+        "jsonParse_testProvider_normalizesOutOfSetValuesToOffPerChain"
+      ]
+    },
+    {
+      "inversion": "the Android local-STT branch stops consulting testProviderStt",
+      "file": "KlarvoOverlayService.kt",
+      "expected_red_test": "localSttBranchIsTakenOnlyWhileTheTestProviderIsOff",
+      "RED": true,
+      "failed_tests": [
+        "localSttBranchIsTakenOnlyWhileTheTestProviderIsOff"
+      ]
+    },
+    {
+      "inversion": "the Kotlin STT allowlist wrongly keeps `truncated`",
+      "file": "KlarvoApi.kt",
+      "expected_red_test": "valueAllowlistsMatchTheFixture",
+      "RED": true,
+      "failed_tests": [
+        "valueAllowlistsMatchTheFixture",
+        "jsonParse_testProvider_normalizesOutOfSetValuesToOffPerChain"
       ]
     }
   ]

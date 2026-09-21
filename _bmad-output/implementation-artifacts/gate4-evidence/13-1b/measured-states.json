@@ -30,6 +30,8 @@
       "color": "rgb(236, 238, 239)",
       "boxShadow": "rgba(41, 199, 172, 0.28) 0px 0px 0px 3px"
     },
+    "hoverEngaged": false,
+    "hoverClass": "hover:border-klarvo-border-2",
     "focused": {
       "backgroundColor": "rgb(27, 30, 32)",
       "borderTopColor": "rgb(40, 44, 47)",
@@ -144,6 +146,8 @@
       "color": "rgb(236, 238, 239)",
       "boxShadow": "rgba(41, 199, 172, 0.28) 0px 0px 0px 3px"
     },
+    "hoverEngaged": false,
+    "hoverClass": "hover:border-klarvo-border-2",
     "focused": {
       "backgroundColor": "rgb(27, 30, 32)",
       "borderTopColor": "rgb(40, 44, 47)",

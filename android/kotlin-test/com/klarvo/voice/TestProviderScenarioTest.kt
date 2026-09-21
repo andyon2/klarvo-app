@@ -453,6 +453,62 @@ class TestProviderScenarioTest {
     }
 
     /**
+     * SOURCE-WALK TRIPWIRE over the Android STT branch selection (story 13-1b).
+     *
+     * `KlarvoOverlayService.processAudio` picks the local-whisper path with
+     * `config.sttProvider == "local"`. The Rust twin's
+     * `pipeline::resolve_stt_provider` returns the TEST provider BEFORE it reads
+     * `stt_provider` at all, and the spec's Boundaries require that ordering on
+     * both twins — so on Android the local branch must be taken only while the
+     * test key is `off`. Without it a stored `sttProvider = "local"` makes the
+     * `Test provider (STT)` row silently do nothing, and every gate stays green:
+     * that branch is unreachable from a plain-JUnit test (it needs a Service, a
+     * model file and the JNI).
+     *
+     * A source-text assertion is therefore the honest instrument, in the same
+     * idiom as [testProviderBranchIsTakenBeforeTheProviderUrlIsBuilt] and
+     * [Adr0017BoundaryGuardTest]. Comment lines are skipped, so the prose around
+     * the branch (which names both anchors on purpose) can neither satisfy nor
+     * defeat the check.
+     *
+     * Inversion (verified RED at writing time): dropping the
+     * `config.testProviderStt == KlarvoApi.TEST_PROVIDER_OFF` condition fails
+     * here.
+     */
+    @Test
+    fun localSttBranchIsTakenOnlyWhileTheTestProviderIsOff() {
+        val src = kotlinSrcFile("KlarvoOverlayService.kt").readText()
+
+        val localBranch = Regex("""config\.sttProvider\s*==\s*"local"""")
+        val testGate = Regex("""config\.testProviderStt\s*==\s*KlarvoApi\.TEST_PROVIDER_OFF""")
+
+        val branchLines = codeLineNumbersMatching(src, localBranch)
+        val gateLines = codeLineNumbersMatching(src, testGate)
+
+        assertTrue(
+            "KlarvoOverlayService.kt: expected the local-STT branch condition " +
+                "`config.sttProvider == \"local\"`, found none — renamed or reformatted",
+            branchLines.isNotEmpty()
+        )
+        assertTrue(
+            "KlarvoOverlayService.kt: the local-STT branch at line ${branchLines.firstOrNull()} " +
+                "is not gated by `config.testProviderStt == KlarvoApi.TEST_PROVIDER_OFF`. " +
+                "A stored sttProvider=\"local\" would then take the whisper path and the " +
+                "Test provider (STT) row would silently do nothing, while the Rust twin " +
+                "returns the test provider first.",
+            gateLines.isNotEmpty()
+        )
+        // The gate must belong to THAT branch: within two lines of it, since the
+        // condition is split across lines by the formatter.
+        val branch = branchLines.first()
+        assertTrue(
+            "KlarvoOverlayService.kt: the testProviderStt gate is at $gateLines but the " +
+                "local-STT branch is at line $branch — they are not the same condition",
+            gateLines.any { kotlin.math.abs(it - branch) <= 2 }
+        )
+    }
+
+    /**
      * 1-based line numbers of CODE lines matching [pattern]. Lines that are pure
      * comments (`//`, `/*`, `*`, `*/`) are skipped, so documentation naming an
      * anchor can neither satisfy nor defeat a placement assertion.
@@ -601,6 +657,95 @@ class TestProviderScenarioTest {
                     "testProviderLlm"
                 )
             )
+        }
+    }
+
+    /**
+     * Story 13-1b: an OUT-OF-SET value normalizes to `off` on this twin too.
+     *
+     * Android never runs Rust's `migrate_and_normalize`, so without Kotlin's own
+     * allowlist a hand-edited or newer-build value would leave the test provider
+     * ACTIVE here while the desktop twin had already normalized it away — and an
+     * active test provider silently replaces every dictation with a canned
+     * answer. Fail-safe is OFF, on both sides.
+     *
+     * `truncated` is the discriminating case: legal on the LLM chain, illegal on
+     * the STT chain (`SttError` has no truncation variant), so it proves the
+     * allowlist is chosen BY KEY and not shared.
+     */
+    @Test
+    fun jsonParse_testProvider_normalizesOutOfSetValuesToOffPerChain() {
+        for (bad in listOf("banana", "Off", "OK", "http418")) {
+            for (key in listOf("testProviderLlm", "testProviderStt")) {
+                assertEquals(
+                    "an out-of-set $key ($bad) must normalize to off",
+                    KlarvoApi.TEST_PROVIDER_OFF,
+                    KlarvoApi.parseTestProvider(
+                        JSONObject("""{"advanced":{"$key":"$bad"}}"""),
+                        key
+                    )
+                )
+            }
+        }
+
+        // `truncated`: legal on LLM, normalized away on STT.
+        assertEquals(
+            "truncated is a legal LLM scenario and must survive",
+            "truncated",
+            KlarvoApi.parseTestProvider(
+                JSONObject("""{"advanced":{"testProviderLlm":"truncated"}}"""),
+                "testProviderLlm"
+            )
+        )
+        assertEquals(
+            "truncated has no SttError counterpart and must normalize to off",
+            KlarvoApi.TEST_PROVIDER_OFF,
+            KlarvoApi.parseTestProvider(
+                JSONObject("""{"advanced":{"testProviderStt":"truncated"}}"""),
+                "testProviderStt"
+            )
+        )
+
+        // Discriminating half: every legal value of each chain really survives,
+        // so the assertions above cannot pass with a parser that always says off.
+        for (v in KlarvoApi.VALID_TEST_PROVIDER_LLM) {
+            assertEquals(
+                "legal LLM value $v must survive",
+                v,
+                KlarvoApi.parseTestProvider(
+                    JSONObject("""{"advanced":{"testProviderLlm":"$v"}}"""),
+                    "testProviderLlm"
+                )
+            )
+        }
+        for (v in KlarvoApi.VALID_TEST_PROVIDER_STT) {
+            assertEquals(
+                "legal STT value $v must survive",
+                v,
+                KlarvoApi.parseTestProvider(
+                    JSONObject("""{"advanced":{"testProviderStt":"$v"}}"""),
+                    "testProviderStt"
+                )
+            )
+        }
+    }
+
+    /**
+     * The two Kotlin value lists are the TWIN of `config::VALID_TEST_PROVIDER_LLM`
+     * / `::VALID_TEST_PROVIDER_STT`, and the fixture is where the two sides meet:
+     * the Rust reader asserts the same two arrays against its own constants
+     * (`spec_test_provider_option_lists_match_the_config_allowlists`), so a drift
+     * on either twin now fails on that twin.
+     */
+    @Test
+    fun valueAllowlistsMatchTheFixture() {
+        for ((id, actual) in listOf(
+            "TEST-PROVIDER-LLM-OPTIONS-001" to KlarvoApi.VALID_TEST_PROVIDER_LLM,
+            "TEST-PROVIDER-STT-OPTIONS-001" to KlarvoApi.VALID_TEST_PROVIDER_STT
+        )) {
+            val arr = vector(id).getJSONArray("options")
+            val expected = (0 until arr.length()).map { arr.getString(it) }
+            assertEquals("$id: the Kotlin allowlist must equal the fixture", expected, actual)
         }
     }
 
