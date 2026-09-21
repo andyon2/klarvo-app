@@ -42,11 +42,15 @@
 //! ## Platform gating
 //!
 //! Every `extern "system"` entry point below is `#[cfg(target_os = "android")]`,
-//! but the **module is not**: [`select_stt_provider`] — the one decision
-//! `nativeTranscribe` makes before it hands off to the shared core — is plain
-//! Rust and compiles everywhere, so the Linux `cargo test --lib` gate can reach
-//! the Android test branch. An android-gated selector would be a selector no
-//! executing test can reach (story 13-1).
+//! but the **module is not**. Every DECISION `nativeTranscribe` makes is a
+//! plain-Rust helper that compiles everywhere, so the Linux `cargo test --lib`
+//! gate can reach it: [`select_stt_provider`] (story 13-1), and — added by
+//! story 13-2 and completed at its review — [`guard_hint_for_jni`],
+//! [`stt_error_sentinel`] and [`guard_transcript_for_jni`].
+//!
+//! The rule, learned twice: an android-gated decision is a decision no
+//! executing test can reach, so it can be reverted with every gate green. The
+//! `extern` functions keep only unmarshalling, the runtime and the return.
 
 #[cfg(target_os = "android")]
 use jni::objects::{JClass, JString};
@@ -64,6 +68,56 @@ use crate::pipeline::{compute_wav_rms, is_prompt_echo, silence_skip, strip_promp
 // ---------------------------------------------------------------------------
 // The shared guard chain, reachable from `cargo test --lib` (story 13-2)
 // ---------------------------------------------------------------------------
+
+/// The conditioning hint `nativeTranscribe` feeds the guard chain, rebuilt
+/// from the two arguments that already cross the JNI boundary.
+///
+/// Story 13-2 (B2 / D-H5, D-H6). The pre-13-2 code fed the guards
+/// `prompt.as_deref().unwrap_or("")` — the **full built prompt**, hint plus the
+/// comma-joined dictionary plus `customPrompt` — which made a dictionary-word
+/// utterance look like a prompt echo and deleted any ≥10-byte dictionary term
+/// from every transcript. The desktop pipeline feeds `stt::stt_hint_text`; so
+/// does this.
+///
+/// Plain Rust, not `#[cfg(target_os = "android")]`, for the reason the whole
+/// story keeps repeating: a decision no executing test can reach is a decision
+/// that can be reverted with every gate green. This one WAS exactly that —
+/// review finding, 2026-09-21. Same `cfg_attr` shape as [`select_stt_provider`].
+#[cfg_attr(not(any(test, target_os = "android")), allow(dead_code))]
+pub fn guard_hint_for_jni(language: &str, custom_prompt: &str) -> String {
+    let custom_opt = if custom_prompt.trim().is_empty() {
+        None
+    } else {
+        Some(custom_prompt.trim())
+    };
+    crate::stt::stt_hint_text(language, custom_opt)
+}
+
+/// Maps an [`crate::stt::SttError`] to the `__ERROR_*` sentinel Kotlin's retry
+/// ladder reads.
+///
+/// Story 13-2 (D9 / D-M5). `ResponseFormat` is matched **before** the
+/// catch-all: an empty or unparseable STT answer is non-retryable
+/// (`pipeline::is_retryable_stt_error`), and until this story it reached Kotlin
+/// as `__ERROR_NETWORK:` and burned three Groq calls plus ~7 s of backoff on a
+/// guaranteed repeat. Written as a `match` over the enum rather than as arms
+/// inside the `extern "system"` function, so the ORDER is a property of a
+/// function a Linux test can call — moving an arm here now fails a gate
+/// instead of passing one (review finding, 2026-09-21).
+///
+/// Kotlin twin of the classification: `KlarvoOverlayService.classifySttSentinel`,
+/// pinned against `TEST-STT-EMPTY-001`'s `kotlin.sentinel` literal on both sides.
+#[cfg_attr(not(any(test, target_os = "android")), allow(dead_code))]
+pub fn stt_error_sentinel(err: &crate::stt::SttError) -> String {
+    match err {
+        crate::stt::SttError::EmptyAudio => "__ERROR_EMPTY_AUDIO__".to_string(),
+        crate::stt::SttError::ApiError { status, message } => {
+            format!("__ERROR_API:HTTP {status}: {message}__")
+        }
+        crate::stt::SttError::ResponseFormat(message) => format!("__ERROR_FORMAT:{message}__"),
+        other => format!("__ERROR_NETWORK:{other}__"),
+    }
+}
 
 /// Runs the ONE post-STT guard chain for the Android JNI and maps its verdict
 /// to what `nativeTranscribe` hands back to Kotlin.
@@ -321,11 +375,11 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
     // Story 13-2 (B2): the guards need the conditioning hint ALONE, not the
     // built prompt. Rather than widen the JNI signature — `#[no_mangle]`
     // exports the short name, so an arity change can misbind a stale `.so`
-    // silently — the hint is rebuilt here from the two arguments that already
-    // cross the boundary, by the same function the desktop pipeline uses.
-    // `custom_prompt` carries `advanced.sttPrompt*` since this story (B4), so
-    // the two sides compute the identical string.
-    let hint = crate::stt::stt_hint_text(&lang, custom_opt);
+    // silently — the hint is rebuilt from the two arguments that already cross
+    // the boundary. The rebuild lives in [`guard_hint_for_jni`] so a Linux test
+    // can reach it; `custom_prompt` carries `advanced.sttPrompt*` since this
+    // story (B4), so the two sides compute the identical string.
+    let hint = guard_hint_for_jni(&lang, &custom);
 
     // --- Build client (H9: sttModel from config, H10: no hardcoded model literal) ---
     //
@@ -367,29 +421,13 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
                 None => to_jstring(&mut env, ""),
             }
         }
-        Err(crate::stt::SttError::EmptyAudio) => {
-            log::warn!("[groq_jni] transcribe: empty audio");
-            to_jstring(&mut env, "__ERROR_EMPTY_AUDIO__")
-        }
-        Err(crate::stt::SttError::ApiError { status, message }) => {
-            let msg = format!("__ERROR_API:HTTP {status}: {message}__");
-            log::warn!("[groq_jni] transcribe API error: {msg}");
-            to_jstring(&mut env, &msg)
-        }
-        // Story 13-2 (D9 / D-M5): matched BEFORE the catch-all below. An empty
-        // or unparseable STT answer is `SttError::ResponseFormat`, which
-        // `pipeline::is_retryable_stt_error` calls NON-retryable — but it used
-        // to reach Kotlin as `__ERROR_NETWORK:` and burn three Groq calls plus
-        // ~7 s of backoff before reporting the same terminal state Desktop
-        // reports at once.
-        Err(crate::stt::SttError::ResponseFormat(message)) => {
-            let msg = format!("__ERROR_FORMAT:{message}__");
-            log::warn!("[groq_jni] transcribe response-format error (non-retryable): {msg}");
-            to_jstring(&mut env, &msg)
-        }
+        // Story 13-2 (D9 / D-M5): the whole error→sentinel mapping, including
+        // the ordering claim that `ResponseFormat` is decided before the
+        // catch-all, lives in [`stt_error_sentinel`] — a function a Linux test
+        // can call. Inline arms here could be reordered with every gate green.
         Err(e) => {
-            let msg = format!("__ERROR_NETWORK:{e}__");
-            log::warn!("[groq_jni] transcribe network error: {msg}");
+            let msg = stt_error_sentinel(&e);
+            log::warn!("[groq_jni] transcribe failed: {msg}");
             to_jstring(&mut env, &msg)
         }
     }
@@ -591,10 +629,15 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeSilenceCheck(
 // expectation, not a product defect — but whoever ungates this module has to
 // adjudicate it first.
 //
-// The one thing this story needed to be testable — the provider choice — lives
-// outside this module in [`select_stt_provider`] and is covered by
-// `stt::tests::spec_android_select_stt_provider_*`, which DO run on the
-// `cargo test --lib` gate.
+// Everything story 13-2 needed to be testable lives OUTSIDE this module, in
+// the plain-Rust helpers at the top of the file, and is covered by tests that
+// DO run on the `cargo test --lib` gate:
+// [`select_stt_provider`] (13-1) → `stt::tests::spec_android_select_stt_provider_*`,
+// [`guard_hint_for_jni`] → `spec_jni_guard_hint_is_the_hint_and_not_the_built_prompt`,
+// [`stt_error_sentinel`] → `spec_jni_response_format_sentinel_precedes_the_network_catch_all`,
+// [`guard_transcript_for_jni`] → `pipeline::tests::spec_jni_guard_wrapper_*`.
+// That is the rule this file keeps learning: a decision left inside
+// `nativeTranscribe` is a decision that can be reverted with every gate green.
 #[cfg(target_os = "android")]
 #[cfg(test)]
 mod tests {
@@ -698,15 +741,20 @@ mod tests {
         );
     }
 
-    // --- AC2 (Finding 4): nativeTranscribe path applies is_prompt_echo + strip_prompt_fragments ---
+    // --- AC2 (Finding 4), story 7-3: the individual guards ---
     //
-    // The full JNI path can't be tested without a JVM, but we can unit-test the
-    // pure-Rust logic that nativeTranscribe now calls inline. This test verifies
-    // that the guard chain (is_prompt_echo → strip_prompt_fragments → strip_stockphrase_ghosts)
-    // behaves identically to the desktop pipeline for the same inputs.
+    // HISTORICAL. These two date from when `nativeTranscribe` re-implemented
+    // the chain inline, in the order `is_prompt_echo → strip_prompt_fragments
+    // → strip_stockphrase_ghosts`. Story 13-2 deleted that inline chain: there
+    // is ONE chain now, `pipeline::guard_transcript` (fragment strip → ghost
+    // strip → echo/blocklist verdict), reached from here through
+    // [`guard_transcript_for_jni`] and covered by `pipeline::tests::spec_guard_*`
+    // against `test-fixtures/guard-chain-vectors.json` — tests that actually
+    // run. What is left below is two smoke checks on the individual guard
+    // functions, and like the rest of this module they have never executed.
 
-    /// A transcript that is a prompt echo must be caught by is_prompt_echo,
-    /// mirroring the desktop pipeline (pipeline.rs:501).
+    /// A verbatim echo of the hint is caught by `is_prompt_echo`. The chain
+    /// that calls it lives in `pipeline::guard_transcript`.
     #[test]
     fn test_ac2_prompt_echo_detected_by_inline_logic() {
         let hint = "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.";
@@ -720,8 +768,9 @@ mod tests {
         // if is_prompt_echo → return empty string (not forwarded to Kotlin).
     }
 
-    /// strip_prompt_fragments removes prompt conditioning fragments from a real
-    /// transcript that has them appended — mirroring pipeline.rs:1032.
+    /// `strip_prompt_fragments` removes leaked conditioning fragments. In the
+    /// shipped chain it runs BEFORE the ghost strip and before the verdict —
+    /// see `pipeline::guard_transcript`, which owns the order.
     #[test]
     fn test_ac2_strip_prompt_fragments_inline_logic() {
         let hint = "Voice dictation in English. Proper punctuation.";
@@ -731,7 +780,7 @@ mod tests {
         // The prompt fragment should be stripped; real content preserved.
         assert!(
             !cleaned.to_lowercase().contains("voice dictation in english"),
-            "prompt fragment must be stripped by the inline guard chain"
+            "prompt fragment must be stripped by the shared guard chain"
         );
         assert!(
             cleaned.contains("Here is my note"),

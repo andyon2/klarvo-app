@@ -13,9 +13,9 @@ structure on Linux only.
 | Gate | Command | Result |
 |---|---|---|
 | baseline | `cd src-tauri && cargo test --lib` at `4e4bc00` | **749 passed, 0 failed** — the number the spec predicted |
-| Rust | `cd src-tauri && cargo test --lib` | **768 passed, 0 failed** (+19) |
-| JVM (device-free) | `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` in `src-tauri/gen/android`, after syncing `android/kotlin-src` + `android/kotlin-test` | **29 suites / 260 tests, 0 failures, 0 errors** (baseline 25 / 217) |
-| inversions | 10 Rust + 18 Kotlin + 8 matrix-audit follow-up | **36/36 RED**, see `code-inversion-report.md` |
+| Rust | `cd src-tauri && cargo test --lib` | **774 passed, 0 failed** (+25) |
+| JVM (device-free) | `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` in `src-tauri/gen/android`, after syncing `android/kotlin-src` + `android/kotlin-test` | **29 suites / 268 tests, 0 failures, 0 errors** (baseline 25 / 217) |
+| inversions | 10 Rust + 18 Kotlin + 8 matrix-audit + 12 review-round | **48/48 RED**, in four batches each naming the tree it was measured at — see `code-inversion-report.md` |
 | `npm run build` | not run | no `src/` file is touched by this story |
 
 `git status` after the last revert carries only this story's intended changes; no
@@ -68,6 +68,35 @@ handler as parameters for the same reason `KlarvoAudioRecorder.vadGateDecision` 
 `isSpeech` — the real bodies need a `Context` and a `ClipboardManager`. The other three
 rows are order-anchored source tripwires, the instrument `Adr0017BoundaryGuardTest`
 established; they prove the code says the right thing, never that the device does it.
+
+## Review round (2026-09-21)
+
+A review found decisions that **no gate compiled or no test read**, so reverting them
+left every gate green — this story's own defect class, one level up. Each was moved into
+something a test can call, never argued away in prose:
+
+- `nativeTranscribe`'s two remaining android-gated decisions became the plain-Rust
+  `guard_hint_for_jni` (B2: the guards get the hint, not the built prompt) and
+  `stt_error_sentinel` (D9: `ResponseFormat` is decided before the catch-all, and the
+  ORDER is now a property of a function `cargo test --lib` calls).
+- `SileroVad` gained a `#[cfg(test)]` predictor-call counter, so D-L19 is asserted
+  through the real `feed()` and not only through the helper in isolation.
+- `KlarvoApi.parseSttPrompt` extracted, with a JVM test over real `config.json` text —
+  a misspelled key would have made B4 inert on Android.
+- `cleanup_text`'s offline branch extracted to `offline_passthrough` and executed:
+  `#[tauri::command]`s take a `State` no test in this crate can build, so nothing had
+  exercised D-M20's own call site.
+- The D10 ladder gate, the flush-time re-check's position, the ghost-strip guard, the
+  single accessibility read, and the one `"local"` literal all gained assertions.
+
+Two behaviour corrections came out of it, both closing fresh divergences this story had
+created by fixing one side only: Rust now asks `content.trim().is_empty()` like Kotlin
+(a whitespace-only answer was a named failure on Android and a delivered blank on
+Desktop), and the new `nativeStripStockphraseGhosts` call is guarded against `Throwable`
+— a stale `.so` raises `UnsatisfiedLinkError`, an `Error`, which `processAudio`'s outer
+`catch (e: IOException)` does not catch, so the worker thread would have died after the
+paid STT and LLM calls with nothing pasted and nothing stored. `guardedClipboardWrite`
+catches `Throwable` for the same reason.
 
 ## What these numbers do NOT cover
 

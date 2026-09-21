@@ -225,6 +225,19 @@ class KlarvoOverlayService : Service() {
         const val LOCAL_CLEANUP_AVAILABLE = false
 
         /**
+         * The provider id that means "on-device", for BOTH chains.
+         *
+         * One literal, three G2a guards ([skipsCloudCleanup],
+         * [RecordingMode.shouldInstallPreviewFlush], `flushPreviewDelta`'s
+         * flush-time re-check). It was spelled out three times in the story
+         * whose thesis is one rule, so a provider-id rename would have
+         * disabled two of the three and left the third reporting green
+         * (review finding). Twin of the `"local"` the Rust `offline_rule` and
+         * `preview_flush_should_install` compare against.
+         */
+        const val LOCAL_PROVIDER_ID = "local"
+
+        /**
          * **The** offline rule (story 13-2, E2 / G2a). `true` means this
          * dictation makes no cleanup call at all — the raw transcript is the
          * output.
@@ -251,9 +264,9 @@ class KlarvoOverlayService : Service() {
             llmProvider: String,
             localCleanupAvailable: Boolean
         ): Boolean {
-            val localLlm = llmProvider == "local"
+            val localLlm = llmProvider == LOCAL_PROVIDER_ID
             if (localLlm && !localCleanupAvailable) return true
-            return sttProvider == "local" && !localLlm
+            return sttProvider == LOCAL_PROVIDER_ID && !localLlm
         }
 
         /**
@@ -432,8 +445,13 @@ class KlarvoOverlayService : Service() {
         ): Boolean = try {
             write()
             true
-        } catch (e: Exception) {
-            onFailure(e)
+        } catch (t: Throwable) {
+            // `Throwable`, not `Exception`: the KDoc above and the D6 row both
+            // promise "never an uncaught main-thread exception", and an OEM
+            // clipboard service can surface as an `Error` (a `LinkageError`
+            // from a provider stub, an `UnsatisfiedLinkError` behind a shim) —
+            // which `catch (e: Exception)` lets past. Review finding.
+            onFailure(t)
             false
         }
 
@@ -561,7 +579,9 @@ class KlarvoOverlayService : Service() {
                 livePreviewEnabled: Boolean,
                 sttProvider: String
             ): Boolean =
-                (mode == HOLD || mode == TOGGLE) && livePreviewEnabled && sttProvider != "local"
+                (mode == HOLD || mode == TOGGLE) &&
+                    livePreviewEnabled &&
+                    sttProvider != LOCAL_PROVIDER_ID
         }
     }
 
@@ -2040,7 +2060,7 @@ class KlarvoOverlayService : Service() {
         // config can change between starting a recording and the first pause.
         // With a stored `local` STT provider no byte may leave the device, key
         // or no key.
-        if (config.sttProvider == "local") {
+        if (config.sttProvider == LOCAL_PROVIDER_ID) {
             KlarvoLogger.d(TAG, "[preview] offline STT stored -- flush suppressed, nothing uploaded")
             return
         }
@@ -2617,7 +2637,26 @@ class KlarvoOverlayService : Service() {
             // sanitize_llm_output; Android had no post-cleanup strip at all
             // (`sanitizeLlmOutput` only removes control characters). Same Rust
             // function over the bridge, never a Kotlin twin (ADR-0017).
-            val deliveredText = GroqSttBridge.nativeStripStockphraseGhosts(finalText)
+            //
+            // Guarded with `Throwable`, not `Exception`: this is a NEW native
+            // symbol, and a stale `libklarvo_lib.so` raises
+            // `UnsatisfiedLinkError` -- an `Error`, which the outer
+            // `catch (e: IOException)` does not catch. Unguarded, the worker
+            // thread would die here, AFTER the paid STT and LLM calls: nothing
+            // pasted, nothing stored, and the bubble stranded in TRANSCRIBING.
+            // Degrading to the un-stripped text loses a ghost, which is the
+            // pre-13-2 Android behaviour; losing the dictation is not.
+            // Review finding.
+            val deliveredText = try {
+                GroqSttBridge.nativeStripStockphraseGhosts(finalText)
+            } catch (t: Throwable) {
+                KlarvoLogger.e(
+                    TAG,
+                    "[pipeline] post-cleanup ghost strip unavailable (stale .so?) -- delivering un-stripped",
+                    t
+                )
+                finalText
+            }
             if (deliveredText != finalText) {
                 KlarvoLogger.d(TAG, "[pipeline] post-cleanup ghost strip removed a stockphrase")
             }
@@ -2724,9 +2763,15 @@ class KlarvoOverlayService : Service() {
                 // taken afterwards from that outcome instead of from
                 // `instance != null`. Both halves are pure companion functions
                 // a JVM test drives (`CleanupFailureDeliveryTest`).
-                val accessibilityConnected = KlarvoAccessibilityService.instance != null
+                // ONE read of the live service reference (review finding).
+                // Reading it twice let the service disconnect between the
+                // check and the paste, which yields `attempted = true` with a
+                // null outcome -- a delivery that reports no success and logs
+                // no cause, the one ending D4 exists to remove.
+                val accessibility = KlarvoAccessibilityService.instance
+                val accessibilityConnected = accessibility != null
                 val pasteOutcome = if (shouldAttemptPaste(capturedLlmFailed, accessibilityConnected, clipboardOk)) {
-                    KlarvoAccessibilityService.instance?.pasteIntoFocusedField()
+                    accessibility?.pasteIntoFocusedField()
                 } else {
                     null
                 }

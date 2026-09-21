@@ -281,6 +281,101 @@ class TestProviderScenarioTest {
     }
 
     /**
+     * Story 13-2 review (B4 / D-H4): the three `advanced.sttPrompt*` keys, read
+     * through the REAL `org.json` path against real `config.json` text.
+     *
+     * They were parsed inline in `readConfig` and nothing read the JSON, so a
+     * misspelled key would have made B4 inert on Android — Whisper silently
+     * back on its built-in hint — with every gate green. Same shape and same
+     * reason as [KlarvoApi.parseLlmModelOverride]'s test.
+     */
+    @Test
+    fun sttPromptKeysAreReadFromTheRealAdvancedObject() {
+        val json = JSONObject(
+            """
+            {
+              "language": "de",
+              "advanced": {
+                "sttPromptDe": "Technisches Diktat auf Deutsch.",
+                "sttPromptEn": "Technical dictation in English.",
+                "sttPromptAuto": "Mehrsprachig."
+              }
+            }
+            """.trimIndent()
+        )
+        assertEquals("Technisches Diktat auf Deutsch.", KlarvoApi.parseSttPrompt(json, "sttPromptDe"))
+        assertEquals("Technical dictation in English.", KlarvoApi.parseSttPrompt(json, "sttPromptEn"))
+        assertEquals("Mehrsprachig.", KlarvoApi.parseSttPrompt(json, "sttPromptAuto"))
+
+        // The keys are read from the nested `advanced` object, not the root —
+        // Rust writes them under AdvancedSettings. A reader that looked at the
+        // root would find nothing and report "" for every user.
+        val atRoot = JSONObject("""{"sttPromptDe":"wrong place"}""")
+        assertEquals("", KlarvoApi.parseSttPrompt(atRoot, "sttPromptDe"))
+    }
+
+    /** Absent `advanced`, absent key, and a non-string value all mean "no override". */
+    @Test
+    fun sttPromptKeysDefaultToEmptyWithoutInventingAHint() {
+        assertEquals("", KlarvoApi.parseSttPrompt(JSONObject("{}"), "sttPromptDe"))
+        assertEquals(
+            "",
+            KlarvoApi.parseSttPrompt(JSONObject("""{"advanced":{}}"""), "sttPromptDe")
+        )
+        assertEquals(
+            "",
+            KlarvoApi.parseSttPrompt(JSONObject("""{"advanced":{"sttPromptEn":"x"}}"""), "sttPromptDe")
+        )
+        // Non-string: `optString` would stringify 42 into a conditioning
+        // prompt, the review-round-1 finding on parseLlmModelOverride.
+        assertEquals(
+            "",
+            KlarvoApi.parseSttPrompt(JSONObject("""{"advanced":{"sttPromptDe":42}}"""), "sttPromptDe")
+        )
+        // …and "" feeds selectSttHintOverride's "no override" arm, so the Rust
+        // core supplies its built-in hint.
+        assertEquals("", KlarvoApi.selectSttHintOverride("de", "", "", ""))
+    }
+
+    /**
+     * Story 13-2 review: the Rust twin asks the emptiness question AFTER
+     * `.trim()` too, so a whitespace-only answer is rejected on both sides.
+     *
+     * Kotlin has always trimmed (`getString("content").trim()`), so closing
+     * D2 / D-H19 here alone would have created a FRESH divergence — a named
+     * non-retryable failure on Android, a delivered blank on Desktop — under
+     * a fixture that now says `expected_divergence: null`. Rust twin:
+     * `llm::tests::spec_whitespace_only_answer_is_rejected_like_an_empty_one`.
+     *
+     * Not a fixture vector: adding one would mean a new `wire` payload and a
+     * new test-provider scenario, and the canned wire table is byte-frozen by
+     * this story's intent contract.
+     */
+    @Test
+    fun whitespaceOnlyAnswerIsRejectedLikeAnEmptyOne() {
+        for (content in listOf("", "   ", "\\n\\t  \\n")) {
+            val body = """{"choices":[{"message":{"content":"$content"},"finish_reason":"stop"}]}"""
+            assertThrows(
+                "content=${'"'}$content${'"'} must be rejected like an empty answer",
+                KlarvoApi.CleanupResponseFormatException::class.java,
+            ) {
+                KlarvoApi.mapCleanupResponse(200, body, KlarvoApi.TEST_MODEL)
+            }
+        }
+
+        // The discriminator: a real one-word answer with padding still comes
+        // through, so the rule is "trim, then ask", not "reject anything short".
+        assertEquals(
+            "ja",
+            KlarvoApi.mapCleanupResponse(
+                200,
+                """{"choices":[{"message":{"content":" ja "},"finish_reason":"stop"}]}""",
+                KlarvoApi.TEST_MODEL,
+            ),
+        )
+    }
+
+    /**
      * Drift row D3 / D-M16, **closed by story 13-2**: `finish_reason == "length"`
      * is inspected and the half sentence is never returned.
      */
@@ -549,7 +644,24 @@ class TestProviderScenarioTest {
      */
     @Test
     fun localSttBranchIsTakenOnlyWhileTheTestProviderIsOff() {
-        val src = kotlinSrcFile("KlarvoOverlayService.kt").readText()
+        // Story 13-2 review: SCOPED to `processAudio`'s body, the way
+        // `OverlayServiceSourceContractTest` scopes its order assertions.
+        // The first 13-2 pass weakened this from "the first occurrence" to
+        // "some occurrence" because E1 added a second `sttProvider == "local"`
+        // site, which would have let any future `testProviderStt ==
+        // TEST_PROVIDER_OFF` line anywhere in the file satisfy the pairing.
+        // Body scoping restores the original strength without the assumption
+        // that the file holds exactly one occurrence.
+        val whole = kotlinSrcFile("KlarvoOverlayService.kt").readText()
+        val fnStart = whole.indexOf("private fun processAudio(")
+        assertTrue("processAudio must exist", fnStart >= 0)
+        val fnEnd = whole.indexOf("\n    private fun ", fnStart + 1)
+            .let { if (it < 0) whole.length else it }
+        // Keep 1-based file line numbers meaningful in the failure messages by
+        // blanking everything outside the body instead of substring-ing it.
+        val src = whole.mapIndexed { i, c ->
+            if (i in fnStart until fnEnd || c == '\n') c else ' '
+        }.joinToString("")
 
         val localBranch = Regex("""config\.sttProvider\s*==\s*"local"""")
         val testGate = Regex("""config\.testProviderStt\s*==\s*KlarvoApi\.TEST_PROVIDER_OFF""")

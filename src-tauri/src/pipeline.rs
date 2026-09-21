@@ -321,13 +321,27 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
         }
         // "deepseek" and any unrecognised value.
         //
-        // Story 13-2 (D-M21): `"local"` on a non-Windows build used to land
-        // HERE and send the transcript to DeepSeek under a setting that
-        // promises on-device. It can no longer reach this arm: every caller
-        // passes through [`config_skips_cleanup`] / [`offline_rule`] first,
-        // which returns "no cleanup" for a local provider this build does not
-        // have ([`local_cleanup_available`]). Do not add a `"local"` fallback
-        // here — the answer is no cleanup, never a cloud call.
+        // Story 13-2 (D-M21): `"local"` on a non-Windows build lands HERE and
+        // sends the transcript to DeepSeek under a setting that promises
+        // on-device. The two DICTATION callers are gated and can no longer
+        // reach it that way — `stop_and_process_pipeline` and
+        // `commands::recording::cleanup_text` both ask
+        // [`config_skips_cleanup`] first, which answers "no cleanup" for a
+        // local provider this build does not have
+        // ([`local_cleanup_available`]).
+        //
+        // NOT every caller, and saying so would be false (review finding):
+        // `resolve_providers`, `commands::settings`' provider rebuild and
+        // `commands::history::reprocess_pending_entry` all construct a
+        // provider through here ungated. The first two only BUILD the
+        // provider — the gate still sits at the call site — but
+        // `reprocess_pending_entry` also CALLS it, so re-processing a pending
+        // entry under `llmProvider = "local"` on a non-Windows build still
+        // reaches DeepSeek. That is a known residual, recorded in the story's
+        // deferred list, not something this arm may paper over.
+        //
+        // Do not add a `"local"` fallback here — the answer is no cleanup,
+        // never a cloud call.
         _ => cleanup_provider_for("deepseek", &cfg.deepseek_api_key, &cfg.advanced),
     }
 }
@@ -1537,8 +1551,9 @@ pub async fn process_audio(
     log::debug!("[pipeline] raw transcription: {raw_text:?}");
 
     // --- The post-STT guard chain (story 13-2, B2/B3) ---
-    // One function, shared with Android over the JNI: ghost strip → fragment
-    // strip → echo/blocklist verdict. The pre-guard ghost strip is new on
+    // One function, shared with Android over the JNI: fragment strip → ghost
+    // strip → echo/blocklist verdict (that inner order is measured, not
+    // preferred — see `guard_transcript`). The pre-guard ghost strip is new on
     // Desktop (B3 / D-H7): a raw transcript ending in a recognisable ghost
     // used to be dropped WHOLE by the blocklist; now the ghost goes and the
     // dictation survives.

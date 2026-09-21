@@ -670,7 +670,15 @@ pub(crate) async fn map_chat_http_response(
     }
 
     let content = choice.message.content;
-    if content.is_empty() {
+    // Story 13-2 review: `.trim()` so this is the SAME emptiness question the
+    // Kotlin twin asks. `KlarvoApi.mapCleanupResponse` trims before it decides,
+    // so a whitespace-only answer was a named non-retryable failure on Android
+    // and a delivered blank on Desktop — a fresh divergence created by closing
+    // D2 / D-H19 on one side only, and `TEST-LLM-EMPTY-001` now carries
+    // `expected_divergence: null`. The returned text is deliberately NOT
+    // trimmed: `sanitize_llm_output` downstream owns the output shape, and
+    // changing it here would be a behaviour change no row asked for.
+    if content.trim().is_empty() {
         return Err(LlmError::ResponseFormat(
             "Empty content in response".to_string(),
         ));
@@ -3320,6 +3328,42 @@ mod tests {
             .await
             .expect_err("no choice must be an error");
         assert!(!crate::pipeline::is_retryable_llm_error(&no_choice));
+    }
+
+    /// Story 13-2 review: Rust and Kotlin must ask the SAME emptiness question.
+    ///
+    /// `KlarvoApi.mapCleanupResponse` trims before it decides, so while Rust
+    /// tested `content.is_empty()` a whitespace-only answer was a named
+    /// non-retryable failure on Android and a delivered blank on Desktop —
+    /// a fresh divergence created by closing D2 / D-H19 on one side only.
+    /// `TEST-LLM-EMPTY-001` carries `expected_divergence: null`, so this must
+    /// hold for every shape of "says nothing", not just the raw empty string.
+    ///
+    /// Kotlin twin: `TestProviderScenarioTest.whitespaceOnlyAnswerIsRejectedLikeAnEmptyOne`.
+    #[tokio::test]
+    async fn spec_whitespace_only_answer_is_rejected_like_an_empty_one() {
+        for body in [
+            r#"{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}"#,
+            r#"{"choices":[{"message":{"content":"   "},"finish_reason":"stop"}]}"#,
+            r#"{"choices":[{"message":{"content":"\n\t  \n"},"finish_reason":"stop"}]}"#,
+        ] {
+            match map_chat_http_response(canned(200, body)).await {
+                Err(LlmError::ResponseFormat(msg)) => {
+                    assert_eq!(msg, "Empty content in response", "body={body}")
+                }
+                other => panic!("expected ResponseFormat for {body}, got {other:?}"),
+            }
+        }
+
+        // The discriminator: content that only LOOKS thin still comes through,
+        // so the fix is "trim, then ask", not "reject anything short".
+        let kept = map_chat_http_response(canned(
+            200,
+            r#"{"choices":[{"message":{"content":" ja "},"finish_reason":"stop"}]}"#,
+        ))
+        .await
+        .expect("a real one-word answer must survive");
+        assert_eq!(kept.text, " ja ", "the returned text itself is not trimmed here");
 
         // A non-2xx prefers the API's own error message …
         match map_chat_http_response(canned(401, r#"{"error":{"message":"bad key"}}"#)).await {

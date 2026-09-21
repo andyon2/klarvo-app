@@ -166,13 +166,15 @@ object KlarvoApi {
         "truncated" -> 200 to """{"choices":[{"message":{"content":"Debug provider canned answer that was cut"},"finish_reason":"length"}]}"""
         // A body that genuinely does NOT parse: a JSON envelope that ends
         // mid-string, the shape a cut-off or proxy-garbled provider answer has.
-        // Drift row D10 / D-M2. JSONObject(body) throws a bare JSONException,
-        // which is NOT an IOException, so the single-call fallback ladder in
-        // KlarvoOverlayService never runs; on the chunked path
-        // collectChunkResults rewraps it into an IOException whose message
-        // carries no "HTTP nnn", so isRetryableCleanupFailure finds no status
-        // and the ladder DOES fire there. The body deliberately contains no
-        // "HTTP nnn" substring so that regex cannot match by accident.
+        // Drift row D10 / D-M2. JSONObject(body) still throws a bare
+        // JSONException, which is still not an IOException -- but story 13-2
+        // moved the ladder gate into the pure
+        // KlarvoOverlayService.isRetryableCleanupFailure, which classifies a
+        // JSONException as RETRYABLE, so the SINGLE-CALL path now fires the
+        // provider ladder exactly as the chunked path always did (there
+        // collectChunkResults rewraps it into a status-less IOException). The
+        // body deliberately contains no "HTTP nnn" substring so that regex
+        // cannot match by accident.
         "malformed" -> 200 to """{"choices":[{"message":{"content":"Debug provider truncated stream"""
         "http429" -> 429 to """{"error":{"message":"Debug provider: simulated rate limit"}}"""
         "http5xx" -> 503 to """{"error":{"message":"Debug provider: simulated server error"}}"""
@@ -221,10 +223,14 @@ object KlarvoApi {
      *   exactly as it already did on the chunked path and as Rust does for the
      *   same bytes (`LlmError::Request`) — drift row D10 / D-M2.
      *
-     * Both new exceptions are non-retryable: no ladder, no paste, no history
-     * row. The raw transcript goes to the clipboard with the shipped
+     * Both new exceptions are non-retryable: no ladder and no paste. The raw
+     * transcript goes to the clipboard with the shipped
      * [KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG] cause, exactly as the
-     * desktop degrade path does.
+     * desktop degrade path does -- and, exactly as Desktop does, a history row
+     * IS still written, carrying that raw transcript. What can no longer be
+     * written is a row carrying the empty or truncated ANSWER, which is what
+     * ADR-0016 row D2 asks for (`kein „"-History-Eintrag`) and what Android
+     * used to store as the dictation.
      *
      * The emptiness check runs on the SANITIZED content, not the raw one: an
      * answer made only of control characters is as empty as `""`, and
@@ -762,6 +768,31 @@ object KlarvoApi {
     }
 
     /**
+     * Pure `advanced.sttPromptDe` / `…En` / `…Auto` parse (story 13-2, B4 /
+     * D-H4). Same shape and the same reason as [parseLlmModelOverride]: a JVM
+     * unit test drives the REAL `org.json` path against a real `config.json`
+     * string, because [readConfig] itself is unreachable from a plain JVM test
+     * (file I/O + `android.util.Log`).
+     *
+     * Extracted at review. The three keys were read inline in [readConfig] and
+     * nothing read the JSON, so a misspelled key would have made B4 inert on
+     * Android — Whisper silently back on its built-in hint — with every gate
+     * green. That is the same class of defect the row itself is about.
+     *
+     * `key` is the camelCase key under `advanced` (Rust serializes
+     * `AdvancedSettings` with `rename_all = "camelCase"`). Absent key, absent
+     * `advanced` object, and a **non-string** value all yield `""`, which
+     * [selectSttHintOverride] then reads as "no override, let the Rust core
+     * use its built-in language hint". The non-string rule follows
+     * [parseLlmModelOverride]'s review-round-1 finding: `optString` would
+     * stringify `42` into a conditioning prompt.
+     */
+    internal fun parseSttPrompt(json: JSONObject, key: String): String {
+        val advanced = json.optJSONObject("advanced") ?: return ""
+        return advanced.opt(key) as? String ?: ""
+    }
+
+    /**
      * Pure `advanced.testProviderLlm` / `advanced.testProviderStt` parse
      * (story 13-1, reshaped by 13-1b). Same shape and the same reason as
      * [parseLlmModelOverride] and [parseMinRecordingMs]: a JVM unit test drives
@@ -934,10 +965,11 @@ object KlarvoApi {
             // nested "advanced" object and same camelCase keys Rust writes
             // (AdvancedSettings, serde rename_all = "camelCase"). Empty default
             // = "use the built-in language hint", which is the Rust default too.
-            val advanced = json.optJSONObject("advanced")
-            val sttPromptDe = advanced?.optString("sttPromptDe", "") ?: ""
-            val sttPromptEn = advanced?.optString("sttPromptEn", "") ?: ""
-            val sttPromptAuto = advanced?.optString("sttPromptAuto", "") ?: ""
+            // Parsed through [parseSttPrompt] so a JVM test drives the real
+            // org.json path -- a misspelled key here makes B4 inert.
+            val sttPromptDe = parseSttPrompt(json, "sttPromptDe")
+            val sttPromptEn = parseSttPrompt(json, "sttPromptEn")
+            val sttPromptAuto = parseSttPrompt(json, "sttPromptAuto")
             // Dictionary terms live in dictionary.json, NOT in config.json.
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.

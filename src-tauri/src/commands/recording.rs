@@ -98,11 +98,39 @@ fn active_stt_provider_id(state: &AppState) -> String {
         .unwrap_or_else(|| "groq".to_string())
 }
 
-/// Story 13-2 (E2 / D-M20): `is_offline_mode` is gone. It was Rust's **second**
-/// definition of "offline" — `stt_provider == "local"` alone — so the React
-/// in-app record button skipped a cleanup the hotkey performed for the very
-/// same config. There is one rule now, `pipeline::config_skips_cleanup`, and
-/// `cleanup_text` below reads it.
+/// The whole offline decision of [`cleanup_text`]: `Some(raw_text)` when this
+/// dictation makes no cleanup call, `None` to continue to the provider.
+///
+/// Story 13-2 (E2 / D-M20). `is_offline_mode` is gone — it was Rust's
+/// **second** definition of "offline" (`stt_provider == "local"` alone), so the
+/// React in-app record button skipped a cleanup the hotkey performed for the
+/// very same config. There is one rule now, `pipeline::config_skips_cleanup`.
+///
+/// Extracted at review because `cleanup_text` is a `#[tauri::command]` taking
+/// `State<'_, AppState>`, whose constructor is `pub(crate)` **to Tauri** — no
+/// test in this crate can build one, so nothing exercised the command at all
+/// and a second rule reintroduced inside it would have stayed green. That is
+/// D-M20 verbatim, one level up. This is `&AppState`-shaped, so
+/// `spec_in_app_button_offline_returns_the_raw_text_unchanged` drives the real
+/// branch.
+///
+/// A poisoned config lock answers "not offline", which is the shipped
+/// fail-direction: the alternative is silently swallowing a cleanup the user
+/// asked for.
+pub(crate) fn offline_passthrough(state: &AppState, raw_text: &str) -> Option<String> {
+    let skips = state
+        .config
+        .lock()
+        .ok()
+        .map(|c| crate::pipeline::config_skips_cleanup(&c))
+        .unwrap_or(false);
+    if skips {
+        log::info!("[cleanup] Offline rule: returning raw text without cleanup");
+        Some(raw_text.to_string())
+    } else {
+        None
+    }
+}
 
 /// Returns the ID of the active LLM cleanup provider based on the priority list and available keys.
 ///
@@ -235,18 +263,9 @@ pub async fn cleanup_text(
     let inner = state.inner();
 
     // Story 13-2 (E2 / G2a, rows D-H10 / D-M20 / D-M21): THE offline rule, the
-    // same one the hotkey pipeline reads. Local STT ⇒ local cleanup or none;
-    // a local cleanup this platform does not have ⇒ none, never a silent cloud
-    // call.
-    let skips_cleanup = inner
-        .config
-        .lock()
-        .ok()
-        .map(|c| crate::pipeline::config_skips_cleanup(&c))
-        .unwrap_or(false);
-    if skips_cleanup {
-        log::info!("[cleanup] Offline rule: returning raw text without cleanup");
-        return Ok(raw_text);
+    // same one the hotkey pipeline reads.
+    if let Some(raw) = offline_passthrough(inner, &raw_text) {
+        return Ok(raw);
     }
 
     // License gate: DeepSeek and Groq are free; all other LLM providers require a paid license.
@@ -397,6 +416,52 @@ mod tests {
         }
         let cfg = state.config.lock().unwrap();
         assert!(!crate::pipeline::config_skips_cleanup(&cfg));
+    }
+
+    /// The in-app record button's own path, EXECUTED — not the predicate it
+    /// happens to call.
+    ///
+    /// Added at review: every other test here drives
+    /// `pipeline::config_skips_cleanup` directly, so nothing exercised
+    /// `cleanup_text`'s branch and a second rule reintroduced inside it would
+    /// have stayed green — which is drift row D-M20 verbatim, one level up.
+    /// `cleanup_text` itself takes a `State<'_, AppState>` no test can build,
+    /// so the branch lives in [`offline_passthrough`] and this drives that.
+    ///
+    /// The `local` branch returns before any provider is resolved, so this
+    /// makes no network call and needs no key.
+    #[test]
+    fn spec_in_app_button_offline_returns_the_raw_text_unchanged() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.stt_provider = "local".to_string();
+            cfg.llm_provider = "deepseek".to_string();
+            cfg.deepseek_api_key = "sk-would-have-been-called".to_string();
+        }
+
+        let raw = "also ähm ich glaube das passt so";
+        assert_eq!(
+            offline_passthrough(&state, raw),
+            Some(raw.to_string()),
+            "offline STT must yield the raw transcript, filler words and all \
+             (Andi's own E2 check: the \"ähm\" stay)"
+        );
+    }
+
+    /// The other side of the same branch: an ordinary cloud config must NOT
+    /// short-circuit, or the fix would have disabled cleanup for everyone.
+    #[test]
+    fn spec_in_app_button_cloud_config_still_reaches_the_provider() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.stt_provider = "groq".to_string();
+            cfg.llm_provider = "deepseek".to_string();
+        }
+        assert_eq!(offline_passthrough(&state, "text"), None);
     }
 
     /// D-M20's discriminating case, and the reason this row exists: the

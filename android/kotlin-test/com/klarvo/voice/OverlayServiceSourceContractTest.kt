@@ -170,6 +170,24 @@ class OverlayServiceSourceContractTest {
         assertEquals("…with the real throwable, so the log can name it", boom, seen[0])
     }
 
+    /**
+     * And an `Error`, not just an `Exception`. The row promises "never an
+     * uncaught main-thread exception", and an OEM clipboard service can
+     * surface as a `LinkageError` behind a provider stub — which
+     * `catch (e: Exception)` lets straight past onto the looper. Review
+     * finding; the catch is `Throwable`.
+     */
+    @Test
+    fun clipboardWriteAlsoCatchesAnError() {
+        var failures = 0
+        val ok = KlarvoOverlayService.guardedClipboardWrite(
+            write = { throw UnsatisfiedLinkError("no clipboard shim") },
+            onFailure = { failures++ },
+        )
+        assertFalse(ok)
+        assertEquals(1, failures)
+    }
+
     /** The happy path must not report a failure or call the handler. */
     @Test
     fun clipboardWriteReportsSuccessWithoutTouchingTheFailurePath() {
@@ -217,6 +235,159 @@ class OverlayServiceSourceContractTest {
     }
 
     // -----------------------------------------------------------------------
+    // D10 / D-M2 — the ladder gate has no type pre-filter
+    // -----------------------------------------------------------------------
+
+    /**
+     * Removing the `e is IOException &&` pre-gate **is** D10's behavioural
+     * half: a malformed provider answer throws a bare `JSONException`, which
+     * is not an `IOException`, so on a dictation under `CHUNK_THRESHOLD` the
+     * provider ladder never ran while the chunked path fell back normally.
+     *
+     * `isRetryableCleanupFailure`'s own verdicts are unit-tested in
+     * [TestProviderScenarioTest]; what nothing asserted is that the CALL SITE
+     * still reaches it without a type filter in front. Restoring the pre-gate
+     * kept every test and the fixture green.
+     *
+     * Asserted on the assignment's condition text, and paired with the
+     * then-branch so a gate that is "clean" because it never calls the ladder
+     * cannot pass.
+     */
+    @Test
+    fun cleanupLadderGateHasNoTypePreFilter() {
+        val assign = src.indexOf("val fallbackProvider = if (")
+        assertTrue("the cleanup-fallback gate must exist", assign >= 0)
+        val condEnd = src.indexOf(") {", assign)
+        assertTrue(condEnd > assign)
+        val condition = src.substring(assign + "val fallbackProvider = if (".length, condEnd).trim()
+
+        assertEquals(
+            "D10: the ladder gate must be isRetryableCleanupFailure(e) ALONE — " +
+                "a type pre-filter is the defect, not a safeguard",
+            "isRetryableCleanupFailure(e)",
+            condition,
+        )
+        assertFalse(
+            "D10: no `e is …` pre-filter in front of the gate",
+            condition.contains(" is "),
+        )
+
+        // …and the gate must still lead somewhere, or "no pre-filter" would be
+        // satisfied by a branch that never resolves a fallback at all.
+        val thenEnd = src.indexOf("} else {", condEnd)
+        assertTrue(thenEnd > condEnd)
+        assertTrue(
+            "the gate must still reach resolveFallbackLlmProvider",
+            src.substring(condEnd, thenEnd).contains("KlarvoApi.resolveFallbackLlmProvider("),
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // B3 — the new native symbol must not be able to kill the worker thread
+    // -----------------------------------------------------------------------
+
+    /**
+     * `nativeStripStockphraseGhosts` is a NEW native symbol, and a stale
+     * `libklarvo_lib.so` raises `UnsatisfiedLinkError` — an `Error`, which
+     * `processAudio`'s outer `catch (e: IOException)` does not catch.
+     * Unguarded, the worker thread dies there, AFTER the paid STT and LLM
+     * calls: nothing pasted, nothing stored, bubble stranded in TRANSCRIBING.
+     * Losing a ghost is the pre-13-2 Android behaviour; losing the dictation
+     * is not. Review finding.
+     */
+    @Test
+    fun theGhostStripBridgeCallDegradesInsteadOfKillingTheRun() {
+        val call = src.indexOf("GroqSttBridge.nativeStripStockphraseGhosts(")
+        assertTrue("the post-cleanup ghost strip must exist", call >= 0)
+
+        // The call must be the FIRST statement of its own `try`, not merely
+        // somewhere downstream of an unrelated one. Measured 2026-09-21: the
+        // `lastIndexOf("try {")` form of this assertion stayed GREEN when the
+        // guard was removed, because `processAudio` has several earlier `try`
+        // blocks.
+        val tryStart = src.lastIndexOf("try {", call)
+        assertTrue("the bridge call must sit inside a try", tryStart in 0 until call)
+        assertTrue(
+            "…as its FIRST statement, so nothing between the try and the call: " +
+                src.substring(tryStart, call).trim(),
+            src.substring(tryStart + "try {".length, call).isBlank(),
+        )
+        val catchStart = src.indexOf("catch (", call)
+        assertTrue("…with a catch after it", catchStart > call)
+        val catchClause = src.substring(catchStart, minOf(catchStart + 40, src.length))
+        assertTrue(
+            "…catching Throwable, not Exception — UnsatisfiedLinkError is an Error: $catchClause",
+            catchClause.contains("Throwable"),
+        )
+        assertTrue(
+            "…and degrading to the un-stripped text, not to nothing",
+            src.substring(catchStart, minOf(catchStart + 400, src.length)).contains("finalText"),
+        )
+    }
+
+    /**
+     * The live accessibility reference is read ONCE per delivery.
+     *
+     * Read twice, the service can disconnect between the connected-check and
+     * the paste: `shouldAttemptPaste` says yes, the paste is skipped by the
+     * null-safe call, and `decideDelivery` sees `attempted = true` with a null
+     * outcome — a delivery that shows no success and logs no cause, which is
+     * the ending D4 exists to remove. Review finding.
+     */
+    @Test
+    fun theLiveAccessibilityReferenceIsReadOnce() {
+        val reads = Regex(Regex.escape("KlarvoAccessibilityService.instance")).findAll(src).count()
+        assertEquals(
+            "the delivery block must hoist the service reference into one local",
+            1,
+            reads,
+        )
+        assertTrue(
+            "…and that local is what the paste is called on",
+            src.contains("accessibility?.pasteIntoFocusedField()"),
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // One rule, one literal — the three G2a guards
+    // -----------------------------------------------------------------------
+
+    /**
+     * `"local"` was spelled out three times — [KlarvoOverlayService.skipsCloudCleanup],
+     * `RecordingMode.shouldInstallPreviewFlush` and `flushPreviewDelta`'s
+     * flush-time re-check — in the story whose whole thesis is one rule. A
+     * provider-id rename would have disabled two of the three G2a guards and
+     * left the third reporting green. Review finding.
+     *
+     * The STT DISPATCH branch (`config.sttProvider == "local"` in
+     * `processAudio`, which chooses local Whisper) is deliberately not part of
+     * this: it is a provider selector, not an offline guard, and 13-1b's
+     * tripwire pins it as a literal.
+     */
+    @Test
+    fun theThreeOfflineGuardsShareOneProviderIdLiteral() {
+        assertEquals("local", KlarvoOverlayService.LOCAL_PROVIDER_ID)
+
+        // Scoped to the three guard BODIES. The file holds other, unrelated
+        // `"local"` comparisons that are deliberately literals and are NOT
+        // G2a guards: the two "a Groq key is required unless STT is local"
+        // checks, and `processAudio`'s STT DISPATCH branch, which 13-1b's own
+        // tripwire pins as a literal. A whole-file assertion would have
+        // demanded those change too.
+        for (name in listOf("skipsCloudCleanup", "shouldInstallPreviewFlush", "flushPreviewDelta")) {
+            val body = bodyOf(name)
+            assertTrue(
+                "$name must read KlarvoOverlayService.LOCAL_PROVIDER_ID",
+                body.contains("LOCAL_PROVIDER_ID"),
+            )
+            assertFalse(
+                "$name must not carry its own copy of the provider id: $body",
+                body.contains("\"local\""),
+            )
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // E1 / D-H9 — the flush-time re-check, not only the install decision
     // -----------------------------------------------------------------------
 
@@ -238,11 +409,15 @@ class OverlayServiceSourceContractTest {
         val end = src.indexOf("\n    private fun ", fn + 1).let { if (it < 0) src.length else it }
         val body = src.substring(fn, end)
 
-        val guard = body.indexOf("config.sttProvider == \"local\"")
+        val guard = body.indexOf("config.sttProvider == LOCAL_PROVIDER_ID")
         val snapshot = body.indexOf("deltaSnapshotWav()")
         val transcribe = body.indexOf("transcribeWithRetry(")
 
-        assertTrue("E1: flushPreviewDelta must re-check the stored STT provider", guard >= 0)
+        assertTrue(
+            "E1: flushPreviewDelta must re-check the stored STT provider against " +
+                "KlarvoOverlayService.LOCAL_PROVIDER_ID (the one literal all three G2a guards read)",
+            guard >= 0,
+        )
         assertTrue("the delta snapshot must still be taken on the normal path", snapshot >= 0)
         assertTrue("the flush must still reach the JNI on the normal path", transcribe >= 0)
         assertTrue(
@@ -262,6 +437,43 @@ class OverlayServiceSourceContractTest {
     // -----------------------------------------------------------------------
     // helpers
     // -----------------------------------------------------------------------
+
+    /**
+     * The body of `fun <name>(...)`, by brace matching from its first `{`.
+     *
+     * The other order assertions in this file bound a body with "the next
+     * top-level `private fun`", which does not work for a function nested in
+     * the companion object. This does, and it scopes tightly enough that an
+     * unrelated occurrence elsewhere in the file cannot satisfy an assertion.
+     *
+     * Handles an expression body (`fun f(...) = expr`) too: those have no
+     * brace, so the statement up to the next blank line is the body.
+     */
+    private fun bodyOf(name: String): String {
+        val decl = Regex("fun\\s+" + Regex.escape(name) + "\\s*\\(").find(src)
+            ?: error(name + " must exist in KlarvoOverlayService.kt")
+        val brace = src.indexOf('{', decl.range.last)
+        val eq = src.indexOf('=', decl.range.last)
+        val paramsEnd = src.indexOf("):", decl.range.last)
+        val exprBody = eq in 0 until brace && paramsEnd in 0 until eq
+        if (brace < 0 || exprBody) {
+            val stop = src.indexOf("\n\n", decl.range.last).let { if (it < 0) src.length else it }
+            return src.substring(decl.range.first, stop)
+        }
+        var depth = 0
+        var i = brace
+        while (i < src.length) {
+            when (src[i]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return src.substring(brace, i + 1)
+                }
+            }
+            i++
+        }
+        error("unbalanced braces reading the body of " + name)
+    }
 
     private fun readOverlayServiceSource(): String {
         val rel = "android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt"

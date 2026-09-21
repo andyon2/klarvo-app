@@ -158,9 +158,15 @@ class ChunkingParityTest {
     // =========================================================================
 
     /**
-     * `Future.get()` wraps the worker's exception in an ExecutionException. KlarvoOverlayService
-     * gates its cross-provider cleanup fallback (Epic 12) on `e is IOException`, so the cause
-     * must be unwrapped — otherwise a 429 on one chunk silently disables the fallback ladder.
+     * `Future.get()` wraps the worker's exception in an ExecutionException, so the cause must be
+     * unwrapped — otherwise a 429 on one chunk arrives as an ExecutionException carrying no
+     * `HTTP nnn`, and `KlarvoOverlayService.isRetryableCleanupFailure` sees neither a status nor
+     * a type it knows.
+     *
+     * Story 13-2 (D10 / D-M2) removed the `e is IOException` PRE-GATE that used to sit in front
+     * of that call — a bare `JSONException` is not an IOException, so on the single-call path the
+     * ladder never ran. The unwrapping here still matters: the classifier reads the status out of
+     * the message, and an ExecutionException's message is not the cause's.
      */
     @Test
     fun m8_chunkFailureAbortsWithTheOriginalIOException() {

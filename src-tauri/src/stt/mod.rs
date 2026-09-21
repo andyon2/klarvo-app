@@ -1524,6 +1524,102 @@ mod tests {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Story 13-2 review — the two `nativeTranscribe` decisions that were
+    // android-gated and therefore revertible with every gate green.
+    // -----------------------------------------------------------------------
+
+    /// B2 / D-H5, D-H6: the guards are fed the conditioning HINT, and the hint
+    /// the JNI rebuilds is the one the desktop pipeline computes.
+    ///
+    /// The discriminating half is the second assertion: the pre-13-2 value was
+    /// the full built prompt, so a hint helper that quietly returned that
+    /// instead would satisfy "is a non-empty string" and nothing else.
+    #[test]
+    fn spec_jni_guard_hint_is_the_hint_and_not_the_built_prompt() {
+        use crate::stt::groq_jni::guard_hint_for_jni;
+
+        for (lang, custom) in [("de", ""), ("en", ""), ("", ""), ("de", "Technisches Diktat.")] {
+            let custom_opt = if custom.is_empty() { None } else { Some(custom) };
+            assert_eq!(
+                guard_hint_for_jni(lang, custom),
+                stt_hint_text(lang, custom_opt),
+                "lang={lang:?} custom={custom:?}: the JNI hint must BE the pipeline's hint"
+            );
+        }
+
+        // …and it must NOT be the built prompt, which is what it used to be.
+        let terms = "Klarvo, Kubernetes";
+        let built = build_stt_prompt_with_hint(Some(terms), "de", None).expect("prompt");
+        let hint = guard_hint_for_jni("de", "");
+        assert_ne!(hint, built, "feeding the built prompt is drift row D-H5/D-H6");
+        assert!(
+            !hint.contains("Kubernetes"),
+            "the dictionary must never reach the guards: {hint:?}"
+        );
+
+        // Whitespace-only `customPrompt` falls back to the built-in hint, the
+        // same way `stt_hint_text` does — the JNI reads an unset config field
+        // as an empty Java string, not as absent.
+        assert_eq!(guard_hint_for_jni("de", "   "), builtin_stt_hint("de"));
+    }
+
+    /// D9 / D-M5: `ResponseFormat` gets its own non-retryable sentinel, decided
+    /// BEFORE the `__ERROR_NETWORK:` catch-all.
+    ///
+    /// Pinned against the fixture literal rather than against another Rust
+    /// constant — `TEST-STT-EMPTY-001`'s `kotlin.sentinel` is the same string
+    /// `SttSentinelClassificationTest` reads, so the two twins cannot drift.
+    #[test]
+    fn spec_jni_response_format_sentinel_precedes_the_network_catch_all() {
+        use crate::stt::groq_jni::stt_error_sentinel;
+
+        let vectors = load_test_vectors();
+        let v = test_vector(&vectors, "TEST-STT-EMPTY-001");
+        let sentinel = v["kotlin"]["sentinel"]
+            .as_str()
+            .expect("the fixture must name the sentinel");
+        assert_eq!(sentinel, "__ERROR_FORMAT:");
+
+        let mapped = stt_error_sentinel(&SttError::ResponseFormat(
+            "API returned empty text after segment confidence filter".to_string(),
+        ));
+        assert!(
+            mapped.starts_with(sentinel),
+            "ResponseFormat must carry the fixture's sentinel, got {mapped:?}"
+        );
+        assert!(
+            mapped.contains("empty text after segment confidence filter"),
+            "the cause must survive into the sentinel: {mapped:?}"
+        );
+        assert!(
+            !mapped.starts_with("__ERROR_NETWORK:"),
+            "ResponseFormat must NOT fall into the catch-all — that is D-M5"
+        );
+
+        // The catch-all is still the catch-all: another variant lands there,
+        // so the assertion above is about ORDER and not about the arm having
+        // replaced the fallback.
+        let other = stt_error_sentinel(&SttError::LocalWhisper("model missing".to_string()));
+        assert!(
+            other.starts_with("__ERROR_NETWORK:"),
+            "unclassified errors keep the retryable catch-all, got {other:?}"
+        );
+
+        // …and the two shapes Kotlin already distinguished are unchanged.
+        assert_eq!(
+            stt_error_sentinel(&SttError::EmptyAudio),
+            "__ERROR_EMPTY_AUDIO__"
+        );
+        assert_eq!(
+            stt_error_sentinel(&SttError::ApiError {
+                status: 401,
+                message: "invalid key".to_string()
+            }),
+            "__ERROR_API:HTTP 401: invalid key__"
+        );
+    }
+
     /// The scenario value is carried through to the provider, not ignored —
     /// otherwise an Android test run would always replay `ok`. The near-miss
     /// names `"Test"` and `"testx"` are non-`off` strings, so they DO switch the

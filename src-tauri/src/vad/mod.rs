@@ -272,6 +272,15 @@ pub struct SileroVad {
     state: HysteresisState,
     /// Pre-computed number of hangover frames from `config.hangover_ms`.
     hangover_frames: u32,
+    /// Test-only: how many times the Silero predictor has been invoked.
+    ///
+    /// Story 13-2 (D-L19), added at review: [`frame_decision`]'s own test
+    /// proves the HELPER always calls, but `process_frame` could re-inline
+    /// `if energy_ok { … } else { 0.0 }` around it and undo the whole row with
+    /// every gate green. This counter makes the claim about the real
+    /// `feed()` → `process_frame` path, not about a helper in isolation.
+    #[cfg(test)]
+    predict_calls: u32,
 }
 
 impl SileroVad {
@@ -303,6 +312,8 @@ impl SileroVad {
             engine,
             state: HysteresisState::Silence,
             hangover_frames,
+            #[cfg(test)]
+            predict_calls: 0,
         })
     }
 
@@ -351,9 +362,23 @@ impl SileroVad {
     fn process_frame(&mut self, frame: &[f32]) {
         let energy_floor = self.config.energy_floor;
         let engine = &mut self.engine;
-        let (prob, energy_ok) =
-            frame_decision(frame, energy_floor, |f| engine.predict(f.to_vec()));
+        let mut calls = 0u32;
+        let (prob, energy_ok) = frame_decision(frame, energy_floor, |f| {
+            calls += 1;
+            engine.predict(f.to_vec())
+        });
+        #[cfg(test)]
+        {
+            self.predict_calls += calls;
+        }
+        let _ = calls;
         self.advance_state(prob, energy_ok);
+    }
+
+    /// Test-only: how many times the predictor has run since construction.
+    #[cfg(test)]
+    pub(crate) fn predict_calls(&self) -> u32 {
+        self.predict_calls
     }
 
     /// Advances the hysteresis state machine by one frame.
@@ -834,6 +859,40 @@ mod tests {
             vad.current_speech_state(),
             SpeechState::Silence,
             "the ({fires_at})-th consecutive non-speech frame is the edge"
+        );
+    }
+
+    /// D-L19 through the REAL path: `feed()` → `process_frame` → the engine.
+    ///
+    /// Added at review. The helper-level test below proves [`frame_decision`]
+    /// always calls its predictor, but `process_frame` could wrap the helper
+    /// in `if energy_ok { … } else { 0.0 }` and undo the entire row with every
+    /// gate green — the defect this row exists to remove, reintroduced one
+    /// level up. This drives digital silence through the public `feed()` and
+    /// counts the calls the engine actually received.
+    ///
+    /// Inversion (run 2026-09-21): re-inline the energy guard in
+    /// `process_frame` → the count drops to 0 and this goes RED.
+    #[test]
+    fn spec_feed_calls_the_predictor_on_every_sub_floor_frame() {
+        let mut vad = SileroVad::new().expect("VAD must initialise");
+        assert_eq!(vad.predict_calls(), 0);
+
+        // Five whole frames of digital silence: RMS 0, far below the 0.001
+        // default floor, so every frame is sub-floor.
+        let frames = 5;
+        let silent = vec![0.0f32; SILERO_FRAME_SAMPLES * frames];
+        let state = vad.feed(&silent);
+
+        assert_eq!(
+            vad.predict_calls(),
+            frames as u32,
+            "the engine must see every frame, however quiet — Silero is recurrent"
+        );
+        assert_eq!(
+            state,
+            SpeechState::Silence,
+            "and the verdict is unchanged: the energy gate still decides"
         );
     }
 

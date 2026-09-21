@@ -2,13 +2,13 @@
 title: '13-2 Parity sweep: guards and silent loss'
 type: 'feature'
 created: '2026-09-21'
-status: 'review'
+status: 'in-review'
 baseline_revision: '4e4bc00b4ef28a75370acdb44e905e5699ec9388'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-alignment']
 review_loop_iteration: 0
 followup_review_recommended: true
 context:
@@ -693,6 +693,21 @@ they are byte-identical, and nothing enforced that. The separator moved into the
   (`GUARD-ECHO-DROP-001`, `GUARD-BLOCKLIST-DROP-001`). An inversion of
   `guard_transcript_for_jni` came back GREEN: every planned guard vector asserts
   survival, so the drop arm was never exercised. See `code-inversion-report.md`.
+- **Review round (after the audit follow-up).** A review found decisions that no gate
+  compiled or no test read — `nativeTranscribe`'s hint rebuild and its error→sentinel
+  mapping (both android-gated), `process_frame`'s use of `frame_decision`, the three
+  `advanced.sttPrompt*` parses, `cleanup_text`'s own offline branch, the D10 ladder
+  gate, the flush-time re-check's position, the ghost-strip guard, the single
+  accessibility read. Each moved into a plain-Rust helper or a pure companion seam with
+  its own test; 12 further inversions, all RED. **Two behaviour corrections**, both
+  closing divergences this story had created by fixing one side only: Rust now asks
+  `content.trim().is_empty()` like the Kotlin twin, and the new
+  `nativeStripStockphraseGhosts` call is guarded against `Throwable` (a stale `.so`
+  raises `UnsatisfiedLinkError`, an `Error`, which the outer `catch (e: IOException)`
+  does not catch — the worker thread would have died after the paid STT and LLM calls).
+  Eleven stale or overstated comments corrected, including the call-site comment that
+  still named the rejected guard order and the two "no history row" claims. Gates after:
+  `cargo test --lib` 774, JVM 29 suites / 268 tests, 48/48 inversions RED.
 - **Matrix Test Audit follow-up (after the first build pass).** Four I/O & Edge-Case
   Matrix rows — **D11**, **B1-Android**, **D6-Android** and the flush-time half of
   **E1** — had no covering test; their evidence was "read the diff", which the audit

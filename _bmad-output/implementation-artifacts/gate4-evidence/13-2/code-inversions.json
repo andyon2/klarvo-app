@@ -1,377 +1,525 @@
 {
-  "rust": [
+  "_note": "Grouped by BATCH, each with the tree it was measured at. The first pass presented one total over 'the shipped tree', but R1-R8 had been measured mid-build, before the last two Rust tests existed (their evidence lines say '767 filtered out' where the later ones say 768). Review finding. The Rust batch below is a RE-RUN against the current tree; no row here is older than the code it claims to pin.",
+  "batches": [
     {
-      "inversion": "guard_transcript runs the ghost strip BEFORE the fragment strip",
-      "file": "src-tauri/src/pipeline.rs",
-      "filter": "spec_guard_order_strips_fragments_before_the_verdict",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s"
+      "name": "rust",
+      "measured_at": "current tree (cargo test --lib: 774 passed) — re-run 2026-09-21 after the review round",
+      "inversions": [
+        {
+          "inversion": "guard_transcript runs the ghost strip BEFORE the fragment strip",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_guard_order_strips_fragments_before_the_verdict",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "guard_transcript loses the pre-guard ghost strip (the pre-13-2 Desktop chain)",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_guard_strips_a_raw_ghost_before_the_blocklist",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "guard_transcript_for_jni hands a dropped transcript back as text instead of None",
+          "file": "src-tauri/src/stt/groq_jni.rs",
+          "filter": "spec_jni_guard_wrapper_agrees_with_the_desktop_chain",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "build_stt_prompt_with_hint goes back to the separator-less join",
+          "file": "src-tauri/src/stt/mod.rs",
+          "filter": "spec_stt_prompt_join_is_explicit",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "select_stt_hint_override loses the auto fall-through (the obvious-reading twin)",
+          "file": "src-tauri/src/stt/mod.rs",
+          "filter": "spec_stt_hint_override_selection_falls_through_to_auto",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "terminal_degrade_cause narrows back to `Some(_) if paste_failed`",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_clipboard_failure_on_a_clean_run_names_the_shipped_cause",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "offline_rule_with drops the platform-availability clause (D-M21 returns)",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_offline_rule_matches_the_fixture_matrix",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "offline_rule_with drops the local-STT clause (G2a returns)",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_offline_rule_matches_the_fixture_matrix",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "frame_decision restores the `if energy_ok` guard around the predictor call",
+          "file": "src-tauri/src/vad/mod.rs",
+          "filter": "spec_predictor_runs_on_a_sub_floor_frame",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "the same break, measured against the wrapper-agreement test",
+          "file": "src-tauri/src/stt/groq_jni.rs",
+          "filter": "spec_jni_guard_wrapper_agrees_with_the_desktop_chain",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 767 filtered out; finished in 0.00s"
+          ]
+        }
       ]
     },
     {
-      "inversion": "guard_transcript loses the pre-guard ghost strip (the pre-13-2 Desktop chain)",
-      "file": "src-tauri/src/pipeline.rs",
-      "filter": "spec_guard_strips_a_raw_ghost_before_the_blocklist",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s"
+      "name": "kotlin",
+      "measured_at": "tree at commit a995ca7 (JVM 28 suites / 253 tests). Behaviour unchanged by the two later rounds; the tests these rows name were not edited.",
+      "inversions": [
+        {
+          "inversion": "mapCleanupResponse stops rejecting an empty answer",
+          "file": "KlarvoApi.kt",
+          "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.emptyAnswerIsRejectedAsNonRetryable",
+          "RED": true,
+          "failed_tests": [
+            "TestProviderScenarioTest > emptyAnswerIsRejectedAsNonRetryable FAILED",
+            "BUILD FAILED in 6s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "mapCleanupResponse stops inspecting finish_reason",
+          "file": "KlarvoApi.kt",
+          "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.truncatedAnswerIsRejectedAsNonRetryable",
+          "RED": true,
+          "failed_tests": [
+            "TestProviderScenarioTest > truncatedAnswerIsRejectedAsNonRetryable FAILED",
+            "BUILD FAILED in 6s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "isRetryableCleanupFailure drops the JSONException arm (D-M2 returns)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.malformedAnswerThrowsAJsonException_andNowFiresTheLadder",
+          "RED": true,
+          "failed_tests": [
+            "TestProviderScenarioTest > malformedAnswerThrowsAJsonException_andNowFiresTheLadder FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "isRetryableCleanupFailure drops the two named non-retryable arms",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.emptyAnswerIsRejectedAsNonRetryable",
+          "RED": true,
+          "failed_tests": [
+            "TestProviderScenarioTest > emptyAnswerIsRejectedAsNonRetryable FAILED",
+            "BUILD FAILED in 6s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "classifySttSentinel loses the __ERROR_FORMAT: arm (falls to the catch-all)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.SttSentinelClassificationTest.responseFormatSentinelIsNonRetryable",
+          "RED": true,
+          "failed_tests": [
+            "SttSentinelClassificationTest > responseFormatSentinelIsNonRetryable FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "transcribeWithRetry goes back to the 3-attempt / 2s+5s budget",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.SttSentinelClassificationTest.retryBudgetIsOneAttempt",
+          "RED": true,
+          "failed_tests": [
+            "SttSentinelClassificationTest > retryBudgetIsOneAttempt FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "decideDelivery ignores the paste outcome (decides on `instance != null` again)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.CleanupFailureDeliveryTest.pasteAttemptedButNoFocusedField_showsClipboardToastAndNoCheck",
+          "RED": true,
+          "failed_tests": [
+            "CleanupFailureDeliveryTest > pasteAttemptedButNoFocusedField_showsClipboardToastAndNoCheck FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "decideDelivery lets a cleanup failure count as success (the DONE flash returns)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.CleanupFailureDeliveryTest.cleanupFailure_getsNoDoneFlash",
+          "RED": true,
+          "failed_tests": [
+            "CleanupFailureDeliveryTest > cleanupFailure_getsNoDoneFlash FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "decideDelivery ignores a failed clipboard write",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.CleanupFailureDeliveryTest.clipboardWriteFailed_showsNothingAndClaimsNothing",
+          "RED": true,
+          "failed_tests": [
+            "CleanupFailureDeliveryTest > clipboardWriteFailed_showsNothingAndClaimsNothing FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "shouldInstallPreviewFlush drops the sttProvider clause (E1 returns)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.ShouldInstallPreviewFlushTest",
+          "RED": true,
+          "failed_tests": [
+            "ShouldInstallPreviewFlushTest > hold_enabled_butOfflineStt_false FAILED",
+            "ShouldInstallPreviewFlushTest > toggle_enabled_butOfflineStt_false FAILED",
+            "ShouldInstallPreviewFlushTest > inversion_offlineSttMustNotEqualCloudBehavior FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "hangoverFired goes back to `>=` (fires on the N-th frame)",
+          "file": "KlarvoAudioRecorder.kt",
+          "expected_red_test": "com.klarvo.voice.VadGateGoldenVectorsTest.hangoverEdgeVector_matchesHangoverFired",
+          "RED": true,
+          "failed_tests": [
+            "VadGateGoldenVectorsTest > hangoverEdgeVector_matchesHangoverFired FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "vadGateDecision skips the predictor below the energy gate (Android adopts the old Desktop shape)",
+          "file": "KlarvoAudioRecorder.kt",
+          "expected_red_test": "com.klarvo.voice.VadGateGoldenVectorsTest.engineCallVector_predictorRunsOnSubFloorFrame",
+          "RED": true,
+          "failed_tests": [
+            "VadGateGoldenVectorsTest > engineCallVector_predictorRunsOnSubFloorFrame FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "skipsCloudCleanup drops the platform-availability clause (D-M21 returns)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OfflineRuleVectorsTest.offlineRuleMatchesTheFixtureMatrix",
+          "RED": true,
+          "failed_tests": [
+            "OfflineRuleVectorsTest > offlineRuleMatchesTheFixtureMatrix FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "skipsCloudCleanup drops the local-STT clause (D-H10 returns)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OfflineRuleVectorsTest.offlineRuleMatchesTheFixtureMatrix",
+          "RED": true,
+          "failed_tests": [
+            "OfflineRuleVectorsTest > offlineRuleMatchesTheFixtureMatrix FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "the post-cleanup ghost strip call is removed (B3's Android half returns)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.postCleanupGhostStripGoesThroughTheJniBridge",
+          "RED": true,
+          "failed_tests": [
+            "GuardChainBridgeTest > postCleanupGhostStripGoesThroughTheJniBridge FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "selectSttHintOverride loses the auto fall-through (the obvious-reading twin)",
+          "file": "KlarvoApi.kt",
+          "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.sttHintOverrideSelectionMatchesTheRustTwin",
+          "RED": true,
+          "failed_tests": [
+            "GuardChainBridgeTest > sttHintOverrideSelectionMatchesTheRustTwin FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "the dictation call site is fed config.customPrompt again (D-H4 returns)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.theJniGetsTheSttHintAndNotTheCleanupInstruction",
+          "RED": true,
+          "failed_tests": [
+            "GuardChainBridgeTest > theJniGetsTheSttHintAndNotTheCleanupInstruction FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "only the LIVE-PREVIEW call site is fed config.customPrompt again",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.theJniGetsTheSttHintAndNotTheCleanupInstruction",
+          "RED": true,
+          "failed_tests": [
+            "GuardChainBridgeTest > theJniGetsTheSttHintAndNotTheCleanupInstruction FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        }
       ]
     },
     {
-      "inversion": "build_stt_prompt_with_hint goes back to the separator-less join",
-      "file": "src-tauri/src/stt/mod.rs",
-      "filter": "spec_stt_prompt_join_is_explicit",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s"
+      "name": "kotlin_matrix_audit",
+      "measured_at": "tree at commit 967609f (JVM 29 suites / 260 tests)",
+      "inversions": [
+        {
+          "inversion": "D11: \"No speech detected\" is toasted again (a recognition result speaks)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak FAILED",
+            "BUILD FAILED in 5s"
+          ]
+        },
+        {
+          "inversion": "D11 other half: \"No audio recorded\" is removed too (the capture fault goes silent)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak FAILED",
+            "BUILD FAILED in 5s"
+          ]
+        },
+        {
+          "inversion": "B1-Android: the history/Turso worker moves back ahead of the banking verdict (Steps 3/3b)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.bankingVerdictPrecedesTheHistoryAndTursoWrites",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > bankingVerdictPrecedesTheHistoryAndTursoWrites FAILED",
+            "BUILD FAILED in 5s"
+          ]
+        },
+        {
+          "inversion": "B1-Android: the writes run inline on the main looper instead of a worker thread",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.theWritesAreStillOffTheMainLooper",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > theWritesAreStillOffTheMainLooper FAILED",
+            "BUILD FAILED in 5s"
+          ]
+        },
+        {
+          "inversion": "D6: guardedClipboardWrite rethrows instead of catching (the uncaught main-thread throw returns)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.clipboardWriteIsCaughtCountedAndNeverPropagates",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > clipboardWriteIsCaughtCountedAndNeverPropagates FAILED",
+            "BUILD FAILED in 5s"
+          ]
+        },
+        {
+          "inversion": "D6: copyToClipboard's failure handler stops incrementing pasteErrorCount",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.copyToClipboardRoutesThroughTheSeamAndCountsTheFailure",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > copyToClipboardRoutesThroughTheSeamAndCountsTheFailure FAILED",
+            "BUILD FAILED in 5s"
+          ]
+        },
+        {
+          "inversion": "E1: the flush-time re-check moves BELOW the delta snapshot",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio FAILED",
+            "BUILD FAILED in 5s"
+          ]
+        },
+        {
+          "inversion": "E1: the flush-time re-check only logs and no longer returns",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio FAILED",
+            "BUILD FAILED in 5s"
+          ]
+        }
       ]
     },
     {
-      "inversion": "select_stt_hint_override loses the auto fall-through (the obvious-reading twin)",
-      "file": "src-tauri/src/stt/mod.rs",
-      "filter": "spec_stt_hint_override_selection_falls_through_to_auto",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s"
-      ]
-    },
-    {
-      "inversion": "terminal_degrade_cause narrows back to `Some(_) if paste_failed`",
-      "file": "src-tauri/src/pipeline.rs",
-      "filter": "spec_clipboard_failure_on_a_clean_run_names_the_shipped_cause",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s"
-      ]
-    },
-    {
-      "inversion": "offline_rule_with drops the platform-availability clause (D-M21 returns)",
-      "file": "src-tauri/src/pipeline.rs",
-      "filter": "spec_offline_rule_matches_the_fixture_matrix",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s"
-      ]
-    },
-    {
-      "inversion": "offline_rule_with drops the local-STT clause (G2a returns)",
-      "file": "src-tauri/src/pipeline.rs",
-      "filter": "spec_offline_rule_matches_the_fixture_matrix",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s"
-      ]
-    },
-    {
-      "inversion": "frame_decision restores the `if energy_ok` guard around the predictor call",
-      "file": "src-tauri/src/vad/mod.rs",
-      "filter": "spec_predictor_runs_on_a_sub_floor_frame",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.00s"
-      ]
-    },
-    {
-      "inversion": "guard_transcript_for_jni hands a dropped transcript back as text instead of None",
-      "file": "src-tauri/src/stt/groq_jni.rs",
-      "filter": "spec_guard_still_drops_an_echo_and_a_hallucination",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 767 filtered out; finished in 0.00s"
-      ]
-    },
-    {
-      "inversion": "the same break, measured against the wrapper-agreement test",
-      "file": "src-tauri/src/stt/groq_jni.rs",
-      "filter": "spec_jni_guard_wrapper_agrees_with_the_desktop_chain",
-      "RED": true,
-      "evidence": [
-        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 767 filtered out; finished in 0.00s"
-      ]
-    }
-  ],
-  "kotlin": [
-    {
-      "inversion": "mapCleanupResponse stops rejecting an empty answer",
-      "file": "KlarvoApi.kt",
-      "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.emptyAnswerIsRejectedAsNonRetryable",
-      "RED": true,
-      "failed_tests": [
-        "TestProviderScenarioTest > emptyAnswerIsRejectedAsNonRetryable FAILED",
-        "BUILD FAILED in 6s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "mapCleanupResponse stops inspecting finish_reason",
-      "file": "KlarvoApi.kt",
-      "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.truncatedAnswerIsRejectedAsNonRetryable",
-      "RED": true,
-      "failed_tests": [
-        "TestProviderScenarioTest > truncatedAnswerIsRejectedAsNonRetryable FAILED",
-        "BUILD FAILED in 6s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "isRetryableCleanupFailure drops the JSONException arm (D-M2 returns)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.malformedAnswerThrowsAJsonException_andNowFiresTheLadder",
-      "RED": true,
-      "failed_tests": [
-        "TestProviderScenarioTest > malformedAnswerThrowsAJsonException_andNowFiresTheLadder FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "isRetryableCleanupFailure drops the two named non-retryable arms",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.emptyAnswerIsRejectedAsNonRetryable",
-      "RED": true,
-      "failed_tests": [
-        "TestProviderScenarioTest > emptyAnswerIsRejectedAsNonRetryable FAILED",
-        "BUILD FAILED in 6s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "classifySttSentinel loses the __ERROR_FORMAT: arm (falls to the catch-all)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.SttSentinelClassificationTest.responseFormatSentinelIsNonRetryable",
-      "RED": true,
-      "failed_tests": [
-        "SttSentinelClassificationTest > responseFormatSentinelIsNonRetryable FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "transcribeWithRetry goes back to the 3-attempt / 2s+5s budget",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.SttSentinelClassificationTest.retryBudgetIsOneAttempt",
-      "RED": true,
-      "failed_tests": [
-        "SttSentinelClassificationTest > retryBudgetIsOneAttempt FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "decideDelivery ignores the paste outcome (decides on `instance != null` again)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.CleanupFailureDeliveryTest.pasteAttemptedButNoFocusedField_showsClipboardToastAndNoCheck",
-      "RED": true,
-      "failed_tests": [
-        "CleanupFailureDeliveryTest > pasteAttemptedButNoFocusedField_showsClipboardToastAndNoCheck FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "decideDelivery lets a cleanup failure count as success (the DONE flash returns)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.CleanupFailureDeliveryTest.cleanupFailure_getsNoDoneFlash",
-      "RED": true,
-      "failed_tests": [
-        "CleanupFailureDeliveryTest > cleanupFailure_getsNoDoneFlash FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "decideDelivery ignores a failed clipboard write",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.CleanupFailureDeliveryTest.clipboardWriteFailed_showsNothingAndClaimsNothing",
-      "RED": true,
-      "failed_tests": [
-        "CleanupFailureDeliveryTest > clipboardWriteFailed_showsNothingAndClaimsNothing FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "shouldInstallPreviewFlush drops the sttProvider clause (E1 returns)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.ShouldInstallPreviewFlushTest",
-      "RED": true,
-      "failed_tests": [
-        "ShouldInstallPreviewFlushTest > hold_enabled_butOfflineStt_false FAILED",
-        "ShouldInstallPreviewFlushTest > toggle_enabled_butOfflineStt_false FAILED",
-        "ShouldInstallPreviewFlushTest > inversion_offlineSttMustNotEqualCloudBehavior FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "hangoverFired goes back to `>=` (fires on the N-th frame)",
-      "file": "KlarvoAudioRecorder.kt",
-      "expected_red_test": "com.klarvo.voice.VadGateGoldenVectorsTest.hangoverEdgeVector_matchesHangoverFired",
-      "RED": true,
-      "failed_tests": [
-        "VadGateGoldenVectorsTest > hangoverEdgeVector_matchesHangoverFired FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "vadGateDecision skips the predictor below the energy gate (Android adopts the old Desktop shape)",
-      "file": "KlarvoAudioRecorder.kt",
-      "expected_red_test": "com.klarvo.voice.VadGateGoldenVectorsTest.engineCallVector_predictorRunsOnSubFloorFrame",
-      "RED": true,
-      "failed_tests": [
-        "VadGateGoldenVectorsTest > engineCallVector_predictorRunsOnSubFloorFrame FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "skipsCloudCleanup drops the platform-availability clause (D-M21 returns)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OfflineRuleVectorsTest.offlineRuleMatchesTheFixtureMatrix",
-      "RED": true,
-      "failed_tests": [
-        "OfflineRuleVectorsTest > offlineRuleMatchesTheFixtureMatrix FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "skipsCloudCleanup drops the local-STT clause (D-H10 returns)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OfflineRuleVectorsTest.offlineRuleMatchesTheFixtureMatrix",
-      "RED": true,
-      "failed_tests": [
-        "OfflineRuleVectorsTest > offlineRuleMatchesTheFixtureMatrix FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "the post-cleanup ghost strip call is removed (B3's Android half returns)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.postCleanupGhostStripGoesThroughTheJniBridge",
-      "RED": true,
-      "failed_tests": [
-        "GuardChainBridgeTest > postCleanupGhostStripGoesThroughTheJniBridge FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "selectSttHintOverride loses the auto fall-through (the obvious-reading twin)",
-      "file": "KlarvoApi.kt",
-      "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.sttHintOverrideSelectionMatchesTheRustTwin",
-      "RED": true,
-      "failed_tests": [
-        "GuardChainBridgeTest > sttHintOverrideSelectionMatchesTheRustTwin FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "the dictation call site is fed config.customPrompt again (D-H4 returns)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.theJniGetsTheSttHintAndNotTheCleanupInstruction",
-      "RED": true,
-      "failed_tests": [
-        "GuardChainBridgeTest > theJniGetsTheSttHintAndNotTheCleanupInstruction FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    },
-    {
-      "inversion": "only the LIVE-PREVIEW call site is fed config.customPrompt again",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.theJniGetsTheSttHintAndNotTheCleanupInstruction",
-      "RED": true,
-      "failed_tests": [
-        "GuardChainBridgeTest > theJniGetsTheSttHintAndNotTheCleanupInstruction FAILED",
-        "BUILD FAILED in 5s"
-      ],
-      "compile_error": false
-    }
-  ],
-  "kotlin_matrix_audit": [
-    {
-      "inversion": "D11: \"No speech detected\" is toasted again (a recognition result speaks)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak",
-      "RED": true,
-      "failed_tests": [
-        "OverlayServiceSourceContractTest > nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak FAILED",
-        "BUILD FAILED in 5s"
-      ]
-    },
-    {
-      "inversion": "D11 other half: \"No audio recorded\" is removed too (the capture fault goes silent)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak",
-      "RED": true,
-      "failed_tests": [
-        "OverlayServiceSourceContractTest > nothingRecognizedIsSilent_butCaptureAndConfigFaultsStillSpeak FAILED",
-        "BUILD FAILED in 5s"
-      ]
-    },
-    {
-      "inversion": "B1-Android: the history/Turso worker moves back ahead of the banking verdict (Steps 3/3b)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.bankingVerdictPrecedesTheHistoryAndTursoWrites",
-      "RED": true,
-      "failed_tests": [
-        "OverlayServiceSourceContractTest > bankingVerdictPrecedesTheHistoryAndTursoWrites FAILED",
-        "BUILD FAILED in 5s"
-      ]
-    },
-    {
-      "inversion": "B1-Android: the writes run inline on the main looper instead of a worker thread",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.theWritesAreStillOffTheMainLooper",
-      "RED": true,
-      "failed_tests": [
-        "OverlayServiceSourceContractTest > theWritesAreStillOffTheMainLooper FAILED",
-        "BUILD FAILED in 5s"
-      ]
-    },
-    {
-      "inversion": "D6: guardedClipboardWrite rethrows instead of catching (the uncaught main-thread throw returns)",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.clipboardWriteIsCaughtCountedAndNeverPropagates",
-      "RED": true,
-      "failed_tests": [
-        "OverlayServiceSourceContractTest > clipboardWriteIsCaughtCountedAndNeverPropagates FAILED",
-        "BUILD FAILED in 5s"
-      ]
-    },
-    {
-      "inversion": "D6: copyToClipboard's failure handler stops incrementing pasteErrorCount",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.copyToClipboardRoutesThroughTheSeamAndCountsTheFailure",
-      "RED": true,
-      "failed_tests": [
-        "OverlayServiceSourceContractTest > copyToClipboardRoutesThroughTheSeamAndCountsTheFailure FAILED",
-        "BUILD FAILED in 5s"
-      ]
-    },
-    {
-      "inversion": "E1: the flush-time re-check moves BELOW the delta snapshot",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio",
-      "RED": true,
-      "failed_tests": [
-        "OverlayServiceSourceContractTest > previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio FAILED",
-        "BUILD FAILED in 5s"
-      ]
-    },
-    {
-      "inversion": "E1: the flush-time re-check only logs and no longer returns",
-      "file": "KlarvoOverlayService.kt",
-      "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio",
-      "RED": true,
-      "failed_tests": [
-        "OverlayServiceSourceContractTest > previewFlushRechecksTheStoredSttProviderBeforeItTouchesAudio FAILED",
-        "BUILD FAILED in 5s"
+      "name": "review_round",
+      "measured_at": "current tree (cargo test --lib: 774 passed; JVM 29 suites / 268 tests)",
+      "inversions": [
+        {
+          "inversion": "guard_hint_for_jni ignores customPrompt (B4's Android half goes inert)",
+          "file": "src-tauri/src/stt/groq_jni.rs",
+          "filter": "spec_jni_guard_hint_is_the_hint_and_not_the_built_prompt",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "stt_error_sentinel moves the ResponseFormat arm BELOW the catch-all (D-M5 returns)",
+          "file": "src-tauri/src/stt/groq_jni.rs",
+          "filter": "spec_jni_response_format_sentinel_precedes_the_network_catch_all",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "the Rust emptiness check drops .trim() (whitespace-only diverges from Kotlin again)",
+          "file": "src-tauri/src/llm/mod.rs",
+          "filter": "spec_whitespace_only_answer_is_rejected_like_an_empty_one",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "process_frame re-inlines the energy guard around the predictor call (D-L19 undone one level up)",
+          "file": "src-tauri/src/vad/mod.rs",
+          "filter": "spec_feed_calls_the_predictor_on_every_sub_floor_frame",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.07s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "offline_passthrough reintroduces a SECOND rule inside cleanup_text (D-M20 verbatim)",
+          "file": "src-tauri/src/commands/recording.rs",
+          "filter": "spec_in_app_button_offline_returns_the_raw_text_unchanged",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "parseSttPrompt reads the key from the config ROOT instead of `advanced` (B4 inert)",
+          "file": "KlarvoApi.kt",
+          "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.sttPromptKeysAreReadFromTheRealAdvancedObject",
+          "RED": true,
+          "failed_tests": [
+            "TestProviderScenarioTest > sttPromptKeysAreReadFromTheRealAdvancedObject FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "guardedClipboardWrite narrows back to catch (Exception) — an Error reaches the looper",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.clipboardWriteAlsoCatchesAnError",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > clipboardWriteAlsoCatchesAnError FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "the cleanup-ladder gate gets its `e is IOException &&` pre-filter back (D10 returns)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.cleanupLadderGateHasNoTypePreFilter",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > cleanupLadderGateHasNoTypePreFilter FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "one G2a guard goes back to its own \"local\" literal",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.theThreeOfflineGuardsShareOneProviderIdLiteral",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > theThreeOfflineGuardsShareOneProviderIdLiteral FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "mapCleanupResponse stops trimming (whitespace-only answers are delivered again)",
+          "file": "KlarvoApi.kt",
+          "expected_red_test": "com.klarvo.voice.TestProviderScenarioTest.whitespaceOnlyAnswerIsRejectedLikeAnEmptyOne",
+          "RED": true,
+          "failed_tests": [
+            "TestProviderScenarioTest > whitespaceOnlyAnswerIsRejectedLikeAnEmptyOne FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "the ghost-strip bridge call loses its guard (a stale .so kills the worker thread)",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.theGhostStripBridgeCallDegradesInsteadOfKillingTheRun",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > theGhostStripBridgeCallDegradesInsteadOfKillingTheRun FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "the delivery block reads KlarvoAccessibilityService.instance twice again",
+          "file": "KlarvoOverlayService.kt",
+          "expected_red_test": "com.klarvo.voice.OverlayServiceSourceContractTest.theLiveAccessibilityReferenceIsReadOnce",
+          "RED": true,
+          "failed_tests": [
+            "OverlayServiceSourceContractTest > theLiveAccessibilityReferenceIsReadOnce FAILED",
+            "BUILD FAILED in 5s"
+          ],
+          "compile_error": false
+        }
       ]
     }
   ]

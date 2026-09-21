@@ -660,7 +660,7 @@ class KlarvoAudioRecorder(
             // can drive it -- nothing can construct this class.
             if (hangoverFired(silentFrames, requiredSilentFrames)) {
                 silenceCallbackFired = true
-                KlarvoLogger.d(TAG,"VAD: silence detected after speech ($silentFrames frames >= $requiredSilentFrames required)")
+                KlarvoLogger.d(TAG,"VAD: silence detected after speech ($silentFrames frames > $requiredSilentFrames required)")
                 // Story 11-1 (spike): mark the exact pause-signal instant here (this IS
                 // onSilenceDetected firing). Log-only -- the actual pause-to-text delta is
                 // computed and logged in KlarvoOverlayService once the transcript returns
