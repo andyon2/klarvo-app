@@ -723,13 +723,46 @@ fn cleanup_provider_reload_needed(
         || previous.llm_model_openai != next.llm_model_openai
         || previous.llm_model_groq != next.llm_model_groq
         || previous.llm_model_anthropic != next.llm_model_anthropic
-        // Story 13-1: `DebugCleanup` is built with its scenario baked in, so a
-        // scenario change has to rebuild the provider or the next dictation
-        // still replays the old canned answer. The clause can fire for a
-        // non-debug provider too — the Advanced row renders whenever expert mode
-        // is on — but the expensive local-model case still returns early above,
-        // so the GGUF-reload guard keeps its protection.
-        || previous.debug_llm_scenario != next.debug_llm_scenario
+        // Story 13-1/13-1b: `TestCleanup` is built with its scenario baked in,
+        // and since 13-1b the SAME key also decides whether it is built at all.
+        // A change therefore has to rebuild the provider, or pressing Save would
+        // persist the new state while the next dictation still ran the old one.
+        // The expensive local-model case still returns early above, so the
+        // GGUF-reload guard keeps its protection.
+        || previous.test_provider_llm != next.test_provider_llm
+}
+
+/// Whether the STT slot has to be rebuilt after an advanced-settings save.
+///
+/// Story 13-1b: `advanced.testProviderStt` is the ONLY part of the advanced
+/// block `pipeline::resolve_stt_provider` reads, and since 13-1b it decides
+/// whether the STT chain runs against the test provider at all. Without this,
+/// "one save" would be true for persistence and false for effect on the STT
+/// chain — the scenario would need an app restart, which is precisely the class
+/// of operability defect this story exists to remove.
+fn stt_provider_reload_needed(
+    previous: &config::AdvancedSettings,
+    next: &config::AdvancedSettings,
+) -> bool {
+    previous.test_provider_stt != next.test_provider_stt
+}
+
+/// Rebuilds `slot`'s STT provider from `new_cfg` when
+/// [`stt_provider_reload_needed`] says so. Returns whether it swapped.
+///
+/// Twin of [`hot_reload_cleanup_provider`], and takes the bare `RwLock` for the
+/// same reason: so a unit test can supply one without an `AppState`.
+fn hot_reload_stt_provider(
+    slot: &std::sync::RwLock<Arc<dyn crate::stt::SttProvider>>,
+    previous: &config::AdvancedSettings,
+    new_cfg: &AppConfig,
+    app_data_dir: &std::path::Path,
+) -> Result<bool, String> {
+    if !stt_provider_reload_needed(previous, &new_cfg.advanced) {
+        return Ok(false);
+    }
+    *crate::write_lock!(slot)? = crate::pipeline::resolve_stt_provider(new_cfg, app_data_dir);
+    Ok(true)
 }
 
 /// Rebuilds `slot`'s cleanup provider from `new_cfg` when
@@ -761,6 +794,10 @@ fn hot_reload_cleanup_provider(
 /// hot-reload `save_settings` does. Without it a changed model ID would only
 /// take effect after an app restart. The rebuild is conditional; see
 /// [`cleanup_provider_reload_needed`].
+///
+/// Story 13-1b: the STT slot is rebuilt here too, on the same one press. Both
+/// test-provider keys live in this block, so this command is the single writer
+/// AND the single effect site for both chains — "one control, one save".
 #[tauri::command]
 pub fn save_advanced_settings(
     state: State<'_, AppState>,
@@ -776,6 +813,12 @@ pub fn save_advanced_settings(
     })?;
 
     hot_reload_cleanup_provider(&inner.cleanup_provider, &previous, &new_cfg)?;
+    hot_reload_stt_provider(
+        &inner.stt_provider,
+        &previous,
+        &new_cfg,
+        &inner.app_data_dir,
+    )?;
 
     Ok(())
 }
@@ -1125,7 +1168,10 @@ pub async fn clear_api_key(
 
 #[cfg(test)]
 mod tests {
-    use super::{cleanup_provider_reload_needed, hot_reload_cleanup_provider};
+    use super::{
+        cleanup_provider_reload_needed, hot_reload_cleanup_provider, hot_reload_stt_provider,
+        stt_provider_reload_needed,
+    };
     use crate::config::{load_config, save_config, AppConfig, HotkeyMode, HotkeySlot};
     use crate::llm::CleanupStyle;
     use std::sync::Arc;
@@ -2357,24 +2403,23 @@ mod tests {
         }
     }
 
-    /// Story 13-1: `DebugCleanup` is constructed with its scenario baked in, so
-    /// a scenario change has to rebuild the provider — otherwise picking a new
-    /// scenario in Advanced → System silently replays the previous canned answer
-    /// until the app restarts, and the H+ reproduction path lies.
+    /// Story 13-1b, AC "one save": `TestCleanup` is constructed with its scenario
+    /// baked in, and since 13-1b the same key also decides whether it is built at
+    /// all — so a change to `advanced.testProviderLlm` has to rebuild the cleanup
+    /// slot, or pressing Save would persist the new state while the next dictation
+    /// still ran the old one and the H+ reproduction path would lie.
     ///
-    /// PINS: a changed `debugLlmScenario` alone triggers the rebuild, and the
+    /// PINS: a changed `testProviderLlm` alone triggers the rebuild, and the
     /// rebuilt provider answers with the NEW scenario. DOES NOT PIN: the STT
-    /// side — `save_advanced_settings` never rebuilds the STT slot, so a changed
-    /// `debugSttScenario` takes effect on the next `save_settings` or app
-    /// restart (recorded, not fixed here).
+    /// side (the test below), nor persistence (that is `save_config_locked`'s).
     #[test]
-    fn spec_debug_llm_scenario_change_rebuilds_the_cleanup_provider() {
+    fn spec_test_provider_llm_change_rebuilds_the_cleanup_provider() {
         let base = AppConfig {
-            llm_provider: "debug".to_string(),
+            llm_provider: "deepseek".to_string(),
             ..AppConfig::default()
         };
         let mut changed = base.clone();
-        changed.advanced.debug_llm_scenario = "empty".to_string();
+        changed.advanced.test_provider_llm = "empty".to_string();
 
         assert!(
             cleanup_provider_reload_needed(
@@ -2382,23 +2427,30 @@ mod tests {
                 &changed.advanced,
                 &changed.llm_provider
             ),
-            "a changed debugLlmScenario must rebuild the cleanup provider"
+            "a changed testProviderLlm must rebuild the cleanup provider"
         );
 
-        // Discriminating half: an unchanged scenario must NOT trigger a rebuild,
+        // Discriminating half: an unchanged block must NOT trigger a rebuild,
         // so the assertion above cannot pass by always returning true.
         assert!(
             !cleanup_provider_reload_needed(&base.advanced, &base.advanced, &base.llm_provider),
             "an unchanged advanced block must not rebuild the cleanup provider"
         );
 
-        // …and the rebuild really installs the new scenario.
+        // …and the rebuild really installs the new scenario — the slot held the
+        // REAL DeepSeek provider before, so this also proves the switch-on path.
         let slot: std::sync::RwLock<Arc<dyn crate::llm::CleanupProvider>> =
             std::sync::RwLock::new(crate::pipeline::resolve_cleanup_provider(&base));
+        assert_ne!(
+            slot.read().expect("slot").model(),
+            crate::llm::TestCleanup::DEFAULT_MODEL,
+            "the slot must start on the real provider"
+        );
         let swapped = hot_reload_cleanup_provider(&slot, &base.advanced, &changed)
             .expect("swap must succeed");
         assert!(swapped, "the swap must have happened");
         let rebuilt = slot.read().expect("slot").clone();
+        assert_eq!(rebuilt.model(), crate::llm::TestCleanup::DEFAULT_MODEL);
         let err = tauri::async_runtime::block_on(rebuilt.cleanup(
             "text",
             CleanupStyle::Polished,
@@ -2410,5 +2462,57 @@ mod tests {
             matches!(err, crate::llm::LlmError::ResponseFormat(_)),
             "the NEW scenario must be live after the swap, got {err:?}"
         );
+    }
+
+    /// Story 13-1b, the other half of "one save": `save_advanced_settings` now
+    /// rebuilds the STT slot too. Without it "one save" would be true for
+    /// persistence and false for effect on the STT chain — the scenario would
+    /// need an app restart, which is exactly the operability defect this story
+    /// exists to remove.
+    ///
+    /// Inversion (verified RED at writing time): drop the
+    /// `hot_reload_stt_provider` call from `save_advanced_settings`, or make
+    /// `stt_provider_reload_needed` return `false`, and the rebuilt slot stays on
+    /// the real Groq provider (which refuses the empty audio below).
+    #[test]
+    fn spec_test_provider_stt_change_rebuilds_the_stt_provider() {
+        let base = AppConfig {
+            stt_provider: "groq".to_string(),
+            groq_api_key: "gsk-key".to_string(),
+            ..AppConfig::default()
+        };
+        let mut changed = base.clone();
+        changed.advanced.test_provider_stt = "ok".to_string();
+
+        assert!(
+            stt_provider_reload_needed(&base.advanced, &changed.advanced),
+            "a changed testProviderStt must rebuild the STT provider"
+        );
+        // Discriminating half: an unchanged block must NOT trigger a rebuild.
+        assert!(
+            !stt_provider_reload_needed(&base.advanced, &base.advanced),
+            "an unchanged advanced block must not rebuild the STT provider"
+        );
+
+        let dir = std::path::Path::new("/nonexistent");
+        let slot: std::sync::RwLock<Arc<dyn crate::stt::SttProvider>> =
+            std::sync::RwLock::new(crate::pipeline::resolve_stt_provider(&base, dir));
+        // Before the swap the slot is the real Groq path, which refuses empty
+        // audio before it opens a socket.
+        let before = slot.read().expect("slot").clone();
+        let err = tauri::async_runtime::block_on(before.transcribe(b"", "de", None))
+            .expect_err("the Groq path must refuse empty audio");
+        assert!(matches!(err, crate::stt::SttError::EmptyAudio), "got {err:?}");
+
+        let swapped = hot_reload_stt_provider(&slot, &base.advanced, &changed, dir)
+            .expect("swap must succeed");
+        assert!(swapped, "the swap must have happened");
+
+        // After the swap the test provider answers from its canned wire, with no
+        // network call and no `EmptyAudio` guard.
+        let after = slot.read().expect("slot").clone();
+        let text = tauri::async_runtime::block_on(after.transcribe(b"", "de", None))
+            .expect("the test STT provider must answer after the swap");
+        assert_eq!(text, "Debug provider canned transcript.");
     }
 }

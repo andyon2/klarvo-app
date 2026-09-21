@@ -202,14 +202,17 @@ export interface AdvancedSettings {
   /** When true, the Advanced UI surfaces the raw audio thresholds.
    *  UI-visibility flag only. */
   expertMode: boolean;
-  /** Story 13-1: which canned wire response the `debug` LLM cleanup provider
-   *  returns. One of `ok` (default), `empty`, `truncated`, `malformed`,
-   *  `http429`, `http5xx`, `transport`. Inert unless `llmProvider === "debug"`. */
-  debugLlmScenario: string;
-  /** Story 13-1: same set as `debugLlmScenario` minus `truncated` (the Rust
-   *  `SttError` has no truncation variant). Inert unless
-   *  `sttProvider === "debug"`. */
-  debugSttScenario: string;
+  /** Story 13-1b: the LLM cleanup chain's test provider. The value IS the
+   *  state: `off` (the default) uses the real provider from `llmProvider`, and
+   *  any other value both switches the test provider on and names the canned
+   *  wire response it returns (`ok`, `empty`, `truncated`, `malformed`,
+   *  `http429`, `http5xx`, `transport`). One field, one save — a
+   *  half-configured state cannot be expressed. */
+  testProviderLlm: string;
+  /** Story 13-1b: the STT chain's test provider. Same shape as
+   *  `testProviderLlm`, with the same set minus `truncated` (the Rust
+   *  `SttError` has no truncation variant). */
+  testProviderStt: string;
 }
 
 // Style display metadata.

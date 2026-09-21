@@ -4,7 +4,7 @@
 //! `com.klarvo.voice.GroqSttBridge`:
 //!
 //! - `nativeTranscribe(wavBase64, apiKey, language, dictionaryTerms, customPrompt,
-//!                      sttModel, temperature, sttProvider, debugSttScenario): String`
+//!                      sttModel, temperature, testProviderStt): String`
 //! - `nativeIsHallucination(text: String): Boolean`
 //! - `nativeIsPromptEcho(transcription: String, sttHint: String): Boolean`
 //! - `nativeStripPromptFragments(text: String, sttHint: String): String`
@@ -44,7 +44,7 @@
 //! but the **module is not**: [`select_stt_provider`] — the one decision
 //! `nativeTranscribe` makes before it hands off to the shared core — is plain
 //! Rust and compiles everywhere, so the Linux `cargo test --lib` gate can reach
-//! the Android debug branch. An android-gated selector would be a selector no
+//! the Android test branch. An android-gated selector would be a selector no
 //! executing test can reach (story 13-1).
 
 #[cfg(target_os = "android")]
@@ -67,19 +67,24 @@ use crate::pipeline::{compute_wav_rms, is_prompt_echo, silence_skip, strip_promp
 /// Picks the STT provider the Android JNI entry point will use.
 ///
 /// Extracted out of the `extern "system"` function so it is reachable by a plain
-/// Rust unit test: the Android `debug` branch was previously inside a function
-/// no test could call, on a target no test runs on, so inverting its comparison
+/// Rust unit test: the Android test branch was previously inside a function no
+/// test could call, on a target no test runs on, so inverting its comparison
 /// kept every gate green.
 ///
-/// `debug_scenario`, `api_key`, `model` and `temperature` are all read from
-/// `config.json` by Kotlin and carried through uninspected — the `"debug"`
-/// decision is made here, in Rust, which is what keeps ADR-0017 intact: Android
-/// gets the debug scenarios with no STT logic of its own.
+/// Story 13-1b: there is no `provider_name` argument any more. The value IS the
+/// state — `test_provider_stt` is `advanced.testProviderStt`, and anything but
+/// `"off"` both switches the test provider on and names the canned answer. That
+/// removes the pair of arguments that could disagree with each other.
 ///
-/// Any provider name other than [`crate::llm::DEBUG_PROVIDER_NAME`] keeps the
-/// production Groq path, including an empty string (the fail-soft value the JNI
-/// caller substitutes when it cannot read the argument): a debug run that cannot
-/// read its own arguments must degrade to the real provider, never the reverse.
+/// `test_provider_stt`, `api_key`, `model` and `temperature` are all read from
+/// `config.json` by Kotlin and carried through uninspected — the decision is
+/// made here, in Rust, which is what keeps ADR-0017 intact: Android gets the
+/// test scenarios with no STT logic of its own.
+///
+/// `"off"` and the empty string (the fail-soft value the JNI caller substitutes
+/// when it cannot read the argument) both keep the production Groq path: a test
+/// run that cannot read its own arguments must degrade to the real provider,
+/// never the reverse.
 ///
 /// Its only production caller is `nativeTranscribe` below, which is Android-only;
 /// on every other target it exists solely so the `cargo test --lib` gate can
@@ -87,15 +92,14 @@ use crate::pipeline::{compute_wav_rms, is_prompt_echo, silence_skip, strip_promp
 /// `config::load_config` uses for the mirror-image situation.
 #[cfg_attr(not(any(test, target_os = "android")), allow(dead_code))]
 pub fn select_stt_provider(
-    provider_name: &str,
-    debug_scenario: &str,
+    test_provider_stt: &str,
     api_key: &str,
     model: &str,
     temperature: f32,
 ) -> Box<dyn SttProvider> {
-    if provider_name == crate::llm::DEBUG_PROVIDER_NAME {
-        log::info!("[groq_jni] DEBUG STT provider active: scenario={debug_scenario}");
-        Box::new(crate::stt::DebugStt::new(debug_scenario))
+    if !test_provider_stt.is_empty() && test_provider_stt != crate::config::TEST_PROVIDER_OFF {
+        log::info!("[groq_jni] TEST STT provider active: scenario={test_provider_stt}");
+        Box::new(crate::stt::TestStt::new(test_provider_stt))
     } else {
         Box::new(
             GroqWhisper::new(api_key)
@@ -177,16 +181,21 @@ fn read_jstring(env: &mut JNIEnv, arg: JString, name: &str) -> Option<String> {
 /// - `custom_prompt`:    User custom STT hint (or empty).
 /// - `stt_model`:        Groq model name (e.g. "whisper-large-v3-turbo").
 /// - `temperature`:      Whisper sampling temperature (0.0 = deterministic).
-/// - `stt_provider`:     `config.sttProvider`, carried through by Kotlin without
-///                       being inspected there. Story 13-1: `"debug"` selects
-///                       [`crate::stt::DebugStt`]; every other value keeps the
-///                       Groq path. Deciding this HERE rather than in Kotlin is
-///                       what keeps ADR-0017 intact — Android gets the debug
-///                       scenarios with no STT logic of its own, and the
-///                       `__ERROR_*` sentinels below are still emitted by the
-///                       real mapping rather than forged.
-/// - `debug_stt_scenario`: `config.debugSttScenario`. Read only when
-///                       `stt_provider == "debug"`.
+/// - `test_provider_stt`: `config.advanced.testProviderStt`, carried through by
+///                       Kotlin without being inspected there. Story 13-1b:
+///                       anything but `"off"` selects [`crate::stt::TestStt`]
+///                       with that value as its scenario; `"off"` (and an
+///                       unreadable argument) keeps the Groq path. Deciding this
+///                       HERE rather than in Kotlin is what keeps ADR-0017
+///                       intact — Android gets the test scenarios with no STT
+///                       logic of its own, and the `__ERROR_*` sentinels below
+///                       are still emitted by the real mapping rather than
+///                       forged.
+///
+/// ⚠️ The parameter list is 8 wide since story 13-1b (was 9). `#[no_mangle]`
+/// exports the short JNI name with no signature suffix, so this declaration and
+/// `GroqSttBridge.nativeTranscribe` must change in the SAME commit — a one-sided
+/// edit, or a stale `libklarvo_lib.so`, misbinds silently instead of throwing.
 ///
 /// Returns: transcribed text, or an empty string on any error.
 ///
@@ -209,8 +218,7 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
     custom_prompt: JString,
     stt_model: JString,
     temperature: jfloat,
-    stt_provider: JString,
-    debug_stt_scenario: JString,
+    test_provider_stt: JString,
 ) -> jstring {
     // --- Unmarshal string arguments ---
     let b64 = match read_jstring(&mut env, wav_base64, "wav_base64") {
@@ -232,12 +240,12 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
         _ => "whisper-large-v3-turbo".to_string(),
     };
     let temp = temperature as f32;
-    // Story 13-1. Both default to the production path on a read failure — a
-    // debug run that cannot read its own arguments must degrade to the real
-    // provider, never the other way round.
-    let provider_name = read_jstring(&mut env, stt_provider, "stt_provider").unwrap_or_default();
-    let debug_scenario =
-        read_jstring(&mut env, debug_stt_scenario, "debug_stt_scenario").unwrap_or_default();
+    // Story 13-1b. ONE argument now, and it defaults to the production path on a
+    // read failure — a test run that cannot read its own arguments must degrade
+    // to the real provider, never the other way round. `unwrap_or_default()`
+    // yields `""`, which `select_stt_provider` treats exactly like `"off"`.
+    let test_provider =
+        read_jstring(&mut env, test_provider_stt, "test_provider_stt").unwrap_or_default();
 
     // --- Decode Base64 → WAV bytes ---
     use base64::Engine as _;
@@ -261,13 +269,13 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
 
     // --- Build client (H9: sttModel from config, H10: no hardcoded model literal) ---
     //
-    // Story 13-1: `sttProvider == "debug"` swaps in the canned-wire provider.
-    // The choice lives in [`select_stt_provider`] so a Rust test can reach it;
-    // everything below is unchanged — the same runtime, the same guard chain and
-    // the same `__ERROR_*` sentinel mapping — so an Android debug run produces
-    // the production strings instead of imitating them.
+    // Story 13-1b: a non-`off` `advanced.testProviderStt` swaps in the
+    // canned-wire provider. The choice lives in [`select_stt_provider`] so a Rust
+    // test can reach it; everything below is unchanged — the same runtime, the
+    // same guard chain and the same `__ERROR_*` sentinel mapping — so an Android
+    // test run produces the production strings instead of imitating them.
     let client: Box<dyn SttProvider> =
-        select_stt_provider(&provider_name, &debug_scenario, &key, &model, temp);
+        select_stt_provider(&test_provider, &key, &model, temp);
 
     // --- Weg A: throwaway current-thread runtime + block_on ---
     // `WhisperStt::transcribe` is async over reqwest. From JNI there is no shared

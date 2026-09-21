@@ -388,13 +388,13 @@ impl SttProvider for WhisperStt {
 }
 
 // ---------------------------------------------------------------------------
-// Response → Result mapping (shared by WhisperStt and DebugStt)
+// Response → Result mapping (shared by WhisperStt and TestStt)
 // ---------------------------------------------------------------------------
 
 /// Maps a transcription HTTP response to the transcript text.
 ///
 /// Extracted **verbatim** from `WhisperStt::transcribe` (story 13-1,
-/// behaviour-preserving) so [`DebugStt`] can drive the same mapping from a
+/// behaviour-preserving) so [`TestStt`] can drive the same mapping from a
 /// synthesised response. Every `SttError` variant the live path produced it
 /// still produces.
 ///
@@ -403,7 +403,7 @@ impl SttProvider for WhisperStt {
 /// path reads `bytes()` and parses with `serde_json::from_slice`, so an
 /// undecodable body becomes `SttError::ResponseFormat` — **non-retryable** —
 /// whereas the LLM path's `response.json()` yields a retryable
-/// `LlmError::Request`. The debug provider reports whatever each twin's own
+/// `LlmError::Request`. The test provider reports whatever each twin's own
 /// mapping does; it does not harmonise them.
 ///
 /// AC6: parses the `verbose_json` response with both-shape tolerance. It
@@ -465,19 +465,19 @@ pub(crate) async fn map_transcription_http_response(
 }
 
 // ---------------------------------------------------------------------------
-// DebugStt -- canned wire responses for reproducing STT anomalies
+// TestStt -- canned wire responses for reproducing STT anomalies
 // (Story 13-1, the H+ enabler for drift row D9/D-M5+D-M6)
 // ---------------------------------------------------------------------------
 
-/// The canned `(status, body)` pair for a debug STT scenario.
+/// The canned `(status, body)` pair for a test STT scenario.
 ///
 /// `None` means "no response at all" — the caller performs a real request to
-/// [`crate::llm::DEBUG_TRANSPORT_URL`] (the loopback discard port) instead.
+/// [`crate::llm::TEST_TRANSPORT_URL`] (the loopback discard port) instead.
 ///
 /// The scenario set is the LLM set **minus `truncated`**: [`SttError`] has no
 /// truncation variant, so there is nothing for a truncated STT answer to map
 /// to. An unrecognised scenario resolves like `"ok"`.
-pub(crate) fn debug_stt_canned_wire(scenario: &str) -> Option<(u16, &'static str)> {
+pub(crate) fn test_stt_canned_wire(scenario: &str) -> Option<(u16, &'static str)> {
     match scenario {
         // 200 with an empty transcript: the verbose parse succeeds and
         // `extract_verbose_text` yields "" → ResponseFormat (drift row D-M5).
@@ -489,6 +489,10 @@ pub(crate) fn debug_stt_canned_wire(scenario: &str) -> Option<(u16, &'static str
         // (`SttError::Request`) that `response.json()` would have produced. The
         // asymmetry is real and pre-existing; it is pinned as a finding, not
         // normalised away.
+        // NOTE: the canned bodies are byte-identical to story 13-1's and are
+        // pinned as such by the fixture on both twins. The word "Debug" inside
+        // them is wire payload, not naming — renaming it would break the
+        // "same bytes, two mappings" premise the whole enabler rests on.
         "malformed" => Some((200, r#"{"unexpected":"debug provider malformed body"}"#)),
         "http429" => Some((
             429,
@@ -523,20 +527,20 @@ pub(crate) fn debug_stt_canned_wire(scenario: &str) -> Option<(u16, &'static str
 /// `groq_jni::select_stt_provider("debug", …)` with empty audio and still reach
 /// the canned mapping, while the same call with `"groq"` stops at `EmptyAudio`
 /// before any socket is opened.
-pub struct DebugStt {
+pub struct TestStt {
     scenario: String,
 }
 
-impl DebugStt {
+impl TestStt {
     pub fn new(scenario: impl Into<String>) -> Self {
-        DebugStt {
+        TestStt {
             scenario: scenario.into(),
         }
     }
 }
 
 #[async_trait::async_trait]
-impl SttProvider for DebugStt {
+impl SttProvider for TestStt {
     async fn transcribe(
         &self,
         _audio: &[u8],
@@ -544,16 +548,16 @@ impl SttProvider for DebugStt {
         _prompt: Option<&str>,
     ) -> Result<String, SttError> {
         log::info!(
-            "[stt] DEBUG STT provider active: scenario={}",
+            "[stt] TEST STT provider active: scenario={}",
             self.scenario
         );
-        match debug_stt_canned_wire(&self.scenario) {
-            Some((status, body)) => match crate::llm::debug_canned_response(status, body) {
+        match test_stt_canned_wire(&self.scenario) {
+            Some((status, body)) => match crate::llm::test_canned_response(status, body) {
                 // The synthesised response goes through the REAL mapping, so the
                 // outcome is whatever the live path would produce for these bytes.
                 Some(response) => map_transcription_http_response(response).await,
                 None => Err(SttError::ResponseFormat(format!(
-                    "Debug provider: invalid canned status {status}"
+                    "Test provider: invalid canned status {status}"
                 ))),
             },
             None => {
@@ -566,14 +570,14 @@ impl SttProvider for DebugStt {
                 // the pipeline (and `cargo test --lib`) forever. Plus
                 // `.no_proxy()`: with `HTTP_PROXY` set, reqwest would otherwise
                 // route this probe through the proxy and the "no byte leaves the
-                // device" claim on `DEBUG_TRANSPORT_URL` would be false.
+                // device" claim on `TEST_TRANSPORT_URL` would be false.
                 let response = reqwest::Client::builder()
                     .connect_timeout(std::time::Duration::from_secs(15))
                     .timeout(std::time::Duration::from_secs(30))
                     .no_proxy()
                     .build()
                     .unwrap_or_else(|_| reqwest::Client::new())
-                    .post(crate::llm::DEBUG_TRANSPORT_URL)
+                    .post(crate::llm::TEST_TRANSPORT_URL)
                     .send()
                     .await?;
                 map_transcription_http_response(response).await
@@ -1106,12 +1110,12 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Story 13-1 — debug test provider (STT half, shared core per ADR-0017)
+    // Story 13-1/13-1b — test provider (STT half, shared core per ADR-0017)
     //
-    // Driven by the SAME test-fixtures/debug-provider-scenario-vectors.json the
-    // LLM half in llm/mod.rs and the Kotlin twin's DebugProviderScenarioTest
+    // Driven by the SAME test-fixtures/test-provider-scenario-vectors.json the
+    // LLM half in llm/mod.rs and the Kotlin twin's TestProviderScenarioTest
     // read. Every assertion compares a PRODUCTION seam
-    // (`debug_stt_canned_wire`, `DebugStt::transcribe`) against the FIXTURE
+    // (`test_stt_canned_wire`, `TestStt::transcribe`) against the FIXTURE
     // literal, never against another production symbol.
     //
     // There is no Kotlin twin for these vectors by construction: ADR-0017 makes
@@ -1120,20 +1124,20 @@ mod tests {
     // says so, and the Kotlin test skips them by surface.
     // -----------------------------------------------------------------------
 
-    fn load_debug_vectors() -> Vec<serde_json::Value> {
+    fn load_test_vectors() -> Vec<serde_json::Value> {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
         let path = std::path::Path::new(&manifest_dir)
             .parent()
             .expect("workspace root")
-            .join("test-fixtures/debug-provider-scenario-vectors.json");
+            .join("test-fixtures/test-provider-scenario-vectors.json");
         let content = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
         serde_json::from_str(&content)
-            .expect("debug-provider-scenario-vectors.json must be a JSON array")
+            .expect("test-provider-scenario-vectors.json must be a JSON array")
     }
 
     /// Throwing lookup — a missing id must fail loudly, never skip the assertion.
-    fn debug_vector(vectors: &[serde_json::Value], id: &str) -> serde_json::Value {
+    fn test_vector(vectors: &[serde_json::Value], id: &str) -> serde_json::Value {
         vectors
             .iter()
             .find(|v| v["id"].as_str() == Some(id))
@@ -1157,8 +1161,8 @@ mod tests {
     /// the canned bytes it puts on the wire, and the verdict the real mapping
     /// returns for them.
     async fn assert_stt_vector(id: &str) {
-        let vectors = load_debug_vectors();
-        let v = debug_vector(&vectors, id);
+        let vectors = load_test_vectors();
+        let v = test_vector(&vectors, id);
         assert_eq!(v["surface"].as_str(), Some("stt"), "{id} is not an stt vector");
         assert_eq!(
             v["kotlin"]["outcome"].as_str(),
@@ -1171,7 +1175,7 @@ mod tests {
         let wire = &v["wire"];
         match wire["kind"].as_str().expect("wire.kind") {
             "canned" => {
-                let (status, body) = debug_stt_canned_wire(scenario)
+                let (status, body) = test_stt_canned_wire(scenario)
                     .unwrap_or_else(|| panic!("{id}: {scenario} must produce a canned wire"));
                 assert_eq!(
                     u64::from(status),
@@ -1186,11 +1190,11 @@ mod tests {
             }
             "loopback" => {
                 assert!(
-                    debug_stt_canned_wire(scenario).is_none(),
+                    test_stt_canned_wire(scenario).is_none(),
                     "{id}: {scenario} must have NO canned wire (it performs a real loopback request)"
                 );
                 assert_eq!(
-                    crate::llm::DEBUG_TRANSPORT_URL,
+                    crate::llm::TEST_TRANSPORT_URL,
                     wire["url"].as_str().expect("wire.url"),
                     "{id}: loopback URL must match the fixture"
                 );
@@ -1199,9 +1203,9 @@ mod tests {
             // the STT picker, so the provider must treat it like any other
             // unknown string (fail-soft to `ok`), not invent an outcome.
             "not_offered" => {
-                let ok_wire = debug_stt_canned_wire("ok").expect("ok must have a canned wire");
+                let ok_wire = test_stt_canned_wire("ok").expect("ok must have a canned wire");
                 assert_eq!(
-                    debug_stt_canned_wire(scenario),
+                    test_stt_canned_wire(scenario),
                     Some(ok_wire),
                     "{id}: a not-offered scenario must fall back to the ok wire"
                 );
@@ -1210,7 +1214,7 @@ mod tests {
         }
 
         // (b) the verdict the REAL mapping returns, against the fixture literal.
-        let provider = DebugStt::new(scenario);
+        let provider = TestStt::new(scenario);
         let result = provider.transcribe(b"not-a-real-wav", "de", None).await;
         let expected = &v["rust"];
         match expected["outcome"].as_str().expect("rust.outcome") {
@@ -1248,7 +1252,7 @@ mod tests {
                     );
                 }
                 // (c) whether the production retry fires for this shape, from
-                // the real predicate. `DEBUG-STT-MALFORMED-001` pins `false`
+                // the real predicate. `TEST-STT-MALFORMED-001` pins `false`
                 // here while its LLM twin pins `true` — the LLM↔STT
                 // retryability asymmetry, recorded rather than normalised away.
                 if let Some(want) = expected["retryable"].as_bool() {
@@ -1267,8 +1271,8 @@ mod tests {
     /// MINUS `truncated` — `SttError` has no truncation variant, so there would
     /// be nothing for it to map to.
     #[test]
-    fn spec_debug_stt_scenario_set_is_the_llm_set_minus_truncated() {
-        let vectors = load_debug_vectors();
+    fn spec_test_stt_scenario_set_is_the_llm_set_minus_truncated() {
+        let vectors = load_test_vectors();
         let llm: Vec<&str> = vectors
             .iter()
             .filter(|v| v["surface"].as_str() == Some("llm"))
@@ -1290,50 +1294,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spec_debug_stt_ok() {
-        assert_stt_vector("DEBUG-STT-OK-001").await;
+    async fn spec_test_stt_ok() {
+        assert_stt_vector("TEST-STT-OK-001").await;
     }
 
     #[tokio::test]
-    async fn spec_debug_stt_empty() {
-        assert_stt_vector("DEBUG-STT-EMPTY-001").await;
+    async fn spec_test_stt_empty() {
+        assert_stt_vector("TEST-STT-EMPTY-001").await;
     }
 
     #[tokio::test]
-    async fn spec_debug_stt_malformed() {
-        assert_stt_vector("DEBUG-STT-MALFORMED-001").await;
+    async fn spec_test_stt_malformed() {
+        assert_stt_vector("TEST-STT-MALFORMED-001").await;
     }
 
     #[tokio::test]
-    async fn spec_debug_stt_http429() {
-        assert_stt_vector("DEBUG-STT-HTTP429-001").await;
+    async fn spec_test_stt_http429() {
+        assert_stt_vector("TEST-STT-HTTP429-001").await;
     }
 
     #[tokio::test]
-    async fn spec_debug_stt_http5xx() {
-        assert_stt_vector("DEBUG-STT-HTTP5XX-001").await;
+    async fn spec_test_stt_http5xx() {
+        assert_stt_vector("TEST-STT-HTTP5XX-001").await;
     }
 
     /// Performs a REAL request to the loopback discard port. No byte leaves the
     /// device and nothing listens there, so this is hermetic and fast.
     #[tokio::test]
-    async fn spec_debug_stt_transport() {
-        assert_stt_vector("DEBUG-STT-TRANSPORT-001").await;
+    async fn spec_test_stt_transport() {
+        assert_stt_vector("TEST-STT-TRANSPORT-001").await;
     }
 
     /// `truncated` is not offered on the STT side; the provider must fail soft
     /// to `ok` rather than panic or invent an outcome.
     #[tokio::test]
-    async fn spec_debug_stt_truncated_is_not_offered() {
-        assert_stt_vector("DEBUG-STT-NO-TRUNCATED-001").await;
+    async fn spec_test_stt_truncated_is_not_offered() {
+        assert_stt_vector("TEST-STT-NO-TRUNCATED-001").await;
     }
 
-    /// Synthesises the response the same way `DebugStt` does.
+    /// Synthesises the response the same way `TestStt` does.
     fn canned(status: u16, body: &str) -> reqwest::Response {
-        crate::llm::debug_canned_response(status, body).expect("canned status must be valid")
+        crate::llm::test_canned_response(status, body).expect("canned status must be valid")
     }
 
-    /// The extraction that made the debug provider possible must not have moved
+    /// The extraction that made the test provider possible must not have moved
     /// the real mapping: the same wire bytes `transcribe` would see yield the
     /// same verdicts they yielded before.
     #[tokio::test]
@@ -1374,50 +1378,61 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Story 13-1 — the ANDROID debug branch (groq_jni::select_stt_provider)
+    // Story 13-1/13-1b — the ANDROID test branch (groq_jni::select_stt_provider)
     //
-    // The review's one unfixed `high` was that no executing test reached the
-    // Android debug branch: it sat inside an `extern "system"` fn, on a target
-    // the test gate never builds. The selector is now a plain function, and
-    // these two tests are the pair that makes inverting its comparison fail.
+    // Story 13-1's review found that no executing test reached the Android test
+    // branch: it sat inside an `extern "system"` fn, on a target the test gate
+    // never builds. The selector is a plain function now, and these three tests
+    // are what makes inverting its comparison fail.
     //
-    // The discriminator is EMPTY AUDIO: `DebugStt` ignores the audio entirely,
-    // so it reaches its canned mapping, while `WhisperStt::transcribe` returns
+    // Story 13-1b collapsed its two arguments into one: `advanced.testProviderStt`
+    // alone decides, so the pair that could disagree is gone. The near-miss
+    // discriminators below ("Test", "testx", "") are kept, now against the value
+    // rather than a provider name.
+    //
+    // The discriminator is EMPTY AUDIO: `TestStt` ignores the audio entirely, so
+    // it reaches its canned mapping, while `WhisperStt::transcribe` returns
     // `EmptyAudio` before it builds a request. Neither opens a socket.
     // -----------------------------------------------------------------------
 
-    /// `select_stt_provider("debug", …)` must hand back the debug provider.
+    /// A non-`off` `testProviderStt` must hand back the test provider.
     ///
     /// Inversion (verified RED at writing time): flipping the comparison in
-    /// `select_stt_provider` to `!=` makes this return `EmptyAudio` instead of
+    /// `select_stt_provider` to `==` makes this return `EmptyAudio` instead of
     /// the canned transcript.
     #[tokio::test]
-    async fn spec_android_select_stt_provider_reaches_the_debug_branch() {
+    async fn spec_android_select_stt_provider_reaches_the_test_branch() {
         let provider = crate::stt::groq_jni::select_stt_provider(
-            crate::llm::DEBUG_PROVIDER_NAME,
             "ok",
-            "", // no API key: a debug run must not need one
+            "", // no API key: a test run must not need one
             "whisper-large-v3-turbo",
             0.0,
         );
         let text = provider
             .transcribe(b"", "de", None)
             .await
-            .expect("the debug provider ignores the audio and answers from its canned wire");
-        let vectors = load_debug_vectors();
-        let ok = debug_vector(&vectors, "DEBUG-STT-OK-001");
+            .expect("the test provider ignores the audio and answers from its canned wire");
+        let vectors = load_test_vectors();
+        let ok = test_vector(&vectors, "TEST-STT-OK-001");
         assert_eq!(text, ok["rust"]["text"].as_str().expect("rust.text"));
     }
 
-    /// The other half: every other provider name keeps the production Groq path,
-    /// which stops at `EmptyAudio` before any network call. Without this the
-    /// test above could pass with a selector that always returns `DebugStt`.
+    /// The other half: `off` — and the empty string the JNI caller substitutes
+    /// when it cannot read the argument — keep the production Groq path, which
+    /// stops at `EmptyAudio` before any network call. Without this the test above
+    /// could pass with a selector that always returns `TestStt`.
+    ///
+    /// `"Test"` and `"testx"` are near misses of the provider's own NAME, kept
+    /// from story 13-1: they are not values of this key, so they must be
+    /// normalized away at config load and never reach here — but if one did, it
+    /// is a legal non-`off` value and the fail-safe direction for an *active*
+    /// state is already covered by `migrate_and_normalize`. What must never
+    /// happen is the reverse, and that is what `""` pins.
     #[tokio::test]
-    async fn spec_android_select_stt_provider_keeps_groq_for_every_other_name() {
-        for name in ["groq", "openai", "", "Debug", "debugx"] {
+    async fn spec_android_select_stt_provider_keeps_groq_for_off_and_unreadable() {
+        for value in [crate::config::TEST_PROVIDER_OFF, ""] {
             let provider = crate::stt::groq_jni::select_stt_provider(
-                name,
-                "ok",
+                value,
                 "gsk-not-a-real-key",
                 "whisper-large-v3-turbo",
                 0.0,
@@ -1428,17 +1443,20 @@ mod tests {
                 .expect_err("the Groq path must refuse empty audio before it opens a socket");
             assert!(
                 matches!(err, SttError::EmptyAudio),
-                "provider name {name:?} must keep the Groq path, got {err:?}"
+                "value {value:?} must keep the Groq path, got {err:?}"
             );
         }
     }
 
-    /// The scenario argument is carried through to the provider, not ignored —
-    /// otherwise an Android debug run would always replay `ok`.
+    /// The scenario value is carried through to the provider, not ignored —
+    /// otherwise an Android test run would always replay `ok`. The near-miss
+    /// names `"Test"` and `"testx"` are non-`off` strings, so they DO switch the
+    /// provider on and fail soft to `ok`, exactly like any unrecognised scenario
+    /// (`test_stt_canned_wire`'s `_ =>` arm). That is the shipped fail-soft rule,
+    /// pinned here so a future "reject unknown scenarios" change is deliberate.
     #[tokio::test]
     async fn spec_android_select_stt_provider_carries_the_scenario() {
         let provider = crate::stt::groq_jni::select_stt_provider(
-            crate::llm::DEBUG_PROVIDER_NAME,
             "http429",
             "",
             "whisper-large-v3-turbo",
@@ -1452,5 +1470,24 @@ mod tests {
             matches!(err, SttError::ApiError { status: 429, .. }),
             "the selected scenario must reach the provider, got {err:?}"
         );
+
+        let vectors = load_test_vectors();
+        let ok = test_vector(&vectors, "TEST-STT-OK-001");
+        for near_miss in ["Test", "testx"] {
+            let text = crate::stt::groq_jni::select_stt_provider(
+                near_miss,
+                "",
+                "whisper-large-v3-turbo",
+                0.0,
+            )
+            .transcribe(b"", "de", None)
+            .await
+            .expect("an unrecognised scenario must fail soft to ok");
+            assert_eq!(
+                text,
+                ok["rust"]["text"].as_str().expect("rust.text"),
+                "{near_miss:?} must behave like `ok`, not invent an outcome"
+            );
+        }
     }
 }

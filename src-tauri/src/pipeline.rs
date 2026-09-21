@@ -40,13 +40,17 @@ use crate::setup_audio_level_emitter;
 ///
 /// Falls back to a Groq instance (which will fail at call-time with an auth
 /// error) if the provider string is unrecognised, so startup always succeeds.
+///
+/// Story 13-1b: `advanced.testProviderStt` wins BEFORE `stt_provider` is read at
+/// all. The value is the state — anything but `"off"` both switches the test
+/// provider on and names the canned answer — so no combination of the two keys
+/// can express a half-configured "on but no scenario".
 pub fn resolve_stt_provider(cfg: &AppConfig, app_data_dir: &std::path::Path) -> Arc<dyn SttProvider> {
+    if cfg.advanced.test_provider_stt != config::TEST_PROVIDER_OFF {
+        return Arc::new(stt::TestStt::new(&cfg.advanced.test_provider_stt));
+    }
     match cfg.stt_provider.as_str() {
         "openai" => Arc::new(stt::OpenAiWhisper::new(&cfg.openai_api_key)),
-        // Story 13-1 (llm::DEBUG_PROVIDER_NAME): canned wire responses, no
-        // network. Explicit arm because the catch-all below silently resolves an
-        // unknown value to Groq.
-        llm::DEBUG_PROVIDER_NAME => Arc::new(stt::DebugStt::new(&cfg.advanced.debug_stt_scenario)),
         #[cfg(any(target_os = "windows", target_os = "android"))]
         "local" => build_local_whisper_provider(cfg, app_data_dir),
         #[cfg(not(any(target_os = "windows", target_os = "android")))]
@@ -241,13 +245,12 @@ pub(crate) fn cleanup_provider_for(
             "https://openrouter.ai/api/v1/chat/completions",
             "deepseek/deepseek-chat",
         )),
-        // Story 13-1 (llm::DEBUG_PROVIDER_NAME): canned wire responses, no
-        // network, no API key. Explicit arm because the catch-all below silently
-        // resolves an unknown value to DeepSeek. This is a *constructible*
-        // provider only — it is NOT in `resolve_fallback_provider`'s candidate
-        // array, exactly as Anthropic is constructible here without being a
-        // fallback candidate.
-        llm::DEBUG_PROVIDER_NAME => Arc::new(llm::DebugCleanup::new(&advanced.debug_llm_scenario)),
+        // Story 13-1b: this function stays CLOSED to the test provider. It maps a
+        // real provider NAME plus its API key to a client, and the test provider
+        // is no longer selected by name — `resolve_cleanup_provider` above builds
+        // it from `advanced.testProviderLlm` before it ever gets here. Adding an
+        // arm back would make the test provider reachable from
+        // `resolve_fallback_provider`'s neighbourhood, which must stay closed.
         // "deepseek" and any unrecognised value
         _ => Arc::new(
             llm::DeepSeekCleanup::new(api_key)
@@ -265,16 +268,20 @@ pub(crate) fn cleanup_provider_for(
 ///
 /// Falls back to DeepSeek (which will fail at call-time with an auth error)
 /// for unrecognised values, so startup always succeeds.
+///
+/// Story 13-1b: `advanced.testProviderLlm` wins BEFORE `llm_provider` is read at
+/// all, and needs no API key. The value is the state, so `llm_provider` keeps
+/// whatever real provider the user configured and the test provider can be
+/// switched back off without having to remember what was there before.
 pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
+    if cfg.advanced.test_provider_llm != config::TEST_PROVIDER_OFF {
+        return Arc::new(llm::TestCleanup::new(&cfg.advanced.test_provider_llm));
+    }
     match cfg.llm_provider.as_str() {
         "openai" => cleanup_provider_for("openai", &cfg.openai_api_key, &cfg.advanced),
         "anthropic" => cleanup_provider_for("anthropic", &cfg.anthropic_api_key, &cfg.advanced),
         "groq" => cleanup_provider_for("groq", &cfg.groq_api_key, &cfg.advanced),
         "openrouter" => cleanup_provider_for("openrouter", &cfg.openrouter_api_key, &cfg.advanced),
-        // Story 13-1: the debug provider needs no API key.
-        llm::DEBUG_PROVIDER_NAME => {
-            cleanup_provider_for(llm::DEBUG_PROVIDER_NAME, "", &cfg.advanced)
-        }
         #[cfg(target_os = "windows")]
         "local" => {
             let model_dir = std::env::var("APPDATA")
@@ -3073,52 +3080,69 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Story 13-1 — the `debug` provider is REACHABLE but never a FALLBACK
+    // Story 13-1b — the test provider is selected by the ADVANCED KEY, is
+    // REACHABLE, and is never a FALLBACK
     // -----------------------------------------------------------------------
 
-    /// `llm_provider = "debug"` must reach `DebugCleanup`, not silently become
-    /// DeepSeek via the catch-all. Observable without a network call: only the
-    /// debug provider reports `model() == "debug"`.
+    /// A non-`off` `advanced.testProviderLlm` selects the test provider **while
+    /// `llm_provider` stays `"deepseek"`** — the whole point of moving selection
+    /// off the provider name: switching the test provider back off returns the
+    /// user to the provider they had configured, with nothing to remember.
     ///
-    /// Inversion (verified RED at writing time): delete the `"debug"` arm from
+    /// Observable without a network call: only the test provider reports
+    /// `model() == "test"`.
+    ///
+    /// Inversion (verified RED at writing time): delete the early return from
     /// `resolve_cleanup_provider` and the resolved model becomes `deepseek-chat`.
     #[test]
-    fn spec_debug_llm_provider_resolves_to_the_debug_provider() {
+    fn spec_test_provider_llm_key_selects_the_test_provider() {
         let cfg = AppConfig {
-            llm_provider: "debug".to_string(),
-            // A DeepSeek key is present precisely so a silent fall-through to
-            // the catch-all would still build a usable provider and hide itself.
+            // The REAL provider stays configured and keyed, precisely so a
+            // silent fall-through would still build a usable provider and hide
+            // itself.
+            llm_provider: "deepseek".to_string(),
             deepseek_api_key: "ds-key".to_string(),
+            advanced: config::AdvancedSettings {
+                test_provider_llm: "empty".to_string(),
+                ..config::AdvancedSettings::default()
+            },
             ..AppConfig::default()
         };
         assert_eq!(
             resolve_cleanup_provider(&cfg).model(),
-            llm::DebugCleanup::DEFAULT_MODEL
+            llm::TestCleanup::DEFAULT_MODEL
         );
-        // Discriminating half: any other value must NOT resolve to the debug
-        // provider, so the assertion above cannot pass vacuously.
-        let deepseek = AppConfig {
+        assert_eq!(
+            cfg.llm_provider, "deepseek",
+            "the real provider key must be untouched by the test provider"
+        );
+
+        // Discriminating half: `off` must resolve to the REAL provider, so the
+        // assertion above cannot pass vacuously.
+        let off = AppConfig {
             llm_provider: "deepseek".to_string(),
             deepseek_api_key: "ds-key".to_string(),
             ..AppConfig::default()
         };
+        assert_eq!(off.advanced.test_provider_llm, "off");
         assert_ne!(
-            resolve_cleanup_provider(&deepseek).model(),
-            llm::DebugCleanup::DEFAULT_MODEL
+            resolve_cleanup_provider(&off).model(),
+            llm::TestCleanup::DEFAULT_MODEL
         );
     }
 
-    /// `cleanup_provider_for("debug", …)` reads the scenario out of the
-    /// `advanced` block it is already handed — the same block every other arm
-    /// reads its model override from.
+    /// The chosen scenario reaches the provider — otherwise every run would
+    /// replay `ok` and the H+ reproduction path would lie.
     #[tokio::test]
-    async fn spec_debug_llm_provider_reads_its_scenario_from_advanced() {
-        let advanced = config::AdvancedSettings {
-            debug_llm_scenario: "truncated".to_string(),
-            ..config::AdvancedSettings::default()
+    async fn spec_test_provider_llm_key_carries_its_scenario() {
+        let cfg = AppConfig {
+            advanced: config::AdvancedSettings {
+                test_provider_llm: "truncated".to_string(),
+                ..config::AdvancedSettings::default()
+            },
+            ..AppConfig::default()
         };
-        let provider = cleanup_provider_for("debug", "", &advanced);
-        let err = provider
+        let err = resolve_cleanup_provider(&cfg)
             .cleanup("text", llm::CleanupStyle::Polished, None, None)
             .await
             .expect_err("the truncated scenario must produce an error");
@@ -3128,63 +3152,120 @@ mod tests {
         );
     }
 
-    /// `stt_provider = "debug"` must reach `DebugStt`, not silently become Groq.
+    /// `cleanup_provider_for` stays CLOSED to the test provider: it maps a real
+    /// provider NAME to a client, and no name may produce the test provider.
+    /// Without this the test provider would be constructible from the same
+    /// neighbourhood `resolve_fallback_provider` draws from.
+    #[test]
+    fn spec_cleanup_provider_for_is_closed_to_the_test_provider() {
+        let advanced = config::AdvancedSettings {
+            test_provider_llm: "empty".to_string(),
+            ..config::AdvancedSettings::default()
+        };
+        for name in [
+            "deepseek",
+            "openai",
+            "anthropic",
+            "groq",
+            "openrouter",
+            "test",
+            "debug",
+            "",
+        ] {
+            assert_ne!(
+                cleanup_provider_for(name, "key", &advanced).model(),
+                llm::TestCleanup::DEFAULT_MODEL,
+                "cleanup_provider_for({name:?}) must never build the test provider"
+            );
+        }
+    }
+
+    /// A non-`off` `advanced.testProviderStt` selects the test STT provider while
+    /// `stt_provider` keeps its real value.
     ///
-    /// Inversion (verified RED at writing time): delete the `"debug"` arm from
+    /// Inversion (verified RED at writing time): delete the early return from
     /// `resolve_stt_provider` and the canned transcript is replaced by a real
     /// Groq request (here: an auth error, never the canned text).
     #[tokio::test]
-    async fn spec_debug_stt_provider_resolves_to_the_debug_provider() {
+    async fn spec_test_provider_stt_key_selects_the_test_provider() {
         let cfg = AppConfig {
-            stt_provider: "debug".to_string(),
+            stt_provider: "groq".to_string(),
+            groq_api_key: "gsk-key".to_string(),
+            advanced: config::AdvancedSettings {
+                test_provider_stt: "ok".to_string(),
+                ..config::AdvancedSettings::default()
+            },
+            ..AppConfig::default()
+        };
+        let text = resolve_stt_provider(&cfg, std::path::Path::new("/nonexistent"))
+            .transcribe(b"not-a-real-wav", "de", None)
+            .await
+            .expect("the test STT provider must answer without a network call");
+        assert_eq!(text, "Debug provider canned transcript.");
+
+        // Discriminating half: with the key `off`, the same config must take the
+        // real Groq path, which refuses empty audio before opening a socket.
+        let off = AppConfig {
+            stt_provider: "groq".to_string(),
             groq_api_key: "gsk-key".to_string(),
             ..AppConfig::default()
         };
-        let provider = resolve_stt_provider(&cfg, std::path::Path::new("/nonexistent"));
-        let text = provider
-            .transcribe(b"not-a-real-wav", "de", None)
+        let err = resolve_stt_provider(&off, std::path::Path::new("/nonexistent"))
+            .transcribe(b"", "de", None)
             .await
-            .expect("the debug STT provider must answer without a network call");
-        assert_eq!(text, "Debug provider canned transcript.");
+            .expect_err("the Groq path must refuse empty audio");
+        assert!(matches!(err, stt::SttError::EmptyAudio), "got {err:?}");
     }
 
-    /// AC: `debug` must never appear as a cleanup-fallback candidate, so a debug
-    /// 429/5xx fires the PRODUCTION ladder (deepseek → openai → openrouter) and
-    /// the debug provider can never rescue itself.
+    /// AC: the test provider must never appear as a cleanup-fallback candidate,
+    /// so a test 429/5xx fires the PRODUCTION ladder
+    /// (deepseek → openai → openrouter) and the test provider can never rescue
+    /// itself.
+    ///
+    /// Story 13-1b extends the story-13-1 test: the candidate array must be
+    /// unchanged *while the test provider is active*, which is the state that
+    /// did not exist before (13-1 expressed it as `llm_provider = "debug"`).
     #[test]
-    fn spec_debug_is_never_a_cleanup_fallback_candidate() {
+    fn spec_test_provider_is_never_a_cleanup_fallback_candidate() {
         let cfg = AppConfig {
-            llm_provider: "debug".to_string(),
+            llm_provider: "deepseek".to_string(),
             deepseek_api_key: "ds-key".to_string(),
             openai_api_key: "sk-openai".to_string(),
             openrouter_api_key: "sk-or".to_string(),
             groq_api_key: "gsk-key".to_string(),
             anthropic_api_key: "sk-ant".to_string(),
+            advanced: config::AdvancedSettings {
+                test_provider_llm: "http429".to_string(),
+                ..config::AdvancedSettings::default()
+            },
             ..AppConfig::default()
         };
-        for primary in ["debug", "deepseek", "openai", "openrouter", "groq", ""] {
+        for primary in ["test", "debug", "deepseek", "openai", "openrouter", "groq", ""] {
             if let Some((_, name)) = resolve_fallback_provider(&cfg, primary) {
                 assert_ne!(
-                    name, "debug",
-                    "primary={primary}: debug must never be the selected fallback"
+                    name, llm::TEST_PROVIDER_NAME,
+                    "primary={primary}: the test provider must never be the selected fallback"
                 );
             }
         }
-        // With `debug` as the primary and every real key present, the ladder
-        // must still hand back its first real candidate.
-        let (_, first) = resolve_fallback_provider(&cfg, "debug")
-            .expect("a debug primary must still find a real fallback");
+        // With the test provider active and every real key present, the ladder
+        // must still hand back its first real candidate, in the shipped order.
+        let (_, first) = resolve_fallback_provider(&cfg, llm::TEST_PROVIDER_NAME)
+            .expect("an active test provider must still find a real fallback");
         assert_eq!(first, "deepseek", "the production ladder starts at DeepSeek");
 
         // Discriminating half: with NO real key at all there is no candidate —
-        // a `debug` entry in the list would make this `Some`.
-        let debug_only = AppConfig {
-            llm_provider: "debug".to_string(),
+        // a test-provider entry in the list would make this `Some`.
+        let keyless = AppConfig {
+            advanced: config::AdvancedSettings {
+                test_provider_llm: "http429".to_string(),
+                ..config::AdvancedSettings::default()
+            },
             ..AppConfig::default()
         };
         assert!(
-            resolve_fallback_provider(&debug_only, "debug").is_none(),
-            "the debug provider must not be able to nominate itself"
+            resolve_fallback_provider(&keyless, llm::TEST_PROVIDER_NAME).is_none(),
+            "the test provider must not be able to nominate itself"
         );
     }
 

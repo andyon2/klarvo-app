@@ -292,13 +292,13 @@ export function SettingsPanel({
         groq: loadedSettings.groqApiKeyMasked,
         openrouter: loadedSettings.openrouterApiKeyMasked,
       };
-      // Story 13-1: the debug test provider carries NO API key by design, so the
-      // "stored provider has no key" re-seed below would rewrite a persisted
-      // "debug" to the first keyed provider on every refresh of this panel — and
-      // the next Save would persist that rewrite, so the enabler could never
-      // stay switched on. Preserve it verbatim; the Advanced → System row is the
-      // only place it can be set, and it is not a key-bearing provider.
-      if (llmProv !== "debug" && !llmKeyMap[llmProv]) {
+      // Story 13-1b restored this to its pre-13-1 condition. 13-1 had to exempt
+      // a persisted `llmProvider = "debug"` here, because the test provider was
+      // a provider NAME with no API key and this re-seed would have rewritten it
+      // on every refresh. Selection now lives in `advanced.testProviderLlm`, so
+      // `llmProvider` only ever holds a real, key-bearing provider again and the
+      // exemption would be dead code blessing a value nothing can store.
+      if (!llmKeyMap[llmProv]) {
         const fallback = ["deepseek", "openai", "groq", "anthropic", "openrouter"].find(p => llmKeyMap[p]);
         setLocalLlmProvider(fallback ?? llmProv);
       } else {
@@ -491,12 +491,10 @@ export function SettingsPanel({
         (hasGroq && "groq") ||
         (hasOpenrouter && "openrouter") ||
         "deepseek";
-      // Story 13-1: same guard as the re-seed effect above. RecordingAudioContent
-      // calls this from the cloud STT *Model* picker as well as the Cloud/Offline
-      // toggle, so without it, touching either silently destroys a selected
-      // llmProvider = "debug". Functional form: no extra dependency, no stale
-      // closure over localLlmProvider.
-      setLocalLlmProvider((prev) => (prev === "debug" ? prev : fallback));
+      // Story 13-1b restored this to its pre-13-1 form, for the same reason as
+      // the re-seed effect above: there is no key-less provider name to protect
+      // any more.
+      setLocalLlmProvider(fallback);
     }
   }, [loadedSettings]);
 
@@ -886,21 +884,15 @@ export function SettingsPanel({
               />
             )}
             {activeCategory === "advanced" && (
-              /* Story 13-1: the Advanced panel's two provider rows read and
-                 write THIS component's state, which is the single client-side
-                 owner of llmProvider / sttProvider and the state
-                 saveCurrentSettings sends. Passing the value and its setter down
-                 rules out the clobber structurally: any second writer would
-                 leave the snapshot here stale and the next Save would overwrite
-                 the new value. */
+              /* Story 13-1b: no provider props. The test provider's two keys
+                 live in AdvancedSettings, so the panel owns and saves them
+                 through its own save_advanced_settings call -- one control, one
+                 save. This component stays the single owner of llmProvider /
+                 sttProvider, and nothing else writes them. */
               <AdvancedSettingsPanel
                 isPaid={isPaid}
                 isTrial={isTrial}
                 embedded
-                llmProvider={localLlmProvider}
-                sttProvider={localSttProvider}
-                onLlmProviderChange={setLocalLlmProvider}
-                onSttProviderChange={setLocalSttProvider}
               />
             )}
           </div>

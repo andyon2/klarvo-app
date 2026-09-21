@@ -123,18 +123,25 @@ pub struct AdvancedSettings {
     #[serde(default = "default_expert_mode")]
     pub expert_mode: bool,
 
-    // --- Debug test provider (story 13-1) ---
-    /// Which canned wire response the `debug` LLM cleanup provider returns.
-    /// One of `ok` (the default), `empty`, `truncated`, `malformed`, `http429`,
-    /// `http5xx`, `transport`. Inert unless `llm_provider == "debug"`.
-    #[serde(default = "default_debug_scenario")]
-    pub debug_llm_scenario: String,
+    // --- Test provider (story 13-1, reshaped by 13-1b) ---
+    /// The LLM cleanup chain's test provider: **the value IS the state**.
+    /// `off` (the default) means the real provider from `llm_provider` is used;
+    /// any other value both switches the test provider ON and selects the canned
+    /// wire response it returns. One of [`VALID_TEST_PROVIDER_LLM`].
+    ///
+    /// There is deliberately no second key and no provider-name coupling, so a
+    /// half-configured state ("provider on but scenario unsaved") cannot be
+    /// expressed at all — story 13-1b's whole point. One field, one owner, one
+    /// `save_advanced_settings` call.
+    #[serde(default = "default_test_provider")]
+    pub test_provider_llm: String,
 
-    /// Which canned wire response the `debug` STT provider returns. Same set as
-    /// [`AdvancedSettings::debug_llm_scenario`] **minus `truncated`** (`SttError`
-    /// has no truncation variant). Inert unless `stt_provider == "debug"`.
-    #[serde(default = "default_debug_scenario")]
-    pub debug_stt_scenario: String,
+    /// The STT chain's test provider. Same shape as
+    /// [`AdvancedSettings::test_provider_llm`], with the same set **minus
+    /// `truncated`** (`SttError` has no truncation variant) — see
+    /// [`VALID_TEST_PROVIDER_STT`].
+    #[serde(default = "default_test_provider")]
+    pub test_provider_stt: String,
 }
 
 fn default_stt_prompt_de() -> String {
@@ -185,10 +192,15 @@ fn default_expert_mode() -> bool {
     false
 }
 
-/// Story 13-1: the debug providers default to the benign `ok` scenario, so a
-/// config that carries neither key behaves exactly as before.
-fn default_debug_scenario() -> String {
-    "ok".to_string()
+/// Story 13-1b: the test providers default to `off`, so a config that carries
+/// neither key behaves exactly as if the story had never landed — the real
+/// provider is used and no test provider is constructed.
+///
+/// This is also the normalization target for an out-of-set value (see
+/// `migrate_and_normalize` step (f)): failing safe means "the test provider is
+/// inactive", never "active with a scenario nobody chose".
+pub(crate) fn default_test_provider() -> String {
+    TEST_PROVIDER_OFF.to_string()
 }
 
 impl Default for AdvancedSettings {
@@ -211,8 +223,8 @@ impl Default for AdvancedSettings {
             log_level: default_log_level(),
             ui_scale: default_ui_scale(),
             expert_mode: default_expert_mode(),
-            debug_llm_scenario: default_debug_scenario(),
-            debug_stt_scenario: default_debug_scenario(),
+            test_provider_llm: default_test_provider(),
+            test_provider_stt: default_test_provider(),
         }
     }
 }
@@ -1196,20 +1208,53 @@ fn migration_save_warning(
 // use them without re-declaring inside a function body.
 // ---------------------------------------------------------------------------
 
-// `"debug"` (story 13-1) is on both lists on purpose: without it,
-// `migrate_and_normalize` rewrites a stored `"debug"` to the default at load and
-// the next save persists the rewrite, so the debug provider could never survive
-// a restart. Being on the allowlist does NOT make it selectable in the UI — it
-// is absent from every provider picker and from both fallback candidate lists.
-pub(crate) const VALID_STT_PROVIDERS: &[&str] =
-    &["groq", "openai", "local", crate::llm::DEBUG_PROVIDER_NAME];
-pub(crate) const VALID_LLM_PROVIDERS: &[&str] = &[
-    "deepseek",
-    "openai",
-    "anthropic",
-    "groq",
-    "openrouter",
-    crate::llm::DEBUG_PROVIDER_NAME,
+// Story 13-1b: the test provider is NOT on these lists. Selection moved off the
+// provider name and onto `advanced.testProviderLlm` / `::testProviderStt`, so a
+// stored `llmProvider: "debug"` written by story 13-1 falls out of the allowlist
+// here, step (f) rewrites it to the default with its existing warning, and serde
+// drops the orphaned `advanced` keys. That is the whole old-shape story: the
+// value is ignored, not migrated, and the user lands on a real working provider
+// rather than a dead one.
+pub(crate) const VALID_STT_PROVIDERS: &[&str] = &["groq", "openai", "local"];
+pub(crate) const VALID_LLM_PROVIDERS: &[&str] =
+    &["deepseek", "openai", "anthropic", "groq", "openrouter"];
+
+// ---------------------------------------------------------------------------
+// Test-provider value lists (story 13-1b) — the value IS the state
+// ---------------------------------------------------------------------------
+
+/// The `off` sentinel: the serde default, the normalization target, and the one
+/// value that means "no test provider is constructed at all".
+pub(crate) const TEST_PROVIDER_OFF: &str = "off";
+
+/// Accepted values of `advanced.testProviderLlm`. `off` first — it is the
+/// default and the React row lists it first for the same reason.
+///
+/// The non-`off` entries are exactly story 13-1's canned scenario set, which is
+/// pinned against the provider's own table by
+/// `llm::tests::spec_test_llm_scenario_set_is_the_seven_offered`.
+pub(crate) const VALID_TEST_PROVIDER_LLM: &[&str] = &[
+    TEST_PROVIDER_OFF,
+    "ok",
+    "empty",
+    "truncated",
+    "malformed",
+    "http429",
+    "http5xx",
+    "transport",
+];
+
+/// Accepted values of `advanced.testProviderStt`: the LLM set **minus
+/// `truncated`**, because `SttError` has no truncation variant and there would
+/// be nothing for a truncated STT answer to map to.
+pub(crate) const VALID_TEST_PROVIDER_STT: &[&str] = &[
+    TEST_PROVIDER_OFF,
+    "ok",
+    "empty",
+    "malformed",
+    "http429",
+    "http5xx",
+    "transport",
 ];
 
 // ---------------------------------------------------------------------------
@@ -1408,6 +1453,26 @@ fn migrate_and_normalize(
             config.llm_provider
         );
         config.llm_provider = default_llm_provider();
+    }
+
+    // Story 13-1b: the same rule for the two test-provider keys. Fail-safe means
+    // `off` — an unrecognised value must never leave the test provider ACTIVE
+    // with a scenario nobody chose, because the test provider never makes a real
+    // request and the user would see a canned answer with no idea why.
+    if !VALID_TEST_PROVIDER_LLM.contains(&config.advanced.test_provider_llm.as_str()) {
+        log::warn!(
+            "[config] Unknown test_provider_llm {:?}, falling back to \"off\"",
+            config.advanced.test_provider_llm
+        );
+        config.advanced.test_provider_llm = default_test_provider();
+    }
+
+    if !VALID_TEST_PROVIDER_STT.contains(&config.advanced.test_provider_stt.as_str()) {
+        log::warn!(
+            "[config] Unknown test_provider_stt {:?}, falling back to \"off\"",
+            config.advanced.test_provider_stt
+        );
+        config.advanced.test_provider_stt = default_test_provider();
     }
 
     // Groq-Llama Default: when STT=Groq + Groq key present + no DeepSeek key,
@@ -1829,133 +1894,202 @@ mod tests {
         assert_eq!(out.llm_provider, "deepseek", "unknown llm_provider must fall back to default");
     }
 
-    // --- Story 13-1: the `debug` provider survives the allowlist ---
+    // --- Story 13-1b: the test provider is a VALUE in `advanced`, not a name ---
 
-    /// AC: `llmProvider`/`sttProvider` = `"debug"` must survive a settings save
-    /// and an app restart. `migrate_and_normalize` is what a restart runs, and
-    /// without `"debug"` on both allowlists it rewrites the value to the default
-    /// — which the next save then persists, so the debug provider could never be
-    /// selected for longer than one session.
+    /// The old shape story 13-1 shipped (`llmProvider: "debug"` plus two
+    /// `advanced.debug*Scenario` keys) is **ignored, not migrated** — and the
+    /// forbidden outcome, a user stranded on a dead provider, cannot occur.
     ///
-    /// Inversion (verified RED at writing time): remove `"debug"` from either
-    /// allowlist and the corresponding assertion below reports `groq` /
-    /// `deepseek`.
+    /// This repo has no config version field and no migration ladder; the only
+    /// mechanism is the condition-keyed `MigrationWrite`, and this story adds
+    /// none. Doing nothing is already correct and already logged: `"debug"` is
+    /// out of `VALID_LLM_PROVIDERS`, so step (f) rewrites it to the default with
+    /// its existing `log::warn!`, and serde drops the two unknown `advanced`
+    /// keys because `AdvancedSettings` has no `deny_unknown_fields`.
+    ///
+    /// Inversion (verified RED at writing time): putting `"debug"` back on
+    /// `VALID_LLM_PROVIDERS` / `VALID_STT_PROVIDERS` leaves the dead provider
+    /// names in place and the first two assertions fail.
     #[test]
-    fn spec_debug_provider_survives_normalization() {
+    fn spec_old_shape_13_1_config_lands_on_a_real_provider_and_an_off_test_provider() {
+        let dir = temp_dir();
+        // A verbatim 13-1-shaped file, written by hand rather than by today's
+        // serializer — today's serializer cannot produce the old shape any more.
+        std::fs::write(
+            dir.path().join(CONFIG_FILE),
+            // A DeepSeek key is present so the Groq-Llama pre-rule (STT=groq +
+            // Groq key + no DeepSeek key -> switch LLM to groq) cannot fire and
+            // obscure what step (f) did on its own.
+            r#"{
+              "groqApiKey": "gsk-key",
+              "deepseekApiKey": "ds-key",
+              "llmProvider": "debug",
+              "sttProvider": "debug",
+              "advanced": {
+                "debugLlmScenario": "empty",
+                "debugSttScenario": "http429"
+              }
+            }"#,
+        )
+        .expect("write the old-shape config");
+
+        let loaded = load_config(dir.path());
+
+        assert_eq!(
+            loaded.llm_provider, "deepseek",
+            "a stored `debug` llmProvider must land on the real default, never a dead provider"
+        );
+        assert_eq!(
+            loaded.stt_provider, "groq",
+            "a stored `debug` sttProvider must land on the real default, never a dead provider"
+        );
+        assert_eq!(
+            loaded.advanced.test_provider_llm, "off",
+            "the orphaned 13-1 scenario key must not switch the test provider on"
+        );
+        assert_eq!(loaded.advanced.test_provider_stt, "off");
+
+        // …and nothing named `debug*Scenario` survives a save.
+        save_config(dir.path(), &loaded).expect("config.json must be writable");
+        let on_disk = std::fs::read_to_string(dir.path().join(CONFIG_FILE))
+            .expect("config.json must exist after save");
+        assert!(
+            !on_disk.contains("debugLlmScenario"),
+            "the old key must not be re-written: {on_disk}"
+        );
+        assert!(
+            !on_disk.contains("debugSttScenario"),
+            "the old key must not be re-written: {on_disk}"
+        );
+    }
+
+    /// An out-of-set test-provider value normalizes to `"off"`, never stays
+    /// active with a scenario the provider does not know. Fail-safe direction:
+    /// the test provider makes no real request, so an active-but-bogus state
+    /// would silently replace every dictation with a canned answer.
+    ///
+    /// Inversion (verified RED at writing time): removing either allowlist check
+    /// from `migrate_and_normalize` step (f) leaves `"banana"` in place.
+    #[test]
+    fn spec_unknown_test_provider_value_normalizes_to_off() {
         let mut cfg = AppConfig::default();
-        cfg.stt_provider = "debug".to_string();
-        cfg.llm_provider = "debug".to_string();
-        // A Groq key suppresses the Groq-Llama pre-rule and the auto-fallback,
-        // both of which key on `llm_provider == "deepseek"` / an empty key.
-        cfg.groq_api_key = "gsk-key".to_string();
+        cfg.advanced.test_provider_llm = "banana".to_string();
+        cfg.advanced.test_provider_stt = "banana".to_string();
 
         let mut warnings = Vec::new();
         let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
 
-        assert_eq!(out.stt_provider, "debug", "stt_provider must survive normalization");
-        assert_eq!(out.llm_provider, "debug", "llm_provider must survive normalization");
+        assert_eq!(out.advanced.test_provider_llm, "off");
+        assert_eq!(out.advanced.test_provider_stt, "off");
+
+        // Discriminating half: a legal value must survive untouched, so the
+        // assertions above cannot pass by normalizing everything.
+        let mut legal = AppConfig::default();
+        legal.advanced.test_provider_llm = "empty".to_string();
+        legal.advanced.test_provider_stt = "http429".to_string();
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(legal, &fake_dir(), &mut warnings);
+        assert_eq!(out.advanced.test_provider_llm, "empty");
+        assert_eq!(out.advanced.test_provider_stt, "http429");
     }
 
-    /// The AC says the two provider values survive a save and an app restart
-    /// "verified by re-reading `config.json`" — so this test writes a real file
-    /// and reads it back, rather than stopping at the in-memory normalizer.
-    ///
-    /// It is the only test here that proves the whole loop: `save_config`
-    /// serializes with the camelCase key names, `load_config` parses them, and
-    /// `migrate_and_normalize` (which a restart runs) leaves `"debug"` alone.
-    /// A `serde(rename)` slip or an allowlist regression is invisible to the
-    /// in-memory tests above and caught here.
-    ///
-    /// Inversion (verified RED at writing time): removing `"debug"` from either
-    /// allowlist makes the re-read return `groq` / `deepseek`; renaming either
-    /// scenario field's serde name makes the re-read return `"ok"`.
+    /// `truncated` is legal for the LLM chain and NOT for the STT chain
+    /// (`SttError` has no truncation variant), so the two allowlists really are
+    /// different — and the STT one really does reject it at load.
     #[test]
-    fn spec_debug_provider_and_scenarios_survive_a_real_config_file_round_trip() {
+    fn spec_truncated_is_llm_only_and_is_normalized_away_on_the_stt_chain() {
+        assert!(VALID_TEST_PROVIDER_LLM.contains(&"truncated"));
+        assert!(!VALID_TEST_PROVIDER_STT.contains(&"truncated"));
+
+        let mut cfg = AppConfig::default();
+        cfg.advanced.test_provider_stt = "truncated".to_string();
+        let mut warnings = Vec::new();
+        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
+        assert_eq!(
+            out.advanced.test_provider_stt, "off",
+            "a truncated STT scenario has no outcome to map to and must be refused"
+        );
+    }
+
+    /// The two keys round-trip camelCase through a REAL `config.json` file:
+    /// `save_config` serializes them, `load_config` parses them, and
+    /// `migrate_and_normalize` (which a restart runs) leaves them alone.
+    ///
+    /// A `serde(rename)` slip is invisible to an in-memory test and caught here:
+    /// there is no `deny_unknown_fields`, so a snake_case key on disk would be
+    /// silently ignored and the row would read `off` while the UI showed green.
+    ///
+    /// Inversion (verified RED at writing time): renaming either field's serde
+    /// name makes the re-read return `"off"`.
+    #[test]
+    fn spec_test_provider_keys_survive_a_real_config_file_round_trip() {
         let dir = temp_dir();
 
         let mut cfg = AppConfig::default();
-        cfg.stt_provider = "debug".to_string();
-        cfg.llm_provider = "debug".to_string();
+        // Both keys present: the Groq-Llama pre-rule and the "chosen provider
+        // has no key" auto-fallback both key on a MISSING DeepSeek key, and
+        // either firing would move `llm_provider` for a reason unrelated to the
+        // test provider.
         cfg.groq_api_key = "gsk-key".to_string();
-        cfg.advanced.debug_llm_scenario = "malformed".to_string();
-        cfg.advanced.debug_stt_scenario = "http429".to_string();
+        cfg.deepseek_api_key = "ds-key".to_string();
+        cfg.advanced.test_provider_llm = "malformed".to_string();
+        cfg.advanced.test_provider_stt = "http429".to_string();
 
         save_config(dir.path(), &cfg).expect("config.json must be writable");
 
-        // The bytes on disk really carry the values — not just the struct.
         let on_disk = std::fs::read_to_string(dir.path().join(CONFIG_FILE))
             .expect("config.json must exist after save");
-        assert!(on_disk.contains(r#""llmProvider": "debug""#), "got {on_disk}");
-        assert!(on_disk.contains(r#""sttProvider": "debug""#), "got {on_disk}");
         assert!(
-            on_disk.contains(r#""debugLlmScenario": "malformed""#),
+            on_disk.contains(r#""testProviderLlm": "malformed""#),
             "got {on_disk}"
         );
         assert!(
-            on_disk.contains(r#""debugSttScenario": "http429""#),
+            on_disk.contains(r#""testProviderStt": "http429""#),
             "got {on_disk}"
         );
 
-        // …and a restart (load + migrate_and_normalize) leaves them intact.
         let reloaded = load_config(dir.path());
-        assert_eq!(reloaded.llm_provider, "debug");
-        assert_eq!(reloaded.stt_provider, "debug");
-        assert_eq!(reloaded.advanced.debug_llm_scenario, "malformed");
-        assert_eq!(reloaded.advanced.debug_stt_scenario, "http429");
+        assert_eq!(reloaded.advanced.test_provider_llm, "malformed");
+        assert_eq!(reloaded.advanced.test_provider_stt, "http429");
+        // The real provider keys are untouched by the test provider — switching
+        // it back off must return the user to what they had configured.
+        assert_eq!(reloaded.llm_provider, "deepseek");
+        assert_eq!(reloaded.stt_provider, "groq");
     }
 
-    /// The key-less debug provider must not trip the "chosen provider has no API
-    /// key" auto-fallback, which would silently swap it for whichever real
-    /// provider happens to carry a key.
+    /// Both keys default to `"off"` when absent, so a config file written before
+    /// this story loads with the test provider inactive and a dictation is
+    /// byte-identical to the previous build's.
     #[test]
-    fn spec_debug_llm_provider_is_not_auto_switched_for_a_missing_key() {
-        let mut cfg = AppConfig::default();
-        cfg.llm_provider = "debug".to_string();
-        cfg.deepseek_api_key = "ds-key".to_string();
-        cfg.openai_api_key = "sk-openai".to_string();
-
-        let mut warnings = Vec::new();
-        let (out, _) = migrate_and_normalize(cfg, &fake_dir(), &mut warnings);
-
-        assert_eq!(
-            out.llm_provider, "debug",
-            "the debug provider needs no key and must not be auto-switched away"
-        );
-    }
-
-    /// Both scenario keys default to `"ok"` when absent, so a config file
-    /// written before this story loads unchanged in behaviour.
-    #[test]
-    fn spec_debug_scenarios_default_to_ok_when_absent() {
+    fn spec_test_provider_keys_default_to_off_when_absent() {
         let parsed: AdvancedSettings = serde_json::from_str("{}")
-            .expect("an advanced block without the debug keys must still parse");
-        assert_eq!(parsed.debug_llm_scenario, "ok");
-        assert_eq!(parsed.debug_stt_scenario, "ok");
-        assert_eq!(AdvancedSettings::default().debug_llm_scenario, "ok");
-        assert_eq!(AdvancedSettings::default().debug_stt_scenario, "ok");
+            .expect("an advanced block without the test keys must still parse");
+        assert_eq!(parsed.test_provider_llm, "off");
+        assert_eq!(parsed.test_provider_stt, "off");
+        assert_eq!(AdvancedSettings::default().test_provider_llm, "off");
+        assert_eq!(AdvancedSettings::default().test_provider_stt, "off");
     }
 
-    /// The two keys are serialized camelCase, like every other `AdvancedSettings`
-    /// field — a snake_case key in `config.json` would be silently ignored
-    /// (there is no `deny_unknown_fields`) and the setting would be inert while
-    /// the UI reported green.
+    /// The two keys are serialized camelCase, like every other
+    /// `AdvancedSettings` field.
     #[test]
-    fn spec_debug_scenario_keys_are_camel_case() {
+    fn spec_test_provider_keys_are_camel_case() {
         let adv = AdvancedSettings {
-            debug_llm_scenario: "empty".to_string(),
-            debug_stt_scenario: "http429".to_string(),
+            test_provider_llm: "empty".to_string(),
+            test_provider_stt: "http429".to_string(),
             ..AdvancedSettings::default()
         };
         let json = serde_json::to_string(&adv).expect("serialize");
-        assert!(json.contains(r#""debugLlmScenario":"empty""#), "got {json}");
-        assert!(json.contains(r#""debugSttScenario":"http429""#), "got {json}");
-        assert!(!json.contains("debug_llm_scenario"));
+        assert!(json.contains(r#""testProviderLlm":"empty""#), "got {json}");
+        assert!(json.contains(r#""testProviderStt":"http429""#), "got {json}");
+        assert!(!json.contains("test_provider_llm"));
 
-        let back: AdvancedSettings =
-            serde_json::from_str(r#"{"debugLlmScenario":"malformed","debugSttScenario":"transport"}"#)
-                .expect("camelCase keys must deserialize");
-        assert_eq!(back.debug_llm_scenario, "malformed");
-        assert_eq!(back.debug_stt_scenario, "transport");
+        let back: AdvancedSettings = serde_json::from_str(
+            r#"{"testProviderLlm":"malformed","testProviderStt":"transport"}"#,
+        )
+        .expect("camelCase keys must deserialize");
+        assert_eq!(back.test_provider_llm, "malformed");
+        assert_eq!(back.test_provider_stt, "transport");
     }
 
     // --- Groq-Llama auto-switch ---
@@ -3473,10 +3607,11 @@ mod tests {
                 log_level: "debug".to_string(),
                 ui_scale: "large".to_string(),
                 expert_mode: true,
-                // Story 13-1: non-default values so the roundtrip proves the
-                // keys persist rather than being re-defaulted on load.
-                debug_llm_scenario: "truncated".to_string(),
-                debug_stt_scenario: "http429".to_string(),
+                // Story 13-1b: non-default values so the roundtrip proves the
+                // keys persist rather than being re-defaulted on load. Both are
+                // in their chain's allowlist — `truncated` is LLM-only.
+                test_provider_llm: "truncated".to_string(),
+                test_provider_stt: "http429".to_string(),
             },
 
             local_whisper_model: "base-q5_1".to_string(),

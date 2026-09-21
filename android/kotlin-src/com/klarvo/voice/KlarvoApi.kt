@@ -30,11 +30,13 @@ data class LlmProviderInfo(
     // further fallback after a runtime failure, or they can end up retrying
     // the same substitute provider that just failed.
     val providerName: String,
-    // Story 13-1: which canned wire response the DEBUG test provider returns.
-    // Empty for every real provider -- only [KlarvoApi.cleanup]'s debug branch
-    // reads it, and only when providerName == "debug". Appended last because
-    // this is a positionally-constructed data class.
-    val debugScenario: String = ""
+    // Story 13-1b: which canned wire response the TEST provider returns --
+    // the value of `advanced.testProviderLlm`, which is never [KlarvoApi
+    // .TEST_PROVIDER_OFF] here because the provider is only built at all when it
+    // is not. Empty for every real provider: only [KlarvoApi.cleanup]'s test
+    // branch reads it, and only when providerName == "test". Appended last
+    // because this is a positionally-constructed data class.
+    val testScenario: String = ""
 )
 
 /**
@@ -88,50 +90,60 @@ object KlarvoApi {
     const val DEFAULT_MODEL_OPENAI = "gpt-4o-mini"
     const val DEFAULT_MODEL_GROQ = "llama-3.3-70b-versatile"
 
-    // --- Debug test provider (story 13-1) ---
+    // --- Test provider (story 13-1, reshaped by 13-1b) ---
     //
-    // The `llmProvider` / `sttProvider` config value that selects the debug
-    // provider. Rust↔Kotlin TWIN of `llm::DEBUG_PROVIDER_NAME`. It is NEVER a
+    // The name this provider reports for itself: [LlmProviderInfo.providerName],
+    // the word its log line carries, and its model ID. Rust↔Kotlin TWIN of
+    // `llm::TEST_PROVIDER_NAME`.
+    //
+    // Since 13-1b it is NOT a `llmProvider` / `sttProvider` config value any
+    // more: selection moved to `advanced.testProviderLlm` /
+    // `advanced.testProviderStt`, where the VALUE IS THE STATE. It is NEVER a
     // default, NEVER a member of [cleanupFallbackCandidates], and never offered
     // by the normal provider picker; it exists so drift rows D2/D-H19,
     // D3/D-M16, D9 and D10/D-M2 are reproducible on a real device without
     // standing up a fake API.
     //
+    // Named `test`, not `debug`, so it cannot be mistaken for the
+    // `Log Level = debug` row that sits one line above it in Advanced -> System.
+    //
     // Reachability note (recorded, not fixed here): [readConfig]'s license gate
-    // rewrites `llmProvider` to "groq" when the device is neither licensed nor
-    // in trial, so the debug provider only resolves on a licensed/trial device.
-    // Story 13-4 owns that gate.
-    internal const val DEBUG_PROVIDER_NAME = "debug"
+    // forces both test keys to [TEST_PROVIDER_OFF] when the device is neither
+    // licensed nor in trial, so the test provider only resolves on a
+    // licensed/trial device. Story 13-4 owns that gate.
+    internal const val TEST_PROVIDER_NAME = "test"
 
-    // Model ID reported for a debug run, so `klarvo.log` cannot name
+    // Model ID reported for a test run, so `klarvo.log` cannot name
     // `deepseek-chat` for a run that never touched DeepSeek. Twin of
-    // `llm::DebugCleanup::DEFAULT_MODEL`.
-    internal const val DEBUG_MODEL = "debug"
+    // `llm::TestCleanup::DEFAULT_MODEL`, which is itself `TEST_PROVIDER_NAME`.
+    internal const val TEST_MODEL = TEST_PROVIDER_NAME
 
-    // The benign scenario. Twin of Rust's `default_debug_scenario()`.
-    internal const val DEBUG_SCENARIO_DEFAULT = "ok"
+    // The OFF sentinel: the default, the normalization target, and the one value
+    // that means "no test provider at all". Twin of Rust's
+    // `config::TEST_PROVIDER_OFF` / `default_test_provider()`.
+    internal const val TEST_PROVIDER_OFF = "off"
 
     // Endpoint the `transport` scenario talks to: the loopback discard port.
     // Nothing listens there, so the request fails to connect and yields a
     // GENUINE IOException through the real client. Loopback only -- no byte
-    // leaves the device. Twin of `llm::DEBUG_TRANSPORT_URL`.
-    internal const val DEBUG_TRANSPORT_URL = "http://127.0.0.1:1/"
+    // leaves the device. Twin of `llm::TEST_TRANSPORT_URL`.
+    internal const val TEST_TRANSPORT_URL = "http://127.0.0.1:1/"
 
     /**
-     * The canned `(status, body)` pair for a debug LLM scenario, or `null` for
+     * The canned `(status, body)` pair for a test LLM scenario, or `null` for
      * `transport` ("no response at all" -- the caller performs the loopback
-     * request described on [DEBUG_TRANSPORT_URL] instead).
+     * request described on [TEST_TRANSPORT_URL] instead).
      *
      * An unrecognised scenario resolves like `ok`, matching the Rust twin's
      * fail-soft `_ =>` arm.
      *
-     * Rust↔Kotlin TWIN of `llm::debug_llm_canned_wire`. The bodies must stay
+     * Rust↔Kotlin TWIN of `llm::test_llm_canned_wire`. The bodies must stay
      * byte-identical: they are pinned on both sides by
-     * `test-fixtures/debug-provider-scenario-vectors.json`, because the whole
-     * point of the debug provider is that the SAME wire bytes go through each
+     * `test-fixtures/test-provider-scenario-vectors.json`, because the whole
+     * point of the test provider is that the SAME wire bytes go through each
      * twin's own mapping and the divergence stays visible.
      */
-    internal fun debugCannedWire(scenario: String): Pair<Int, String>? = when (scenario) {
+    internal fun testCannedWire(scenario: String): Pair<Int, String>? = when (scenario) {
         "empty" -> 200 to """{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}"""
         "truncated" -> 200 to """{"choices":[{"message":{"content":"Debug provider canned answer that was cut"},"finish_reason":"length"}]}"""
         // A body that genuinely does NOT parse: a JSON envelope that ends
@@ -154,7 +166,7 @@ object KlarvoApi {
     /**
      * The response→result half of [cleanup], extracted verbatim (story 13-1,
      * behaviour-preserving) so a plain-JUnit test can drive the REAL mapping and
-     * so [cleanup]'s debug branch can feed it a canned `(status, body)` pair.
+     * so [cleanup]'s test branch can feed it a canned `(status, body)` pair.
      *
      * This is the mapping story 13-2 is about, and it is deliberately NOT the
      * same as the Rust twin's:
@@ -167,12 +179,12 @@ object KlarvoApi {
      *   the single-call path -- drift row D10 / D-M2's Android column. (On the
      *   chunked path [collectChunkResults] rewraps it into a status-less
      *   IOException, and there the ladder does fire; both halves are pinned by
-     *   `DebugProviderScenarioTest`.) The Rust twin's live path lets
+     *   `TestProviderScenarioTest`.) The Rust twin's live path lets
      *   `response.json()` fail, which becomes the RETRYABLE `LlmError::Request`
      *   -- that is D-M2's Desktop column, and why the two platforms differ here.
      *
      * Those three are recorded as expected divergences in
-     * `test-fixtures/debug-provider-scenario-vectors.json`. Do not "fix" them
+     * `test-fixtures/test-provider-scenario-vectors.json`. Do not "fix" them
      * here: story 13-2 owns the fix and needs them observable first.
      *
      * @throws IOException on a non-200 status (message carries `HTTP <code>`,
@@ -203,8 +215,8 @@ object KlarvoApi {
      * `KlarvoOverlayService.isRetryableCleanupFailure` finds no status and
      * treats it as retryable -- the twin of `LlmError::Request`.
      */
-    private fun debugTransportRequest(model: String): String {
-        val conn = URL(DEBUG_TRANSPORT_URL).openConnection() as HttpURLConnection
+    private fun testTransportRequest(model: String): String {
+        val conn = URL(TEST_TRANSPORT_URL).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.connectTimeout = 2_000
         conn.readTimeout = 2_000
@@ -223,17 +235,17 @@ object KlarvoApi {
     }
 
     /**
-     * The debug branch of [cleanup], extracted (story 13-1) so a plain-JUnit test
-     * can drive the COMPOSITION [debugCannedWire] → [mapCleanupResponse], not just
+     * The test branch of [cleanup], extracted (story 13-1) so a plain-JUnit test
+     * can drive the COMPOSITION [testCannedWire] → [mapCleanupResponse], not just
      * the two halves separately. Rust closed the mirror-image hole with
      * `stt::groq_jni::select_stt_provider`.
      *
-     * Returns `null` for every non-debug provider — that `null` is what keeps the
+     * Returns `null` for every non-test provider — that `null` is what keeps the
      * real HTTP path in [cleanup] unchanged, and it is asserted by a test, so the
      * branch cannot quietly start swallowing real providers.
      *
      * The provider's own [LlmProviderInfo.url] is deliberately never touched here:
-     * for the debug provider it is `""`, and `URL("")` throws a
+     * for the test provider it is `""`, and `URL("")` throws a
      * MalformedURLException, which is an IOException carrying no `HTTP nnn` and
      * would therefore look retryable to
      * `KlarvoOverlayService.isRetryableCleanupFailure`.
@@ -250,10 +262,10 @@ object KlarvoApi {
      * function must stay drivable without `android.util.Log`, which throws
      * "not mocked" outside Robolectric.
      */
-    internal fun debugCleanupOrNull(provider: LlmProviderInfo): String? {
-        if (provider.providerName != DEBUG_PROVIDER_NAME) return null
-        val wire = debugCannedWire(provider.debugScenario)
-            ?: return debugTransportRequest(provider.model)
+    internal fun testCleanupOrNull(provider: LlmProviderInfo): String? {
+        if (provider.providerName != TEST_PROVIDER_NAME) return null
+        val wire = testCannedWire(provider.testScenario)
+            ?: return testTransportRequest(provider.model)
         return mapCleanupResponse(wire.first, wire.second, provider.model)
     }
 
@@ -398,14 +410,18 @@ object KlarvoApi {
         val llmModelDeepseek: String = "",
         val llmModelOpenai: String = "",
         val llmModelGroq: String = "",
-        // Story 13-1: "advanced.debugLlmScenario" / "advanced.debugSttScenario".
-        // Inert unless the matching provider is "debug". Appended at the tail on
-        // purpose: [readConfig] builds Config(...) POSITIONALLY, so new fields go
-        // last. The STT value is NOT consumed by any Kotlin logic -- it is passed
-        // straight through to GroqSttBridge.nativeTranscribe, because STT is
-        // shared Rust core (ADR-0017) and Kotlin only carries the config value.
-        val debugLlmScenario: String = DEBUG_SCENARIO_DEFAULT,
-        val debugSttScenario: String = DEBUG_SCENARIO_DEFAULT
+        // Story 13-1b: "advanced.testProviderLlm" / "advanced.testProviderStt".
+        // THE VALUE IS THE STATE: [TEST_PROVIDER_OFF] means "use the real
+        // provider", anything else both switches the test provider on and names
+        // the canned answer it returns. There is no second field and no
+        // provider-name coupling, so a half-configured state cannot be
+        // expressed. Appended at the tail on purpose: [readConfig] builds
+        // Config(...) POSITIONALLY, so new fields go last. The STT value is NOT
+        // consumed by any Kotlin logic -- it is passed straight through to
+        // GroqSttBridge.nativeTranscribe, because STT is shared Rust core
+        // (ADR-0017) and Kotlin only carries the config value.
+        val testProviderLlm: String = TEST_PROVIDER_OFF,
+        val testProviderStt: String = TEST_PROVIDER_OFF
     )
 
     /**
@@ -421,6 +437,25 @@ object KlarvoApi {
      * Anthropic is NOT supported (different request format).
      */
     fun resolveLlmProvider(config: Config): LlmProviderInfo? {
+        // Story 13-1b: the test provider wins BEFORE `llmProvider` is read at
+        // all, and needs no API key -- a key check would drop through to the
+        // fallback ladder and silently turn a test run into a real DeepSeek call.
+        // The `url` stays empty on purpose: [cleanup] returns before it would
+        // build a URL from it (see [testCleanupOrNull] and the ordering tripwire
+        // in TestProviderScenarioTest).
+        //
+        // Because the value IS the state, `llmProvider` keeps whatever real
+        // provider the user configured, and switching the row back to `off`
+        // returns them to it with nothing to remember.
+        if (config.testProviderLlm != TEST_PROVIDER_OFF) {
+            return LlmProviderInfo(
+                url    = "",
+                model  = TEST_MODEL,
+                apiKey = "",
+                providerName = TEST_PROVIDER_NAME,
+                testScenario = config.testProviderLlm
+            )
+        }
         // Try the configured provider first.
         val primary: LlmProviderInfo? = when (config.llmProvider) {
             "groq" -> if (config.groqApiKey.isNotBlank()) LlmProviderInfo(
@@ -441,22 +476,12 @@ object KlarvoApi {
                 apiKey = config.openrouterApiKey,
                 providerName = "openrouter"
             ) else null
-            // Story 13-1: the debug test provider. Needs no API key, so it is
-            // resolved UNCONDITIONALLY -- a key check here would drop through to
-            // the fallback ladder and silently turn a debug run into a real
-            // DeepSeek call. The `url` stays empty on purpose: [cleanup] returns
-            // before it would build a URL from it.
-            //
-            // Without this explicit arm the `else ->` below maps "debug" to
-            // DeepSeek, which is exactly the silent substitution this story
-            // exists to avoid.
-            DEBUG_PROVIDER_NAME -> LlmProviderInfo(
-                url    = "",
-                model  = DEBUG_MODEL,
-                apiKey = "",
-                providerName = DEBUG_PROVIDER_NAME,
-                debugScenario = config.debugLlmScenario
-            )
+            // Story 13-1b: there is NO test-provider arm here. Selection left
+            // the provider name, and the `else ->` below is what makes a config
+            // file written by story 13-1 (`llmProvider = "debug"`) harmless: an
+            // unknown name maps to DeepSeek, so the user lands on a real working
+            // provider rather than a dead one, exactly as the Rust twin's
+            // allowlist normalization does.
             else -> if (config.deepseekApiKey.isNotBlank()) LlmProviderInfo(
                 url    = DEEPSEEK_CHAT_URL,
                 model  = effectiveCleanupModel(config.llmModelDeepseek, DEFAULT_MODEL_DEEPSEEK),
@@ -629,29 +654,96 @@ object KlarvoApi {
     }
 
     /**
-     * Pure `advanced.debugLlmScenario` / `advanced.debugSttScenario` parse
-     * (story 13-1). Same shape and the same reason as [parseLlmModelOverride]
-     * and [parseMinRecordingMs]: a JVM unit test drives the REAL `org.json` path
-     * against a real `config.json` string instead of asserting a hand-built
-     * [Config] against itself. A misspelled key here would make the whole debug
-     * mechanism silently inert while the UI reported green.
+     * Pure `advanced.testProviderLlm` / `advanced.testProviderStt` parse
+     * (story 13-1, reshaped by 13-1b). Same shape and the same reason as
+     * [parseLlmModelOverride] and [parseMinRecordingMs]: a JVM unit test drives
+     * the REAL `org.json` path against a real `config.json` string instead of
+     * asserting a hand-built [Config] against itself. A misspelled key here would
+     * make the whole test-provider mechanism silently inert while the UI
+     * reported green.
      *
      * `key` is the camelCase key under `advanced` (Rust serializes
      * `AdvancedSettings` with `rename_all = "camelCase"`). An absent `advanced`
      * object, an absent key, a non-String value and a blank string all yield
-     * [DEBUG_SCENARIO_DEFAULT].
+     * [TEST_PROVIDER_OFF] — which is the FAIL-SAFE direction now that the value
+     * is the state: an unreadable value must leave the test provider inactive,
+     * never active with a scenario nobody chose.
      *
-     * Blank→default is the Kotlin end of a deliberate agreement rather than a
-     * literal mirror: Rust's serde `default` only fires for an ABSENT key, so a
-     * stored `""` stays `""` there — and `llm::debug_llm_canned_wire("")` falls
-     * into the same fail-soft `_ =>` arm as `"ok"`. Both platforms therefore
-     * behave as `ok` for a blank value; only the intermediate representation
-     * differs.
+     * That is a real mirror of the Rust twin since 13-1b, not an agreement:
+     * `""` is outside `config::VALID_TEST_PROVIDER_*`, so `migrate_and_normalize`
+     * step (f) rewrites it to `"off"` there with a warning.
+     *
+     * A config file written by story 13-1 carries `debugLlmScenario` /
+     * `debugSttScenario` instead. Those keys are simply not read — the test
+     * provider comes back `off` and the user is on their real provider, which is
+     * the whole old-shape story on this twin too.
      */
-    internal fun parseDebugScenario(json: JSONObject, key: String): String {
-        val advanced = json.optJSONObject("advanced") ?: return DEBUG_SCENARIO_DEFAULT
-        val value = advanced.opt(key) as? String ?: return DEBUG_SCENARIO_DEFAULT
-        return value.ifBlank { DEBUG_SCENARIO_DEFAULT }
+    internal fun parseTestProvider(json: JSONObject, key: String): String {
+        val advanced = json.optJSONObject("advanced") ?: return TEST_PROVIDER_OFF
+        val value = advanced.opt(key) as? String ?: return TEST_PROVIDER_OFF
+        return value.ifBlank { TEST_PROVIDER_OFF }
+    }
+
+    /**
+     * The values the Android license gate decides, extracted from [readConfig]
+     * (story 13-1b) so a plain-JUnit test can drive the real decision.
+     *
+     * [gated] is the predicate the `[license]` log line keys on: true exactly
+     * when the gate actually rewrote something.
+     */
+    internal data class GatedProviders(
+        val llmProvider: String,
+        val sttProvider: String,
+        val testProviderLlm: String,
+        val testProviderStt: String,
+        val gated: Boolean
+    )
+
+    /**
+     * The license gate's VALUE decision, as a pure function (story 13-1b).
+     *
+     * Behaviour-preserving extraction of what [readConfig] decided inline, plus
+     * the two new keys. Nothing about the decision changed; only the shape it
+     * acts on did, and story 13-4 owns the gate ITSELF.
+     *
+     * Why it is extracted: story 13-1's gate forced `llmProvider` /
+     * `sttProvider` to `"groq"` when unlicensed, which also neutralised the test
+     * provider, because that was a provider NAME. Since 13-1b the test provider
+     * is a separate key, so leaving it ungated would SILENTLY REMOVE a gate Andi
+     * decided keeps ("Unlicensed Android gates the test provider -> stays,
+     * handled in 13-4"). Andi cannot un-license his phone, so this row is
+     * machine-verified by construction rather than handed to him
+     * (Verifikations-Symmetrie, Weg 2 written down rather than implied).
+     *
+     * [readConfig] itself stays untested here: it does file I/O and logs through
+     * `android.util.Log`, which throws "not mocked" outside Robolectric. This is
+     * the same seam pattern story 13-1 used for [mapCleanupResponse] and
+     * [testCleanupOrNull]: the decision is pure and driven by a test, the caller
+     * keeps the I/O and the logging.
+     *
+     * Free tier = Groq. The STT half keeps its ALLOWLIST shape ("anything that
+     * is neither groq nor local is alternative"), so a future paid provider is
+     * gated by default.
+     */
+    internal fun gateProvidersForLicense(
+        licensed: Boolean,
+        llmProvider: String,
+        sttProvider: String,
+        testProviderLlm: String,
+        testProviderStt: String
+    ): GatedProviders {
+        val sttIsAlternative = sttProvider != "groq" && sttProvider != "local"
+        val testProviderRequested =
+            testProviderLlm != TEST_PROVIDER_OFF || testProviderStt != TEST_PROVIDER_OFF
+        return GatedProviders(
+            llmProvider = if (licensed) llmProvider else "groq",
+            sttProvider = if (!licensed && sttIsAlternative) "groq" else sttProvider,
+            // OFF is the neutralization target: a gated test provider must leave
+            // the user on their real provider, never on a canned answer.
+            testProviderLlm = if (licensed) testProviderLlm else TEST_PROVIDER_OFF,
+            testProviderStt = if (licensed) testProviderStt else TEST_PROVIDER_OFF,
+            gated = !licensed && (llmProvider != "groq" || sttIsAlternative || testProviderRequested)
+        )
     }
 
     /**
@@ -719,10 +811,14 @@ object KlarvoApi {
             val llmModelDeepseek = parseLlmModelOverride(json, "llmModelDeepseek")
             val llmModelOpenai = parseLlmModelOverride(json, "llmModelOpenai")
             val llmModelGroq = parseLlmModelOverride(json, "llmModelGroq")
-            // Story 13-1: which canned answer the debug providers return. Inert
-            // unless llmProvider / sttProvider is "debug".
-            val debugLlmScenario = parseDebugScenario(json, "debugLlmScenario")
-            val debugSttScenario = parseDebugScenario(json, "debugSttScenario")
+            // Story 13-1b: THE VALUE IS THE STATE -- "off" means "use the real
+            // provider", anything else both switches the test provider on and
+            // names the canned answer it returns. A config file written by story
+            // 13-1 carries `debugLlmScenario` / `debugSttScenario` instead;
+            // those keys are simply not read, so the test provider comes back
+            // `off` and the user stays on their real provider.
+            val testProviderLlm = parseTestProvider(json, "testProviderLlm")
+            val testProviderStt = parseTestProvider(json, "testProviderStt")
             // Dictionary terms live in dictionary.json, NOT in config.json.
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
@@ -794,10 +890,21 @@ object KlarvoApi {
             val gatedDeepseek = if (licensed) deepseekKey else ""
             val gatedOpenai = if (licensed) openaiApiKey else ""
             val gatedOpenrouter = if (licensed) openrouterApiKey else ""
-            val gatedLlmProvider = if (licensed) resolvedLlmProvider else "groq"
-            val sttIsAlternative = sttProvider != "groq" && sttProvider != "local"
-            val gatedSttProvider = if (!licensed && sttIsAlternative) "groq" else sttProvider
-            if (!licensed && (resolvedLlmProvider != "groq" || sttIsAlternative)) {
+            // Story 13-1b: the value decision lives in [gateProvidersForLicense]
+            // so a JUnit test can drive it -- readConfig itself is unreachable
+            // from a plain JVM test (file I/O + android.util.Log). What it
+            // decides is unchanged; it now also covers the two test-provider
+            // keys, which carry story 13-1's gate across the shape change.
+            val gate = gateProvidersForLicense(
+                licensed = licensed,
+                llmProvider = resolvedLlmProvider,
+                sttProvider = sttProvider,
+                testProviderLlm = testProviderLlm,
+                testProviderStt = testProviderStt
+            )
+            val gatedLlmProvider = gate.llmProvider
+            val gatedSttProvider = gate.sttProvider
+            if (gate.gated) {
                 KlarvoLogger.i(TAG, "[license] Not licensed/trial -- alternative providers gated, falling back to free Groq tier")
             }
 
@@ -821,7 +928,7 @@ object KlarvoApi {
                 previewBorderColor, previewBorderWidth, previewBorderRadius,
                 previewFontFamily, previewFontSize, previewLineSpacing,
                 llmModelDeepseek, llmModelOpenai, llmModelGroq,
-                debugLlmScenario, debugSttScenario
+                gate.testProviderLlm, gate.testProviderStt
             )
         } catch (e: Exception) {
             null
@@ -1303,19 +1410,19 @@ PUNCTUATION COMMANDS — replace spoken punctuation words with the actual symbol
 
         val systemPrompt = appendPromptExtensions(basePrompt, dictionaryTerms, customInstructions)
 
-        // Story 13-1: the DEBUG test provider short-circuits here, BEFORE any URL
-        // is built. The decision itself lives in [debugCleanupOrNull] so a
+        // Story 13-1/13-1b: the TEST provider short-circuits here, BEFORE any URL
+        // is built. The decision itself lives in [testCleanupOrNull] so a
         // plain-JUnit test can drive it; only the log line stays here, the same
         // way [mapCleanupResponse] was extracted with its caller keeping the
         // logging. Moving this below `URL(provider.url)` would NOT be harmless:
-        // the debug provider's `url` is "", so `URL("")` throws a
+        // the test provider's `url` is "", so `URL("")` throws a
         // MalformedURLException -- an IOException with no `HTTP nnn` -- and
         // KlarvoOverlayService.isRetryableCleanupFailure would fire the fallback
         // ladder into the user's real DeepSeek key.
-        if (provider.providerName == DEBUG_PROVIDER_NAME) {
-            KlarvoLogger.i(TAG, "[debug-provider] LLM cleanup scenario=${provider.debugScenario}")
+        if (provider.providerName == TEST_PROVIDER_NAME) {
+            KlarvoLogger.i(TAG, "[test-provider] LLM cleanup scenario=${provider.testScenario}")
         }
-        debugCleanupOrNull(provider)?.let { return it }
+        testCleanupOrNull(provider)?.let { return it }
 
         val url = URL(provider.url)
         val conn = url.openConnection() as HttpURLConnection

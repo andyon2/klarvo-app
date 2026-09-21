@@ -1131,7 +1131,9 @@ Source: Live-Vorfall 2026-07-02 (DeepSeek-API-Ausfall) + Design-Durchgang mit An
 
 ## [Gate-Lücke, medium] Kein geräte-freies Gate prüft die JNI-Signatur von `nativeTranscribe` (2026-09-20)
 
-**Quelle:** Story 13-1, Spec `deferred` (`spec-13-1-debug-test-provider-both-twins-2.md`). `GroqSttBridge.nativeTranscribe` (Kotlin, `GroqSttBridge.kt:59`) und `groq_jni.rs:202` (Rust) haben seit `e0da32a` 9 Parameter. Nichts vergleicht Anzahl und Reihenfolge. Eine einseitige Änderung oder eine veraltete `.so` bindet still falsch: der STT-Testanbieter fällt dann ohne Fehler und ohne Log-Zeile auf echtes Groq zurück. Schließen braucht einen adb-/Emulator-Schritt, der `nativeTranscribe` nach dem Rebuild einmal aufruft.
+**Quelle:** Story 13-1, Spec `deferred` (`spec-13-1-debug-test-provider-both-twins-2.md`). `GroqSttBridge.nativeTranscribe` (Kotlin, `GroqSttBridge.kt::nativeTranscribe`) und `groq_jni.rs::Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe` (Rust) haben seit `e0da32a` dieselbe, ungeprüfte Signatur. Nichts vergleicht Anzahl und Reihenfolge. Eine einseitige Änderung oder eine veraltete `.so` bindet still falsch: der STT-Testanbieter fällt dann ohne Fehler und ohne Log-Zeile auf echtes Groq zurück. Schließen braucht einen adb-/Emulator-Schritt, der `nativeTranscribe` nach dem Rebuild einmal aufruft.
+
+**Aktualisiert 2026-09-21 (Story 13-1b):** die Signatur ist jetzt **8-stellig** (`sttProvider` + `debugSttScenario` zu einem `testProviderStt` zusammengezogen) — beide Seiten in einem Commit, aber die Lücke bleibt offen und ist mit diesem Schnitt einmal mehr **scharf**: Andis Android-Reproduktion muss `scripts/android-install-debug.sh <ip:port> --full` benutzen, weil ein Install ohne `--full` neues Kotlin mit der alten `libklarvo_lib.so` paart.
 
 ## [Test-Schuld, low] Das Test-Modul von `groq_jni.rs` ist nie gelaufen, eine Erwartung ist falsch (2026-09-20)
 
