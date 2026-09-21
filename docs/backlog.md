@@ -1674,3 +1674,16 @@ Ursache im Code belegt: `get_build_info` (`src-tauri/src/commands/misc.rs:310`) 
 traegt das Datum des System-Images. Nicht gemessen: ob der Release-Build dasselbe zeigt (Andi meint, dort
 war es gefixt -- der Code kennt keinen Unterschied zwischen Debug und Release).
 Richtung: Build-Zeit zur Build-Zeit festhalten (`build.rs`, wie schon `KLARVO_BUILD_HASH`) statt zur Laufzeit raten.
+
+### DECIDED 2026-09-21 — Android-VAD: Doppelschwelle 0,5/0,35 ist eine eigene Story, Groesse L (Andi, Lauf 13-2)
+
+Quelle: Intent-Gate 13-2, `spec-13-2-parity-sweep-guards-and-silent-loss.md` (`## Auto Run Result`), Zeile B6
+(Audit D-M10). `com.github.gkonovalov.android-vad:silero:2.0.10` liefert nur `isSpeech -> boolean`
+(`predict`/`threshold` privat, `Mode.NORMAL` = 0,5 fest; per `javap` von der Story-Sitzung gemessen).
+Ohne Wahrscheinlichkeit gibt es keine Offset-Schwelle 0,35. Einziger Weg: die Bibliothek umgehen und
+`ai.onnxruntime.OrtSession` direkt gegen das `silero_vad.onnx` der AAR treiben.
+Entscheidung Andi: 13-2 baut nur den Hangover-Frame (D-L21) und dokumentiert die Doppelschwelle als
+Ausnahme. Die Doppelschwelle selbst ist ein Story-Kandidat (nicht geschnitten, nicht freigegeben).
+Zweite Entscheidung am selben Gate: D-L19 dreht die Richtung -- Desktop ruft Silero kuenftig auf jedem
+Frame wie Android (Silero ist zustandsbehaftet; `vad/mod.rs::process_frame` ueberspringt die Engine
+heute unter dem Energie-Boden). Das baut 13-2.
