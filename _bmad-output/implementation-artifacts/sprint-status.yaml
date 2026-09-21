@@ -178,7 +178,7 @@ development_status:
   epic-13: in-progress
   13-1-debug-test-provider-both-twins: done
   13-1b-test-provider-operability: done
-  13-2-parity-sweep-guards-and-silent-loss: backlog
+  13-2-parity-sweep-guards-and-silent-loss: done
   13-3-parity-sweep-android-gates-and-config-hygiene: backlog
   13-4-desktop-license-gate-and-one-free-tier: backlog
   13-5-parity-sweep-license-rows-and-sync-hygiene: backlog
