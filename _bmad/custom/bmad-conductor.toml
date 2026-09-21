@@ -24,7 +24,6 @@ env_flag = "BMAD_CONDUCTOR"  # exported =1 for the whole run
 # Project facts for the pre-flight. The global skill reads this list and applies each entry in
 # step 5 (stories); it knows nothing about klarvo itself. Same idea as BMAD's persistent_facts.
 preflight_facts = [
-  "Canon probe (surface stories): the design canon is docs/design/overhaul/source/assets/klarvo.css (ADR-0019). Before Go, grep the canon for each control that the epic text of a surface story names, and for its states (:hover, :focus, :focus-visible, :active, :disabled, .on, .open). A control or a state that the canon does not define goes under *Unclear*, with the shipped component that covers it (form controls: src/components/settings/FormControls.tsx) or with the words 'no shipped component'. Source of this fact: run 13-1, 2026-09-19 -- the machine planned a full spec and then halted on a canon gap that one grep shows.",
   "Planning file: _bmad-output/planning-artifacts/epics.md is the only one (merged 2026-09-20). A second file that holds story headings is a defect -- stop and report it.",
 ]
 
