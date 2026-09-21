@@ -2,7 +2,7 @@
 title: '13-1b Test provider operability'
 type: 'feature'
 created: '2026-09-21'
-status: 'in-review'
+status: 'done'
 baseline_revision: '1b3621fe7fa98a316ff7ed82eb35b2cdb5a1f189'
 route: 'full'
 route_source: 'pinned'
@@ -10,7 +10,7 @@ review: 'thorough'
 review_source: 'auto'
 lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-alignment']
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/project-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
@@ -19,7 +19,22 @@ context:
   - '{project-root}/docs/adr/0017-shared-core-stt-path.md'
   - '{project-root}/test-fixtures/README.md'
 warnings: ['multiple-goals', 'oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The JNI arity change (nativeTranscribe 9 -> 8 parameters) is verified by nothing that
+      executes: no gate on this host links the Kotlin declaration against the Rust entry point.
+    evidence: |-
+      Pre-existing gap, not caused by this story, but widened by it: `#[no_mangle]` exports the
+      short JNI symbol with no signature suffix, so a one-sided edit or a stale
+      `libklarvo_lib.so` misbinds silently instead of throwing. powerhouse has no NDK and
+      installing one is forbidden (project-context: never mutate the host to reach a gate), so
+      Android Rust is not compiled here at all. Mitigated for the device check by the mandatory
+      `scripts/android-install-debug.sh <ip:port> --full`, which rebuilds the `.so`.
+      What would settle it: an Android build that links both sides, or a device run.
+    location: >-
+      src-tauri/src/stt/groq_jni.rs::Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe
+      and android/kotlin-src/com/klarvo/voice/GroqSttBridge.kt::nativeTranscribe
+    severity: medium
 ---
 
 <intent-contract>
@@ -503,84 +518,50 @@ revert.
 
 ## Review Triage Log
 
-### 2026-09-21 — Review pass (4 lenses), 13 findings, all PATCHED
+### 2026-09-21 — Review pass
 
-No finding was rejected. Two were product defects the story itself introduced, one was a
-false claim in this story's own evidence, and one was a gate that had never been able to
-fail.
-
-**Product defects introduced by this story (2)**
-
-1. `[high]` **The fallback ladder lost its first rung while the test provider ran.**
-   `pipeline.rs` passed `cfg.llm_provider` as `resolve_fallback_provider`'s `excluding`
-   argument, so with the test provider active the ladder excluded DeepSeek and started at
-   OpenAI — against the AC ("candidates unchanged"), and diverging from the Kotlin twin,
-   which passes `llmProvider.providerName`. It also misnamed the provider in two
-   `[pipeline]` log lines. Fixed by extracting `effective_llm_provider_name(&cfg)` and
-   using it at the call site; the ladder test now asserts the call the RUNTIME makes, plus
-   a discriminating half proving a REAL primary IS excluded from its own ladder.
-2. `[high]` **`Test provider (STT)` was inert on Android with offline STT.**
-   `KlarvoOverlayService`'s `if (config.sttProvider == "local")` never consulted the new
-   key, while the Rust twin returns the test provider BEFORE reading `stt_provider`. The
-   state was unreachable under 13-1 (`"debug"` is not `"local"`) and became reachable with
-   the reshape. Fixed with one added condition and a source-walk tripwire
-   (`localSttBranchIsTakenOnlyWhileTheTestProviderIsOff`).
-
-**Ordering / parity defects (2)**
-
-3. `[medium]` `cleanup_provider_reload_needed`'s Windows `"local"` early return sat ABOVE
-   the new test clause, so on Windows — Andi's own H+ platform — Save persisted the key and
-   the slot kept `LocalLlmCleanup` until restart. Clause moved above the guard. ⚠️ The
-   defect is invisible to a Linux `cfg!`, so the ORDERING is additionally pinned as source
-   text.
-4. `[medium]` `KlarvoApi.parseTestProvider` accepted any non-blank string, so a stored
-   `"banana"` (or `"truncated"` on the STT chain) left the test provider ACTIVE on Android
-   while Rust normalized it to `off`. Added `VALID_TEST_PROVIDER_LLM` / `_STT` as the twin
-   of the Rust constants, filtered per chain, and pinned both lists against the fixture.
-
-**Evidence that was not true (2)**
-
-5. `[medium]` Inversion row 7 claimed "save_advanced_settings stops rebuilding the STT
-   slot" made a test RED. It did not: that test drives `hot_reload_stt_provider` directly,
-   and deleting the CALL leaves the suite green (measured: 748 passed). Row corrected,
-   row 7b added, and the wire is now covered by
-   `spec_save_advanced_settings_rebuilds_both_runtime_slots`; the call-site gap is filed.
-6. `[medium]` **The `hover` state had never been exercised.** Tailwind v4 wraps `hover:`
-   utilities in `@media (hover: hover)`, headless Chromium has no pointing device, so both
-   sides recorded `hover` byte-identical to `idle` and the equality passed for the wrong
-   reason. Four escapes were measured and none works. The harness now probes
-   `(hover: hover)`, DROPS `hover` from the comparison, reports it as NOT EXERCISED, and
-   substitutes a structural hover-variant check. Not reported green.
-
-**Gates that could not fail (3)**
-
-7. `[medium]` The FAB tripwire's containment was one-sided (`guard < fab` only), so a FAB
-   moved below the guard's close still passed. Upper bound added; inverted RED.
-8. `[medium]` Nothing pinned the sticky footer — this story's second headline fix — nor
-   that each row writes its MATCHING key (a crossed wiring would have passed every gate).
-   Both added to the React tripwire; both inverted RED.
-9. `[low]` `spec_test_cleanup_model_is_its_own_entry` asserted the opposite of its name.
-   Renamed to `spec_test_cleanup_model_comes_only_from_the_provider`.
-
-**Documentation that had gone stale or wrong (4)**
-
-10. `[low]` Three production doc comments still named `advanced.debug*Scenario`, and
-    `TestStt`'s doc described the OLD 5-arg selector with a now-INVERTED claim
-    (`"groq"` no longer keeps Groq — `"off"`/`""` do). All three corrected.
-11. `[low]` `hot_reload_stt_provider` called itself a twin without recording that it
-    deliberately has no `"local"` exception. One sentence added, with the measured cost.
-12. `[low]` Three fixture DESCRIPTIONS still said `debug`. Prose only; every `wire` /
-    `rust` / `kotlin` payload re-verified byte-identical afterwards.
-13. `[medium]` `epic-13-context.md` still said "Neither 13.1b nor 13.3 may touch that
-    gate", which this commit contradicts. Corrected to record what 13-1b carried across
-    (behaviour preserved, log predicate widened) and what stays 13-4's (the decision) —
-    plus the desktop half that lapsed.
-
-**Filed, not fixed** (`docs/backlog.md`, all with source refs): the feedback panel has no
-UI entry point since the FAB was its only trigger · the DESKTOP license gate over the test
-provider lapsed (`active_stt_provider_id` reads `cfg.stt_provider`, which no longer carries
-it) — 13-4's subject, no license code touched · the two hot-reload CALLS in
-`save_advanced_settings` run in no executing test (needs an `AppState` harness).
+- verdicts: 38 findings — high 0, medium 12, low 23, false 3, maybe-false 0
+- lenses (launch order): blind-hunter, edge-case-hunter, verification-gap, intent-alignment. Rows below are in the order the lenses reported.
+- entries: 15 grouped entries routed `patch` (5 at medium, 10 at low), 1 `defer`, 8 `reject`. No `intent_gap`, no `bad_spec`, so no loopback; `review_loop_iteration` stays 0.
+- findings:
+  - `[medium]` `[patch]` **The cleanup fallback ladder lost its first rung while the test provider ran** — verified: `pipeline.rs` passed `cfg.llm_provider` as `resolve_fallback_provider`'s `excluding`, so with the test provider active DeepSeek was excluded and the ladder started at OpenAI, against the AC "candidates are unchanged (deepseek → openai → openrouter)". Fixed by extracting `effective_llm_provider_name(&cfg)` and using it at the call site; the ladder test now pins the call the RUNTIME makes plus a discriminating half proving a real primary IS excluded from its own ladder. (entry G1)
+  - `[medium]` `[patch]` **Same change re-opened a Rust↔Kotlin ladder divergence** — verified: `KlarvoOverlayService.kt` passes `llmProvider.providerName` (= `test`), so Android still started at DeepSeek while Desktop started one rung later for the identical config. Same root cause as the row above; closed by the same fix. (G1)
+  - `[medium]` `[patch]` **Two `[pipeline]` log lines named `deepseek` for a run that never touched it** — verified at the cleanup-timing and primary-failure log lines. Same root cause; both now carry the effective provider name. (G1)
+  - `[medium]` `[patch]` **The Windows `llm_provider == "local"` early return sat above the new test clause** — verified: `cleanup_provider_reload_needed` returned `false` before reaching `previous.test_provider_llm != next.test_provider_llm`, so on Windows with offline STT (which `SettingsPanel::handleSttProviderChange` forces to `llmProvider = "local"`, per the function's own doc) Save persisted the key while the slot kept `LocalLlmCleanup` until restart — the exact defect this story removes, on Andi's H+ platform. Clause moved above the guard; because a Linux `cfg!` cannot observe the branch, the ordering is additionally pinned as source text, which is what inverts RED. (G2)
+  - `[low]` `[patch]` **`hot_reload_stt_provider` omits the local-model guard its documented twin carries** — verified real but bounded: `LocalWhisperProvider::new` resets `ctx` to `None`, so a rebuild discards a loaded context. The cleanup twin's guard protects against rebuilds triggered by UNRELATED `llm_model_*` changes, whereas here the trigger IS the test key, so skipping would defeat the rebuild; the cost is one lazy ~100–200 ms `ensure_context` reload per toggle. Recorded in the doc comment rather than guarded. (G15)
+  - `[medium]` `[patch]` **Inversion row 7 recorded a RED the named test cannot produce** — verified by measurement: deleting the `hot_reload_stt_provider` call from `save_advanced_settings` leaves the suite green at 748 passed, because the helper stays referenced by the test module's `use super::{…}` and the test drives it directly. The evidence file contradicted itself two sections later. Row 7 corrected in `code-inversion-report.md` and `code-inversions.json`, row 7b added, and the wire is now pinned by `spec_save_advanced_settings_rebuilds_both_runtime_slots`; the call-site gap is filed in `docs/backlog.md`. (G3)
+  - `[low]` `[patch]` **`spec_test_cleanup_model_is_its_own_entry` asserts the opposite of its name** — verified: the body pins `effective_cleanup_model(TEST_PROVIDER_NAME, "") == DeepSeekCleanup::DEFAULT_MODEL`. Renamed to `spec_test_cleanup_model_comes_only_from_the_provider`. (G4)
+  - `[low]` `[patch]` **The FAB tripwire's containment check is one-sided** — verified: `guard < fab` only proves the button follows the guard's opening, so a FAB moved below the guard's close still passed, which is the regression the tripwire exists to catch. Upper bound added; inverted RED. (G5)
+  - `[low]` `[patch]` **Three production doc comments still name the removed keys, one with an inverted claim** — verified: `llm/mod.rs` and `stt/mod.rs` still said `advanced.debugLlmScenario` / `advanced.debugSttScenario`, and `TestStt`'s doc described `select_stt_provider("debug", …)` contrasted with `"groq"`, which under the 4-arg selector both now select `TestStt`. These are the surviving instances of exactly the grep confusion the rename was justified by. All three corrected. (G6)
+  - `[low]` `[patch]` **The Kotlin twin does not implement the fail-safe the Rust twin documents as load-bearing** — verified: `parseTestProvider` accepted any non-blank string, so `"banana"` (or `"truncated"` on the STT chain) left the test provider ACTIVE on Android while Rust normalizes it to `off`. `VALID_TEST_PROVIDER_LLM` / `_STT` added as the twin of the Rust constants, filtered per chain, both pinned against the fixture. (G7)
+  - `[low]` `[patch]` **The recompiled epic context still forbids what this commit did** — verified at `epic-13-context.md` ("Neither 13.1b nor 13.3 may touch that gate") against the extracted, extended and log-widened gate. Corrected to record what 13-1b carried across and what stays 13-4's. (G8)
+  - `[low]` `[patch]` **The fixture's prose was not carried through the rename** — verified: three `description` fields still said `debug`. Prose only; every `wire` / `rust` / `kotlin` payload re-diffed byte-identical afterwards, since those are pinned on both twins. (G9)
+  - `[low]` `[reject]` **The canned bodies still read "Debug provider …", the one string the device actually shows** — real and deliberate: the payloads are held byte-identical on both twins by the recorded decision, so the rename stops at identifiers, keys, labels and log lines. The proposed fix is to amend this build's spec's manual-check section, which triage does not do. Carried instead as a named residual risk under `## Auto Run Result` so the human gate is told before the device check.
+  - `[low]` `[patch]` **The feedback panel losing its only entry point is not filed in `docs/backlog.md`** — verified: recorded in the spec and in code comments only, against the project's backlog discipline. Filed with a source ref. (G10)
+  - `[medium]` `[patch]` **Windows `llm_provider == "local"` defeats the new cleanup-rebuild clause and no test covers the combination** — arrived pre-verified from the verification-gap lens with its evidence trail; same entry as the Windows ordering row above. (G2)
+  - `[medium]` `[patch]` **Android routes STT by `sttProvider` alone, so the STT test provider is unreachable in offline mode** — verified at `KlarvoOverlayService.kt`: `if (config.sttProvider == "local")` takes the local-whisper branch and never consults `config.testProviderStt`, while the Rust twin returns the test provider BEFORE reading `stt_provider` — which the spec's Boundaries require of both twins. The state was unreachable under 13-1. One condition added plus a source-walk tripwire that also asserts the gate stays within two lines of the branch. (G11)
+  - `[medium]` `[patch]` **The new `hot_reload_stt_provider` call is unobserved and its recorded inversion could not have been RED** — same entry as the inversion-row-7 finding above. (G3)
+  - `[low]` `[patch]` **The desktop license gate over the test provider disappeared, unrecorded** — verified: `commands/recording.rs::active_stt_provider_id` reads `cfg.stt_provider`, which under 13-1 carried `"debug"` and tripped `require_license!(AlternativeProviders)`; it no longer does. Harm is bounded — the test provider returns canned junk, so no paid capability is unlocked — and the spec's Never forbids editing license code here, so the fix is the record: filed in `docs/backlog.md` for 13-4, which owns the desktop gate. No license code touched. (G12)
+  - `[low]` `[patch]` **Doc comments describe the removed keys and the removed selector** — same entry as the stale-doc row above. (G6)
+  - `[false]` `[reject]` **`merge_settings` could clobber the new keys / `isDirty` needs a field list** — the lens checked and cleared both itself: `merge_settings` carries `advanced: existing.advanced` and is pinned by an existing assertion, and `AdvancedSettingsPanel`'s `isDirty` is a whole-object `JSON.stringify` compare. No bad outcome at either location.
+  - `[low]` `[patch]` **The sticky footer got no recurring tripwire while the FAB did, and nothing pinned each row's key wiring** — verified: the story's second headline fix was observed only by the throwaway harness, and a crossed `set("testProviderLlm"/"testProviderStt", …)` wiring would have passed every gate. Both added to the React source-text tripwire; both inverted RED. (G13)
+  - `[low]` `[reject]` **The sticky footer is measured at viewports constructed to produce overflow, and occlusion is untested** — verified and refuted in part: the reduced desktop viewport is disclosed in the harness header and in `verdict.md`, and the gate asserts the overflow first precisely so a containment check on a non-scrolling scroller cannot report a vacuous green. The transient overlap of rows beneath a pinned footer is the defining behaviour of one, not a defect — at `scrollTop = max` the footer sits at its natural position and nothing is hidden. Unlikely to be met, and the fix would add an occlusion harness.
+  - `[medium]` `[patch]` **"One save" is verified as three disconnected halves; the composition is untested** — same entry as the inversion-row-7 finding. (G3)
+  - `[low]` `[patch]` **React's only recurring guard over the changed surface is source text** — same entry as the sticky-footer tripwire row. (G13)
+  - `[medium]` `[patch]` **`hover ≡ idle` is a measurement artifact and INVERSION-1 scored 1/10** — verified: both state maps recorded `hover` byte-identical to `idle` while `open` reads the same `rgb(53, 58, 62)` token, so `hover:border-klarvo-border-2` never applied and the equality compared two idle samples. Root cause measured during the fix: Tailwind v4 wraps every `hover:` utility in `@media (hover: hover)`, which is false in headless Chromium; four escapes were tried and measured, none works. `hover` is now dropped from the comparison and reported under a NOT EXERCISED section rather than green, with a structural hover-variant class check substituted. (G14)
+  - `[low]` `[reject]` **The Save button's own computed style against a pre-change baseline is unmeasured** — true but harmless: the diff shows the button element's own class string untouched and only its container gaining positioning, so that half of the response-state contract is established by the diff itself.
+  - `[low]` `[defer]` **The JNI arity change is verified by nothing that executes** — pre-existing gap, not caused by this story: no NDK on this host, and `#[no_mangle]` misbinds a stale `.so` silently instead of throwing. Already disclosed in the spec and filed in `docs/backlog.md`, and mitigated by the mandatory `--full` install in Andi's manual path. What would settle it: an Android build that links both sides, or a device run.
+  - `[low]` `[reject]` **The rename's one user-visible residue — the canned bodies still read "Debug provider …"** — same claim as the canned-bodies row above; rejected for the same reason and carried as a named residual risk.
+  - `[medium]` `[patch]` **Windows build with `llm_provider == "local"` and a changed `testProviderLlm` needs a restart** — same entry as the Windows ordering row. (G2)
+  - `[low]` `[reject]` **`save_advanced_settings` applies no allowlist, so an out-of-set value could run until restart** — no path produces one: the command's only caller is the app's own webview, the row offers allowlisted values only (pinned by a test), and `migrate_and_normalize` normalizes at load. The fix adds a branch for a state nothing can reach.
+  - `[false]` `[reject]` **`test_provider_stt == ""` makes Desktop serve canned transcripts where the JNI twin keeps Groq** — the bad outcome does not occur: `""` is outside `VALID_TEST_PROVIDER_STT`, so step (f) rewrites it to `"off"` at load, and the UI cannot emit `""`. The JNI twin's extra `is_empty()` check is belt-and-braces for an unreadable JNI argument, not a divergence in reachable behaviour.
+  - `[low]` `[patch]` **Android keeps the test provider active on a file Desktop normalizes to off** — same entry as the Kotlin allowlist row. (G7)
+  - `[false]` `[reject]` **`clear_api_key` forces `GroqWhisper` and silently deactivates the test provider** — it does not: it calls `resolve_providers(&new_cfg, &inner.app_data_dir)`, which delegates to `resolve_stt_provider` / `resolve_cleanup_provider` and therefore honours both test keys.
+  - `[low]` `[reject]` **A poisoned-lock `Err` from the cleanup reload skips the STT reload, leaving a persisted config with a stale slot** — a poisoned lock is a process-level failure, not everyday use; the single-`?` shape pre-dates this story; and the fix reorders error handling for an unreachable state.
+  - `[medium]` `[patch]` **Save persists and the old provider keeps running on Windows with offline STT** — same entry as the Windows ordering row. (G2)
+  - `[low]` `[reject]` **A keyless 13-1 config leaves cleanup unavailable or auth-failing** — having no cleanup provider without an API key is correct behaviour, identical to a fresh install, and the existing allowlist warning already fires. The lens filed it at low confidence and the "dead provider" outcome the AC forbids does not occur.
+  - `[low]` `[patch]` **A reader looks for a config key that cannot switch the provider on** — same entry as the stale-doc row. (G6)
+  - `[low]` `[reject]` **Removing the 13-1 Advanced row removed the only UI offering `anthropic`** — verified against `baseline_revision`: `RecordingAudioContent` never carried Anthropic, so the picker is restored to its pre-13-1 shipped shape; the row that offered it was a four-day-old diagnostics scaffold behind Expert mode, and Anthropic stays reachable through the keyed auto-seed in `SettingsPanel.tsx`. The fix would add product surface this story did not ask for.
 
 ## Design Notes
 
@@ -691,7 +672,7 @@ one commit, and Andi's Android reproduction must use `scripts/android-install-de
 
 ## Auto Run Result
 
-Status: ready-for-review
+Status: done
 Blocking condition: none
 
 ### 2026-09-21 implementation run
@@ -740,7 +721,126 @@ forbidden). The proxy gate decides wiring, structure, computed style and geometr
 Chromium on the desktop React surface plus its mobile *layout branch*; it cannot observe
 persistence, because preview writers are no-ops. The JNI arity itself is still checked by
 nothing that executes — the pre-existing gap in `docs/backlog.md`, updated there to name
-the new 8-parameter signature and the mandatory `--full` install. The review lens set was
-not run by this session (`review` frontmatter is empty). The two manual H+ checks in
-**Verification** are unchanged and still Andi's.
+the new 8-parameter signature and the mandatory `--full` install. The two manual H+ checks
+in **Verification** are unchanged and still Andi's.
 
+(Superseded on the point of review: the four-lens thorough set WAS run by the build-auto
+session afterwards — see the Review Triage Log and the closing section below.)
+
+
+---
+
+### 2026-09-21 — build-auto close-out (review pass + finalization)
+
+**What was implemented.** The test provider stops being a provider NAME and becomes one
+value per chain in `AdvancedSettings` — `testProviderLlm` / `testProviderStt`, `off` plus
+13-1's scenario set, `off` the serde default and the normalization target. Selection moved
+into `pipeline::resolve_cleanup_provider` / `::resolve_stt_provider` as an early return
+ahead of the provider-name match, so `llmProvider` / `sttProvider` keep the user's real
+provider and "provider on but scenario unsaved" cannot be expressed. The provider is named
+`test` through config keys, persisted values, row labels, log lines and the Rust/Kotlin
+symbols; the JNI signature collapsed 9 → 8 parameters on both sides in one commit.
+`save_advanced_settings` now rebuilds the STT slot as well as the cleanup slot, so one
+button press is true for effect and not only for persistence. Two `KSelect` rows replace
+13-1's four; the embedded Advanced footer is `sticky bottom-0` while dirty; the feedback
+FAB no longer renders. The 14 scenario vectors are byte-identical to 13-1 — selection,
+surface and naming moved, mapping behaviour did not.
+
+**Files changed** (3 commits: `cf04bf6` feature, `fb97a47` docs/evidence, `2fa7fd7` review
+fixes):
+
+- `src-tauri/src/config/mod.rs` — the two new fields, `TEST_PROVIDER_OFF`, both value
+  allowlists, step (f) normalization; `"debug"` off both provider allowlists.
+- `src-tauri/src/pipeline.rs` — early returns in both resolvers, the three provider-name
+  arms deleted, `effective_llm_provider_name` for the fallback ladder and the log lines.
+- `src-tauri/src/llm/mod.rs` — `TestCleanup` and the rename; the React source-text
+  tripwires (option arrays, FAB guard, sticky footer, per-row key wiring).
+- `src-tauri/src/stt/mod.rs` — `TestStt` and the rename.
+- `src-tauri/src/stt/groq_jni.rs` — 4-argument `select_stt_provider`, 8-parameter
+  `nativeTranscribe`.
+- `src-tauri/src/commands/settings.rs` — `stt_provider_reload_needed` +
+  `hot_reload_stt_provider`, the reload-clause ordering fix, the command's source tripwire.
+- `android/kotlin-src/.../KlarvoApi.kt` — the twin rename, the two `Config` fields, the
+  value allowlists, `parseTestProvider`, the extracted `gateProvidersForLicense`.
+- `android/kotlin-src/.../GroqSttBridge.kt`, `KlarvoOverlayService.kt` — the JNI arity and
+  the local-STT branch gate.
+- `android/kotlin-test/.../TestProviderScenarioTest.kt` — renamed suite, 23 tests.
+- `src/components/AdvancedSettingsPanel.tsx`, `SettingsPanel.tsx`, `src/App.tsx`,
+  `src/types.ts`, `src/tauri-commands.ts` — the two rows, the removed props and `"debug"`
+  guards, the sticky footer, the FAB flag, the mirrored fields.
+- `test-fixtures/test-provider-scenario-vectors.json` + `README.md` — renamed fixture.
+- `docs/backlog.md`, `_bmad-output/implementation-artifacts/epic-13-context.md` — records.
+- `_bmad-output/implementation-artifacts/gate4-evidence/13-1b/` — harness, style maps,
+  geometry, inversion reports, screenshots.
+
+**Review findings.** Four lenses (blind-hunter, edge-case-hunter, verification-gap,
+intent-alignment) reported **38 findings**: high 0, medium 12, low 23, false 3. Grouped into
+15 `patch` entries (5 medium, 10 low), 1 `defer`, 8 `reject`. No `intent_gap` and no
+`bad_spec`, so no loopback; `review_loop_iteration` stayed 0. Every row, verdict and
+refutation is in the Review Triage Log above. The two findings that were product defects
+this story introduced — the fallback ladder losing DeepSeek while the test provider ran, and
+`Test provider (STT)` being inert on Android with offline STT — were both fixed and pinned.
+Two more were false claims in this story's own evidence (inversion row 7, and a `hover`
+state that had never been exercised); both were corrected rather than re-asserted.
+
+Deferred: 1 item (the JNI arity change is verified by nothing that executes — pre-existing).
+Rejected: 8 findings, each with its reason recorded in the triage log — the canned bodies
+still reading "Debug provider …" (twice, deliberate and byte-identical by decision; the fix
+would edit this spec), the sticky-footer viewport/occlusion critique (disclosed, and a
+pinned footer overlapping rows transiently is its defining behaviour), the Save button's own
+pre-change style (established by the diff), `save_advanced_settings` applying no allowlist
+(unreachable), a poisoned-lock reload ordering (unreachable), a keyless old-shape config
+(correct behaviour), and Anthropic leaving the Advanced row (restores the pre-13-1 shipped
+picker). Three findings were refuted outright: `merge_settings` clobbering the new keys,
+`test_provider_stt == ""` reaching Desktop, and `clear_api_key` forcing `GroqWhisper`.
+
+**Follow-up review recommended: true.** First pass; no `high` entry was patched, but five
+`medium` entries were (G1 ladder, G2 reload ordering, G3 unpinned save wire, G11 Android STT
+branch, G14 hover gate). The specific unverified risk: **the G2 reload-ordering fix cannot be
+falsified by anything that runs on this host.** `cfg!(target_os = "windows")` is false on
+Linux, so the runtime cases pass with the clause on either side of the guard, and only a
+source-text tripwire pins the ordering — while the behaviour it protects lives on Andi's
+Windows H+ target. A second pass should re-derive that the clause is still above the guard
+and that the tripwire still matches the real statement.
+
+**Verification performed by this session**, independently re-run against the final tree:
+
+- `cd src-tauri && cargo test --lib` — **749 passed, 0 failed** (748 before the patches;
+  baseline at `1b3621f` measured 744). No baseline exception needed.
+- Device-free JVM gate — sources delete-then-copied into `src-tauri/gen/android`,
+  `ANDROID_HOME` set, `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` —
+  **25 suites, 217 tests, 0 failures, 0 errors**, counted from
+  `app/build/test-results/testUniversalDebugUnitTest/*.xml` (214 before the patches).
+- `npm run build` — `tsc && vite build` green.
+- Desktop proxy gate — real Chromium against `npm run preview` on 1422: green run **59
+  checks, 0 failed, exit 0**, plus one NOT-EXERCISED note; inversion run **4/4 groups RED,
+  20 ordinary checks, 0 failed, exit 0**. `git status` clean afterwards both times.
+- Matrix Test Audit — all nine I/O-matrix rows map to a test that ran and passed in the
+  output above (config defaults and round-trip, both `pipeline` selection tests, the
+  normalization test, the old-shape Rust and Kotlin tests, both license-gate Kotlin tests,
+  both reload tests, and the harness's desktop + phone geometry checks).
+
+**Residual risks.**
+
+1. **The canned answer still reads "Debug provider canned answer." / "… canned transcript."**
+   That is the string Andi will see during the device check, while the row says
+   `Test provider (LLM)`. Deliberate — the payloads are pinned byte-identical on both twins —
+   but it reads as a mismatch at the moment of the H+ run and is worth saying out loud first.
+2. **`hover` is not exercised by the proxy gate at all.** Tailwind v4 wraps `hover:`
+   utilities in `@media (hover: hover)`, which headless Chromium cannot satisfy; four escapes
+   were measured and none works. The rendered hover colour is Andi's real-screen gate.
+3. **INVERSION-1 still discriminates only on `idle`.** The remaining state comparisons report
+   equality against the raw `<select>` control the inversion points at, so those individual
+   assertions are not demonstrated to be able to fail. The group meets its stated bar (at
+   least one RED) and the green run's equality is real, but the per-state discrimination is
+   weaker than the check count suggests.
+4. **Nothing ran on Windows or on the Xiaomi, and Android Rust is uncompiled here** (no NDK).
+   The JNI arity moved on both sides in one commit, and `#[no_mangle]` misbinds a stale `.so`
+   silently rather than throwing — so `scripts/android-install-debug.sh <ip:port> --full` is
+   mandatory for the device check; a plain install would pair new Kotlin with the old `.so`.
+5. **The feedback panel now has no UI entry point.** `FeedbackModal` and its host stay
+   mounted and still render when `panels.showFeedback` is true, but the FAB was that flag's
+   only trigger. Giving feedback a new home is a separate decision; filed in `docs/backlog.md`.
+6. **The desktop license gate over the test provider lapsed** as a side effect of moving
+   selection off `sttProvider`. No license code was touched (the spec forbids it here); filed
+   in `docs/backlog.md` for 13-4, which owns the desktop gate.
