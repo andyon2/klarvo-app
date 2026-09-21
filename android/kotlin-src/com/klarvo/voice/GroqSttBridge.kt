@@ -15,8 +15,12 @@ package com.klarvo.voice
  * The Rust side embeds machine-readable error codes for distinguishable failure modes:
  * - `"__ERROR_EMPTY_AUDIO__"` — WAV decoded to zero bytes.
  * - `"__ERROR_API:HTTP <status>: <message>__"` — Groq API non-2xx. NOT retried by caller.
+ * - `"__ERROR_FORMAT:<message>__"` — the answer arrived but is empty or does not
+ *   parse (`SttError::ResponseFormat`). NOT retried — story 13-2 / D9 / D-M5.
  * - `"__ERROR_NETWORK:<message>__"` — network failure. Caller may retry.
- * Empty string on unexpected failure.
+ * Empty string on unexpected failure, and also when the shared guard chain
+ * dropped the transcript (prompt echo / hallucination blocklist) — the caller's
+ * existing blank-transcript branch is the shipped ending for that.
  *
  * ## Retry semantics (preserved from transcribeWithRetry)
  * The Kotlin retry wrapper (transcribeWithRetry in KlarvoOverlayService) continues to
@@ -42,7 +46,18 @@ object GroqSttBridge {
      * @param apiKey           Groq API Bearer token.
      * @param language         ISO-639-1 code ("de", "en") or empty for auto-detect.
      * @param dictionaryTerms  Comma-separated user dictionary (or empty).
-     * @param customPrompt     User custom STT hint (or empty).
+     * @param customPrompt     The Whisper CONDITIONING hint: `advanced.sttPromptDe`
+     *                         / `…En` / `…Auto`, selected for [language] by
+     *                         [KlarvoApi.selectSttHintOverride], or empty for
+     *                         the built-in language hint. **Not**
+     *                         `config.customPrompt` — story 13-2 (B4 / D-H4):
+     *                         Android used to pass the LLM cleanup instruction
+     *                         here, which replaced Whisper's language hint AND
+     *                         became the input of both post-STT guards. The
+     *                         cleanup instruction goes to the LLM and nowhere
+     *                         else. The Rust side rebuilds the guard hint from
+     *                         this argument plus [language], which is why the
+     *                         parameter list did not have to grow.
      * @param sttModel         Groq model name (e.g. "whisper-large-v3-turbo").
      * @param temperature      Whisper sampling temperature (0.0 = deterministic).
      * @param testProviderStt `config.advanced.testProviderStt`, passed through
@@ -97,6 +112,31 @@ object GroqSttBridge {
      */
     @JvmStatic
     external fun nativeStripPromptFragments(text: String, sttHint: String): String
+
+    /**
+     * Strips stockphrase ghosts from already-cleaned text — the POST-cleanup
+     * half of drift row B3 / D-H7 (story 13-2).
+     *
+     * LLM cleanup rationalises a recognisable ghost ("Klinge") into a
+     * convincing full stockphrase ("Kleinschreibung"), turning detectable junk
+     * into fluent junk. Desktop has always run `strip_stockphrase_ghosts` once
+     * more after `sanitize_llm_output`; Android had no post-cleanup strip at
+     * all. This is that same Rust function — **never** a Kotlin re-implementation
+     * (ADR-0017, and `Adr0017BoundaryGuardTest` would not catch one written
+     * under a new name, which is precisely why it is written down here).
+     *
+     * Deliberately NOT a reuse of [nativeStripPromptFragments]: that one also
+     * applies the prompt-fragment strip, which the desktop does not do after
+     * cleanup.
+     *
+     * ⚠️ New native symbol in story 13-2. A stale `libklarvo_lib.so` has no
+     * `Java_com_klarvo_voice_GroqSttBridge_nativeStripStockphraseGhosts` and
+     * this call throws `UnsatisfiedLinkError` — loudly, unlike an arity change
+     * on an existing symbol. Install with
+     * `scripts/android-install-debug.sh <ip:port> --full`.
+     */
+    @JvmStatic
+    external fun nativeStripStockphraseGhosts(text: String): String
 
     /**
      * Pre-STT silence and duration filter.

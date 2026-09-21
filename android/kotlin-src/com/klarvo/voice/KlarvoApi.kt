@@ -182,31 +182,58 @@ object KlarvoApi {
     }
 
     /**
-     * The response→result half of [cleanup], extracted verbatim (story 13-1,
-     * behaviour-preserving) so a plain-JUnit test can drive the REAL mapping and
-     * so [cleanup]'s test branch can feed it a canned `(status, body)` pair.
+     * A provider answer that arrived intact but says nothing usable — the
+     * Kotlin twin of `LlmError::ResponseFormat`.
      *
-     * This is the mapping story 13-2 is about, and it is deliberately NOT the
-     * same as the Rust twin's:
-     * - an empty `content` is returned as `""` (Rust: `ResponseFormat`) -- drift
-     *   row D2 / D-H19,
-     * - `finish_reason` is never inspected, so a truncated answer is returned as
-     *   the half sentence (Rust: `OutputTruncated`) -- drift row D3 / D-M16,
-     * - an unparseable body throws a bare [org.json.JSONException], which is NOT
-     *   an IOException, so the caller's cleanup-fallback ladder never runs on
-     *   the single-call path -- drift row D10 / D-M2's Android column. (On the
-     *   chunked path [collectChunkResults] rewraps it into a status-less
-     *   IOException, and there the ladder does fire; both halves are pinned by
-     *   `TestProviderScenarioTest`.) The Rust twin's live path lets
-     *   `response.json()` fail, which becomes the RETRYABLE `LlmError::Request`
-     *   -- that is D-M2's Desktop column, and why the two platforms differ here.
+     * An [IOException] so it travels the same path as every other cleanup
+     * failure, but **non-retryable**: [KlarvoOverlayService.isRetryableCleanupFailure]
+     * names the type explicitly, because the message carries no `HTTP <code>`
+     * and the regex would otherwise read "no status" as "transport failure,
+     * retry".
+     */
+    class CleanupResponseFormatException(message: String) : IOException(message)
+
+    /**
+     * `finish_reason == "length"` — the answer stops mid-sentence because the
+     * `max_tokens` cap was hit. Kotlin twin of `LlmError::OutputTruncated`,
+     * and non-retryable for the same reason: a repeat produces the same cap.
+     */
+    class CleanupOutputTruncatedException(message: String) : IOException(message)
+
+    /**
+     * The response→result half of [cleanup] (extracted by story 13-1 so a
+     * plain-JUnit test can drive the REAL mapping, and so [cleanup]'s test
+     * branch can feed it a canned `(status, body)` pair).
      *
-     * Those three are recorded as expected divergences in
-     * `test-fixtures/test-provider-scenario-vectors.json`. Do not "fix" them
-     * here: story 13-2 owns the fix and needs them observable first.
+     * **Story 13-2 closed the three divergences this KDoc used to document as
+     * intended.** The mapping is now the twin of `llm::parse_chat_completion`,
+     * in the same order:
+     * - `finish_reason == "length"` raises [CleanupOutputTruncatedException] —
+     *   Rust's `OutputTruncated`, drift row D3 / D-M16. The half sentence used
+     *   to be pasted and stored as the dictation.
+     * - an empty `content` raises [CleanupResponseFormatException] — Rust's
+     *   `ResponseFormat("Empty content in response")`, drift row D2 / D-H19.
+     *   `""` used to be pasted into the focused field and written to
+     *   `history.db` as the dictation: silent whole-dictation loss, persisted.
+     * - an unparseable body still throws [org.json.JSONException] (the honest
+     *   thing for a body that does not parse), but it is now classified
+     *   RETRYABLE on the single-call path as well, so the provider ladder fires
+     *   exactly as it already did on the chunked path and as Rust does for the
+     *   same bytes (`LlmError::Request`) — drift row D10 / D-M2.
+     *
+     * Both new exceptions are non-retryable: no ladder, no paste, no history
+     * row. The raw transcript goes to the clipboard with the shipped
+     * [KlarvoOverlayService.CLEANUP_FAILED_CLIPBOARD_MSG] cause, exactly as the
+     * desktop degrade path does.
+     *
+     * The emptiness check runs on the SANITIZED content, not the raw one: an
+     * answer made only of control characters is as empty as `""`, and
+     * `sanitizeLlmOutput` is what decides the text the user would have got.
      *
      * @throws IOException on a non-200 status (message carries `HTTP <code>`,
      *   which `KlarvoOverlayService.isRetryableCleanupFailure` regex-matches).
+     * @throws CleanupOutputTruncatedException on `finish_reason == "length"`.
+     * @throws CleanupResponseFormatException on an empty answer.
      * @throws org.json.JSONException on a body it cannot parse.
      */
     internal fun mapCleanupResponse(responseCode: Int, body: String, model: String): String {
@@ -214,13 +241,26 @@ object KlarvoApi {
             throw IOException("LLM cleanup failed ($model): HTTP $responseCode -- $body")
         }
         val json = JSONObject(body)
-        val rawContent = json
-            .getJSONArray("choices")
-            .getJSONObject(0)
+        val choice = json.getJSONArray("choices").getJSONObject(0)
+        // Order mirrors llm::parse_chat_completion: truncation is decided on
+        // the choice before its content is read, because a truncated answer is
+        // rejected whether or not it happens to be non-empty.
+        if (choice.optString("finish_reason", "") == "length") {
+            throw CleanupOutputTruncatedException(
+                "LLM cleanup failed ($model): answer truncated (finish_reason=length)"
+            )
+        }
+        val rawContent = choice
             .getJSONObject("message")
             .getString("content")
             .trim()
-        return sanitizeLlmOutput(rawContent)
+        val sanitized = sanitizeLlmOutput(rawContent)
+        if (sanitized.isEmpty()) {
+            throw CleanupResponseFormatException(
+                "LLM cleanup failed ($model): empty content in response"
+            )
+        }
+        return sanitized
     }
 
     /**
@@ -439,8 +479,58 @@ object KlarvoApi {
         // GroqSttBridge.nativeTranscribe, because STT is shared Rust core
         // (ADR-0017) and Kotlin only carries the config value.
         val testProviderLlm: String = TEST_PROVIDER_OFF,
-        val testProviderStt: String = TEST_PROVIDER_OFF
+        val testProviderStt: String = TEST_PROVIDER_OFF,
+        // Story 13-2 (B4 / D-H4): "advanced.sttPromptDe" / "…En" / "…Auto" --
+        // the WHISPER conditioning hints. Twin of Rust
+        // `AdvancedSettings::stt_prompt_{de,en,auto}`
+        // (src-tauri/src/config/mod.rs), selected for the active language by
+        // [selectSttHintOverride] exactly as `pipeline.rs` does. Until this
+        // story Android had no such field at all (0 Kotlin hits) and passed
+        // `customPrompt` -- the LLM cleanup INSTRUCTION -- as the Whisper
+        // prompt instead. Appended at the tail on purpose: [readConfig] builds
+        // Config(...) POSITIONALLY, so new fields go last.
+        val sttPromptDe: String = "",
+        val sttPromptEn: String = "",
+        val sttPromptAuto: String = ""
     )
+
+    /**
+     * Picks the user's `advanced.sttPrompt{De,En,Auto}` override for [language],
+     * or `""` when none applies (the caller then lets Rust supply the built-in
+     * hint for that language).
+     *
+     * Rust↔Kotlin TWIN of `stt::select_stt_hint_override`. **Mind the
+     * fall-through**, which is the shipped Rust behaviour and not the obvious
+     * one: a `"de"` run whose `sttPromptDe` is empty still picks up a non-empty
+     * `sttPromptAuto`, because Rust's third match arm is `_ if !auto.is_empty()`
+     * rather than `"auto" if …`. Pinned by `STT-HINT-SELECT-DE-FALLTHROUGH-001`
+     * in `test-fixtures/guard-chain-vectors.json`, read by both twins.
+     *
+     * Pure, so a JVM test drives it: [readConfig] itself is unreachable from a
+     * plain JVM test (file I/O + `android.util.Log`).
+     */
+    internal fun selectSttHintOverride(
+        language: String,
+        sttPromptDe: String,
+        sttPromptEn: String,
+        sttPromptAuto: String
+    ): String = when {
+        language == "de" && sttPromptDe.isNotEmpty() -> sttPromptDe
+        language == "en" && sttPromptEn.isNotEmpty() -> sttPromptEn
+        sttPromptAuto.isNotEmpty() -> sttPromptAuto
+        else -> ""
+    }
+
+    /**
+     * The LLM provider name the run will actually use.
+     *
+     * Rust↔Kotlin TWIN of `pipeline::effective_llm_provider_name` (13-1b): with
+     * `advanced.testProviderLlm` set, the test provider wins before
+     * `llmProvider` is read at all, so the offline rule must not classify such
+     * a run by a provider that never runs.
+     */
+    internal fun effectiveLlmProviderName(config: Config): String =
+        if (config.testProviderLlm != TEST_PROVIDER_OFF) TEST_PROVIDER_NAME else config.llmProvider
 
     /**
      * Resolves the active LLM provider for cleanup calls.
@@ -840,6 +930,14 @@ object KlarvoApi {
             // `off` and the user stays on their real provider.
             val testProviderLlm = parseTestProvider(json, "testProviderLlm")
             val testProviderStt = parseTestProvider(json, "testProviderStt")
+            // Story 13-2 (B4 / D-H4): the Whisper conditioning hints, same
+            // nested "advanced" object and same camelCase keys Rust writes
+            // (AdvancedSettings, serde rename_all = "camelCase"). Empty default
+            // = "use the built-in language hint", which is the Rust default too.
+            val advanced = json.optJSONObject("advanced")
+            val sttPromptDe = advanced?.optString("sttPromptDe", "") ?: ""
+            val sttPromptEn = advanced?.optString("sttPromptEn", "") ?: ""
+            val sttPromptAuto = advanced?.optString("sttPromptAuto", "") ?: ""
             // Dictionary terms live in dictionary.json, NOT in config.json.
             // config.json never contains a dictionaryTerms key -- the Rust backend
             // manages them in a separate file. We read that file directly here.
@@ -949,7 +1047,8 @@ object KlarvoApi {
                 previewBorderColor, previewBorderWidth, previewBorderRadius,
                 previewFontFamily, previewFontSize, previewLineSpacing,
                 llmModelDeepseek, llmModelOpenai, llmModelGroq,
-                gate.testProviderLlm, gate.testProviderStt
+                gate.testProviderLlm, gate.testProviderStt,
+                sttPromptDe, sttPromptEn, sttPromptAuto
             )
         } catch (e: Exception) {
             null

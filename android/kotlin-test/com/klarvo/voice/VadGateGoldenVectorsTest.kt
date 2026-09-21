@@ -312,4 +312,112 @@ class VadGateGoldenVectorsTest {
             )
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Story 13-2 (B6) — the two deltas Andi released at the intent gate.
+    // Both new categories are read by a RUST test as well; this file was
+    // Kotlin-only until this story.
+    // -----------------------------------------------------------------------
+
+    /**
+     * **D-L21, the hangover TRIGGER EDGE.** The `stop-latency` vectors above
+     * pin how many silent frames are *required*; they say nothing about which
+     * frame fires, and both platforms passed them while disagreeing by one.
+     *
+     * Rust's `SileroVad::advance_state` enters `Hangover { frames_left: N }`
+     * on the first non-speech frame and returns to Silence only once
+     * `frames_left <= 1`, i.e. on the (N+1)-th. Android fired at the N-th
+     * (`silentFrames >= requiredSilentFrames`) and auto-stopped ~32 ms early
+     * for the same configured `silenceSecs`.
+     *
+     * Both edges are asserted — "not yet at N" is the half that fails if the
+     * comparison is loosened back to `>=`.
+     */
+    @Test
+    fun hangoverEdgeVector_matchesHangoverFired() {
+        val vectors = loadFixture().filter { it.getString("category") == "hangover-edge" }
+        assertTrue("the hangover-edge vector must exist", vectors.isNotEmpty())
+        for (v in vectors) {
+            val id = v.optString("id")
+            val required = v.getDouble("required_silent_frames").toInt()
+            val notFiredAt = v.getDouble("not_fired_at_frame").toInt()
+            val firesAt = v.getDouble("fires_at_frame").toInt()
+            assertEquals(
+                "$id: the fixture must describe an off-by-one edge",
+                notFiredAt + 1,
+                firesAt
+            )
+
+            assertTrue(
+                "$id: the ${notFiredAt}-th of $required silent frames must NOT fire auto-stop",
+                !KlarvoAudioRecorder.hangoverFired(notFiredAt, required)
+            )
+            assertTrue(
+                "$id: the ${firesAt}-th consecutive silent frame is the edge",
+                KlarvoAudioRecorder.hangoverFired(firesAt, required)
+            )
+            // …and every frame before the edge is quiet too, so the fix cannot
+            // be "fire one frame later, but also fire early somewhere else".
+            for (frame in 1..notFiredAt) {
+                assertTrue(
+                    "$id: silent frame $frame of $required must not fire",
+                    !KlarvoAudioRecorder.hangoverFired(frame, required)
+                )
+            }
+        }
+    }
+
+    /**
+     * **D-L19, direction reversed by Andi 2026-09-21 (Desktop adapts to
+     * Android).** Android has always called `isSpeech` on every frame because
+     * Silero is recurrent; Desktop skipped the call below the energy floor and
+     * froze the model's hidden state through every quiet passage.
+     *
+     * This is the Android half of the shared claim: on a sub-floor frame the
+     * predictor IS consulted and the gate still reports closed. Android needs
+     * no code change for it — which is exactly why the vector matters. Without
+     * a reader on this side, a future "CPU saving" here would reintroduce the
+     * divergence the desktop just gave up.
+     */
+    @Test
+    fun engineCallVector_predictorRunsOnSubFloorFrame() {
+        val vectors = loadFixture().filter { it.getString("category") == "engine-call" }
+        assertTrue("the engine-call vector must exist", vectors.isNotEmpty())
+        for (v in vectors) {
+            val id = v.optString("id")
+            val amplitude = v.getDouble("amplitude_short").toInt()
+            val threshold = v.getDouble("silence_threshold").toFloat()
+            val expectedCalls = v.getDouble("expected_predictor_calls").toInt()
+            val expectedGateOpen = v.getBool("expected_gate_open")
+
+            val frameSize = 512
+            val frame = ShortArray(frameSize) { amplitude.toShort() }
+            val filter = HighpassFilter(KlarvoAudioRecorder.HIGHPASS_CUTOFF_HZ, 16000f)
+            val scratch = FloatArray(frameSize)
+
+            var calls = 0
+            val result = KlarvoAudioRecorder.vadGateDecision(
+                frame,
+                frameSize,
+                filter,
+                scratch,
+                threshold
+            ) { filtered ->
+                calls++
+                assertEquals("$id: the predictor gets the frame", frameSize, filtered.size)
+                true // a deliberate "speech" verdict: the energy gate must still win
+            }
+
+            assertEquals("$id: the predictor must be consulted", expectedCalls, calls)
+            assertEquals(
+                "$id: the energy gate still reports closed on a sub-floor frame",
+                expectedGateOpen,
+                result.isSpeechFrame
+            )
+            assertTrue(
+                "$id: the raw predictor verdict is kept separately from the gated one",
+                result.vadSpeech
+            )
+        }
+    }
 }

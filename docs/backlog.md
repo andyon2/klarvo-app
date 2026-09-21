@@ -1687,3 +1687,50 @@ Ausnahme. Die Doppelschwelle selbst ist ein Story-Kandidat (nicht geschnitten, n
 Zweite Entscheidung am selben Gate: D-L19 dreht die Richtung -- Desktop ruft Silero kuenftig auf jedem
 Frame wie Android (Silero ist zustandsbehaftet; `vad/mod.rs::process_frame` ueberspringt die Engine
 heute unter dem Energie-Boden). Das baut 13-2.
+
+### DEFERRED 2026-09-21 — Vorbestands-Defekte, die Story 13-2 bewusst NICHT angefasst hat
+
+Quelle: `spec-13-2-parity-sweep-guards-and-silent-loss-2.md`, Frontmatter `deferred` (Planungslauf 2)
+plus ein Fund aus dem Bau. Alle fuenf sind Vorbestand, keiner ist von 13-2 verursacht.
+
+- **Android Live-Preview-Pause-Zaehler traegt dieselbe Hangover-Abweichung, die D-L21 fuer den
+  Auto-Stop schliesst.** `KlarvoAudioRecorder.processVadFrame`, `previewSilentFrames++` gefolgt von
+  `>= previewRequiredSilentFrames` — identische Form wie der Auto-Stop-Zaehler, dessen Desktop-Zwilling
+  (`vad/mod.rs::advance_state`) auf dem (N+1)-ten Frame feuert. Audit-Zeile D-L21 nennt **nur** den
+  Auto-Stop-Zaehler und `ADR-0016:260` engt B6 auf „nur die drei gemessenen Deltas" ein, also waere das
+  ein vierter, ungemessener Delta. Eine Zeile Aufwand auf der vorhandenen `hangoverFired`-Extraktion,
+  falls das Urteil geweitet wird. (low)
+- **`SileroVad::reset` setzt die Silero-Engine nicht zurueck** (`src-tauri/src/vad/mod.rs::reset`):
+  Highpass, Ringpuffer und Hysterese werden geleert, `VoiceActivityDetector::reset` (existiert in
+  `voice_activity_detector` 0.2.1) wird nie gerufen, also leckt der LSTM-Zustand ueber
+  Aufnahme-Sitzungen hinweg. Die ONNX-`Session` ist ein prozessweites
+  `LazyLock<Arc<Mutex<Session>>>`, das sich alle drei VAD-Instanzen teilen. Von keiner Audit-Zeile
+  benannt. **Wiegt nach 13-2 schwerer als davor:** D-L19 macht die Zustandsbahn tragend, wo sie in
+  stillen Passagen bisher einfror. (medium)
+- **ADR-0016 Amendment 4 verweist auf eine Epic-Datei, die es nicht gibt.**
+  `docs/adr/0016-android-path-parity-strategy.md` (Nachtrag 2026-09-17) nennt
+  `_bmad-output/planning-artifacts/epics-parity-line-audit-2.md`; Epic 13 liegt in
+  `_bmad-output/planning-artifacts/epics.md`. Derselbe Nachtrag behauptet „keine Story wechselt den
+  Status", was gegen `sprint-status.yaml` veraltet ist. Reine Doku-Drift. (low)
+- **Drei veraltete Quellenangaben im Guard-Pfad.** (a) `stt/groq_jni.rs`s Paritaets-Kommentar ueber der
+  Guard-Kette nannte zwei tote `pipeline.rs`-Zeilen — **von 13-2 mitgeloescht**, weil die Kette ersetzt
+  wurde; (b) `pipeline::is_prompt_echo`s Docstring sagt „>=60%", der Code vergleicht 0.7 — **steht noch**;
+  (c) `stt/groq_jni.rs::tests` ist android-gated und wurde nie ausgefuehrt (eine Assertion darin,
+  `is_hallucination("\0")`, ist gegen den heutigen Guard falsch). Wer das Modul entsperrt, muss sie
+  zuerst entscheiden. (low)
+- **Der blockierte erste 13-2-Spec traegt Tool-Markup.**
+  `_bmad-output/implementation-artifacts/spec-13-2-parity-sweep-guards-and-silent-loss.md` enthaelt
+  zwischen `## Verification` und `## Auto Run Result` ein woertliches `</content>` / `</invoke>` aus der
+  ersten Planungssitzung. Kosmetisch; die Datei ist jetzt historischer Beleg. (low)
+
+### FOUND 2026-09-21 — `is_prompt_echo` verglich gegen den Wortstrom, nicht gegen die Reihenfolge (Bau 13-2, nur notiert)
+
+Gemessen beim Bau von 13-2, nicht behoben und von keiner Audit-Zeile benannt: der deutsche
+Standard-Hinweis (`stt::STT_HINT_DE`) enthaelt woertlich den `STOCKPHRASE_BLOCKLIST`-Eintrag
+„Groß- und Kleinschreibung". Die Guard-Kette muss deshalb **erst** die Prompt-Fragmente strippen und
+**dann** die Ghosts — in der anderen Reihenfolge zerstoert der Ghost-Strip einen geleakten Hinweis,
+das Fragment-Strippen erkennt ihn nicht mehr, und der Rest („Korrekte Satzzeichen und Interpunktion.
+Danke") faellt als Echo durch. Die Reihenfolge ist jetzt in `pipeline::guard_transcript` dokumentiert
+und beidseitig durch `GUARD-ORDER-001` (`test-fixtures/guard-chain-vectors.json`) festgenagelt.
+Offene Frage fuer eine spaetere Zeile: ob der Hinweis-Text selbst ueberhaupt eine Blocklist-Phrase
+enthalten sollte. (low)

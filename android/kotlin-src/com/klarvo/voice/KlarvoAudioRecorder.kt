@@ -155,6 +155,39 @@ class KlarvoAudioRecorder(
         fun framesForSeconds(secs: Float): Int =
             ceil(secs * VAD_FRAMES_PER_SECOND).toInt().coerceAtLeast(MIN_SILENT_FRAMES)
 
+        // -------------------------------------------------------------------
+        // CARVE-OUT: the 0.5 / 0.35 dual threshold is NOT built here
+        // (story 13-2, B6 / drift row D-M10). Documentation only.
+        // -------------------------------------------------------------------
+        //
+        // Desktop's VAD is a dual-threshold hysteresis machine: onset 0.5,
+        // offset 0.35 (`src-tauri/src/vad/mod.rs`, VadConfig). Android cannot
+        // evaluate the offset threshold at all, and the reason is the shipped
+        // library, not this file:
+        //
+        //   com.github.gkonovalov.android-vad:silero:2.0.10 exposes exactly one
+        //   verdict method, `isSpeech(...) -> boolean`. `predict(float[])`,
+        //   `threshold()` and `extractResult(...)` are private, and
+        //   `Mode.NORMAL` hardcodes 0.5f (measured with `javap -public` /
+        //   `javap -c -p` against the AAR in the Gradle cache). Without the raw
+        //   probability there is no 0.35 offset to compare against.
+        //
+        // A hair-width divergence rides along and is recorded rather than
+        // fixed: the AAR's comparison is `prob > 0.5f` while Rust's onset is
+        // `prob >= 0.5`. Audit row D-M10 states the Android side explicitly
+        // ("speech iff prob > 0.5").
+        //
+        // The only route to the dual threshold is bypassing the library for
+        // `ai.onnxruntime.OrtSession` against the AAR's own `silero_vad.onnx` —
+        // an L-class dependency change. Andi cut that as its own story on
+        // 2026-09-21; see `docs/backlog.md` ("DECIDED 2026-09-21 -- Android-VAD:
+        // Doppelschwelle 0,5/0,35 ist eine eigene Story, Groesse L") and
+        // ADR-0016 Amendment 4, row B6. Story 13-2 therefore ships only B6's
+        // hangover frame ([hangoverFired]).
+        //
+        // DO NOT add the ONNX dependency and DO NOT touch `Mode` to work around
+        // this — the decision is made, and it is not this story's.
+
         // Silero VAD requires exactly 512 samples per frame at 16 kHz (~32 ms/frame).
         private const val VAD_FRAME_SIZE = 512
 
@@ -259,6 +292,36 @@ class KlarvoAudioRecorder(
             val vadSpeech = isSpeech(filteredFrame)
             return VadGateResult(normalizedRms, vadSpeech, energyAboveGate && vadSpeech)
         }
+
+        /**
+         * Has the auto-stop hangover elapsed after [silentFrames] consecutive
+         * non-speech frames, given [requiredSilentFrames]?
+         *
+         * **Story 13-2 (B6 / D-L21): fires on the (N+1)-th frame, not the
+         * N-th.** The call site used to read `silentFrames >= requiredSilentFrames`,
+         * so auto-stop triggered one 32 ms frame earlier than the desktop for
+         * the same configured `silenceSecs`. Rust's `SileroVad::advance_state`
+         * enters `Hangover { frames_left: N }` on the FIRST non-speech frame
+         * and only returns to Silence once `frames_left <= 1`, i.e. on the
+         * (N+1)-th; its own test feeds 1 + 18 + 1 for N = 19. Pinned from both
+         * sides by `VAD-HANGOVER-EDGE-001` in
+         * `test-fixtures/vad-gate-golden-vectors-7-2.json`.
+         *
+         * Extracted rather than fixed in place because **no test constructs
+         * [KlarvoAudioRecorder]** — it needs a `Context` and an `AudioRecord`.
+         * Only the companion is reachable from a JVM test, so without this seam
+         * the change would be unverifiable (the `vadGateDecision` precedent
+         * above).
+         *
+         * The repeatable live-preview pause counter in [processVadFrame] has
+         * the identical shape and deliberately keeps its one-frame difference:
+         * audit row D-L21 cites only the auto-stop counter and ADR-0016:260
+         * narrows B6 to "nur die drei gemessenen Deltas". Recorded in the
+         * story's frontmatter `deferred` and in `docs/backlog.md`.
+         */
+        @androidx.annotation.VisibleForTesting
+        internal fun hangoverFired(silentFrames: Int, requiredSilentFrames: Int): Boolean =
+            silentFrames > requiredSilentFrames
     }
 
     init {
@@ -404,6 +467,12 @@ class KlarvoAudioRecorder(
         // Now: VadSilero processes 512-sample frames; we implement onset/hangover hysteresis manually
         // (the library's built-in speechDurationMs/silenceDurationMs would be an alternative but
         // manual control keeps the logic consistent with the Desktop Rust implementation).
+        //
+        // `Mode.NORMAL` hardcodes a 0.5f threshold inside the AAR and is the
+        // only knob it offers; the desktop's 0.35 OFFSET threshold cannot be
+        // expressed here at all. See the carve-out note beside the VAD
+        // constants above (story 13-2, B6 / D-M10) before changing this line —
+        // the ONNX route is a separate, decided-but-unbuilt story.
         vad = VadSilero(
             context,
             sampleRate = SampleRate.SAMPLE_RATE_16K,
@@ -587,7 +656,9 @@ class KlarvoAudioRecorder(
         // just no longer gating the repeatable preview edge below.
         if (onSilenceDetected != null && !silenceCallbackFired) {
             silentFrames++
-            if (silentFrames >= requiredSilentFrames) {
+            // Story 13-2 (D-L21): the edge lives in the companion so a JVM test
+            // can drive it -- nothing can construct this class.
+            if (hangoverFired(silentFrames, requiredSilentFrames)) {
                 silenceCallbackFired = true
                 KlarvoLogger.d(TAG,"VAD: silence detected after speech ($silentFrames frames >= $requiredSilentFrames required)")
                 // Story 11-1 (spike): mark the exact pause-signal instant here (this IS

@@ -23,7 +23,7 @@
     "id": "TEST-LLM-EMPTY-001",
     "surface": "llm",
     "scenario": "empty",
-    "description": "A 200 whose choice carries an EMPTY content string -- a provider refusal or degenerate completion. This is the reproduction for drift row D2 / D-H19. PINS: the divergence itself. Rust rejects the answer (LlmError::ResponseFormat, non-retryable -> raw transcript, clipboard-only, cause card); Kotlin returns the empty string, which today is pasted into the focused field and stored as the dictation. DOES NOT PIN: what happens downstream of the mapping on either platform (the paste path, the history write) -- story 13-2 owns that; only the mapping's verdict is locked here.",
+    "description": "A 200 whose choice carries an EMPTY content string -- a provider refusal or degenerate completion. This is the reproduction for drift row D2 / D-H19, and story 13-2 CLOSED it. PINS: both twins now reject the answer. Rust raises LlmError::ResponseFormat(\"Empty content in response\"); Kotlin raises KlarvoApi.CleanupResponseFormatException, an IOException that KlarvoOverlayService.isRetryableCleanupFailure names NON-retryable by type -- it carries no \"HTTP nnn\", so the status regex alone would have read it as a transport failure and burned the provider ladder on a guaranteed repeat. Both are non-retryable: no ladder, no paste, no history row; the raw transcript goes to the clipboard with the shipped cleanup-failure cause. Before 13-2 Kotlin returned \"\", which was pasted into the focused field and stored in history.db as the dictation. The emptiness check runs on the SANITIZED content, so an answer made only of control characters is empty too. DOES NOT PIN: the wording of either message beyond the substrings asserted here, or the terminal UI state (KlarvoOverlayService.decideDelivery owns that).",
     "wire": {
       "kind": "canned",
       "status": 200,
@@ -35,16 +35,18 @@
       "message_contains": "Empty content in response"
     },
     "kotlin": {
-      "outcome": "ok",
-      "text": ""
+      "outcome": "throws",
+      "throws": "CleanupResponseFormatException",
+      "message_contains": "empty content in response",
+      "retryable": false
     },
-    "expected_divergence": "D2 / D-H19: Rust errors on an empty LLM answer, Kotlin returns \"\" and pastes it. Story 13-2 closes this."
+    "expected_divergence": null
   },
   {
     "id": "TEST-LLM-TRUNCATED-001",
     "surface": "llm",
     "scenario": "truncated",
-    "description": "A 200 whose choice carries finish_reason == \"length\" -- the max_tokens cap was hit mid-sentence. This is the reproduction for drift row D3 / D-M16. PINS: the divergence. Rust detects it (LlmError::OutputTruncated); Kotlin never inspects finish_reason at all and returns the half sentence. DOES NOT PIN: the max_tokens value itself (that is TWIN-LLM-MAX-TOKENS-001 in twin-constants-vectors.json) or how often the cap is reached in practice.",
+    "description": "A 200 whose choice carries finish_reason == \"length\" -- the max_tokens cap was hit mid-sentence. Reproduction for drift row D3 / D-M16, CLOSED by story 13-2. PINS: both twins reject it before the content is read. Rust raises LlmError::OutputTruncated; Kotlin raises KlarvoApi.CleanupOutputTruncatedException, non-retryable by type for the same reason as the empty case (a repeat produces the same cap). Before 13-2 Kotlin never inspected finish_reason and pasted the half sentence. DOES NOT PIN: the max_tokens value itself (TWIN-LLM-MAX-TOKENS-001 in twin-constants-vectors.json), or how often the cap is reached in practice.",
     "wire": {
       "kind": "canned",
       "status": 200,
@@ -55,16 +57,18 @@
       "error": "OutputTruncated"
     },
     "kotlin": {
-      "outcome": "ok",
-      "text": "Debug provider canned answer that was cut"
+      "outcome": "throws",
+      "throws": "CleanupOutputTruncatedException",
+      "message_contains": "truncated",
+      "retryable": false
     },
-    "expected_divergence": "D3 / D-M16: Rust maps finish_reason == \"length\" to OutputTruncated, Kotlin has no truncation detection and pastes the partial text. Story 13-2 closes this."
+    "expected_divergence": null
   },
   {
     "id": "TEST-LLM-MALFORMED-001",
     "surface": "llm",
     "scenario": "malformed",
-    "description": "A 200 carrying a body that genuinely does NOT deserialize: a JSON envelope that ends mid-string, the shape a cut-off or proxy-garbled provider answer has. This is the reproduction for drift row D10 / D-M2, and it reproduces the MECHANISM, not a look-alike. PINS: both halves of that row. Rust -- reqwest's response.json() fails to decode, the error #[from]-converts to LlmError::Request, pipeline::is_retryable_llm_error says TRUE and the production fallback ladder fires (D-M2's Desktop column). Kotlin -- JSONObject(body) throws a bare org.json.JSONException, which is NOT an IOException, so KlarvoOverlayService's single-call cleanup ladder never runs and the dictation degrades straight to clipboard-only (D-M2's Android column); on the CHUNKED path (text >= CHUNK_THRESHOLD 400 bytes) KlarvoApi.collectChunkResults rewraps the same JSONException into an IOException whose message carries no \"HTTP nnn\", so isRetryableCleanupFailure finds no status and the ladder DOES fire there. The body deliberately contains no \"HTTP nnn\" substring, so that regex cannot match by accident. The `rust.message_contains` string \"error decoding response body\" is reqwest 0.12.28's own `Display` text for a decode error (`src/error.rs`, `Kind::Decode`), not a Klarvo string: a reqwest bump may change it, and the load-bearing claims are `rust.error == \"Request\"` and `rust.retryable == true`, which are pinned separately. DOES NOT PIN: the fallback ladder's membership (Groq is never a cleanup fallback, Epic 12 FR2; `test` is never a candidate either), whether the fallback call succeeds, the exact reqwest/org.json error wording beyond the substring asserted here, or the STT side -- STT parses with serde_json::from_slice and is NON-retryable for the same class of body (see TEST-STT-MALFORMED-001).",
+    "description": "A 200 carrying a body that genuinely does NOT deserialize: a JSON envelope that ends mid-string, the shape a cut-off or proxy-garbled provider answer has. This is the reproduction for drift row D10 / D-M2, and it reproduces the MECHANISM, not a look-alike. PINS: both halves of that row. Rust -- reqwest's response.json() fails to decode, the error #[from]-converts to LlmError::Request, pipeline::is_retryable_llm_error says TRUE and the production fallback ladder fires (D-M2's Desktop column). Kotlin -- JSONObject(body) still throws a bare org.json.JSONException (the honest outcome for a body that does not parse), but story 13-2 CLOSED the behavioural half: the ladder gate moved into the pure KlarvoOverlayService.isRetryableCleanupFailure, which classifies a JSONException as RETRYABLE, so the single-call path now fires the ladder exactly as the chunked path always did. Before 13-2 the gate read `e is IOException &&` first, JSONException is not one, and a dictation under CHUNK_THRESHOLD degraded straight to clipboard-only. On the CHUNKED path (text >= CHUNK_THRESHOLD 400 bytes) KlarvoApi.collectChunkResults rewraps the same JSONException into an IOException whose message carries no \"HTTP nnn\", so isRetryableCleanupFailure finds no status and the ladder DOES fire there. The body deliberately contains no \"HTTP nnn\" substring, so that regex cannot match by accident. The `rust.message_contains` string \"error decoding response body\" is reqwest 0.12.28's own `Display` text for a decode error (`src/error.rs`, `Kind::Decode`), not a Klarvo string: a reqwest bump may change it, and the load-bearing claims are `rust.error == \"Request\"` and `rust.retryable == true`, which are pinned separately. DOES NOT PIN: the fallback ladder's membership (Groq is never a cleanup fallback, Epic 12 FR2; `test` is never a candidate either), whether the fallback call succeeds, the exact reqwest/org.json error wording beyond the substring asserted here, or the STT side -- STT parses with serde_json::from_slice and is NON-retryable for the same class of body (see TEST-STT-MALFORMED-001).",
     "wire": {
       "kind": "canned",
       "status": 200,
@@ -82,9 +86,11 @@
       "chunked_path": {
         "throws": "IOException",
         "message_excludes_http_status": true
-      }
+      },
+      "retryable": true,
+      "ladder_fires_on_single_call_path": true
     },
-    "expected_divergence": "D10 / D-M2: Rust treats the undecodable body as retryable (LlmError::Request) and fires the provider ladder; Kotlin leaks a bare JSONException on the single-call path so no fallback fires there, while the chunked path rewraps it into a status-less IOException and does fall back. Story 13-2 closes the single-call half."
+    "expected_divergence": "Story 13-2 closed the behavioural half of D10 / D-M2: both platforms now treat an undecodable body as retryable and fire the provider ladder, on the chunked AND the single-call path. What remains is a representation difference that cannot be removed -- Rust surfaces it as LlmError::Request (reqwest's decode error), Kotlin as org.json.JSONException -- and the two twins parse with different libraries by construction. The VERDICT is what is pinned."
   },
   {
     "id": "TEST-LLM-HTTP429-001",
@@ -176,7 +182,7 @@
     "id": "TEST-STT-EMPTY-001",
     "surface": "stt",
     "scenario": "empty",
-    "description": "A 200 whose transcript is empty -- the reproduction for drift row D9 / D-M5 (STT returns empty / unparseable text). PINS: Rust maps it to SttError::ResponseFormat, which pipeline::is_retryable_stt_error treats as NON-retryable, so the desktop pipeline reports at once instead of retrying. DOES NOT PIN: Android's retry budget (D-M6: three attempts with 2s/5s backoff live in KlarvoOverlayService.transcribeWithRetry, above the shared core and unchanged by this story), the local-Whisper safety net, or the pending-WAV terminal path. NOTE for the reproduction: pipeline::try_local_whisper_fallback can silently rescue a test STT failure on a machine that has a local model downloaded -- remove or rename the model to observe the terminal path.",
+    "description": "A 200 whose transcript is empty -- the reproduction for drift row D9 / D-M5 (STT returns empty / unparseable text), CLOSED by story 13-2. PINS: Rust maps it to SttError::ResponseFormat, which pipeline::is_retryable_stt_error treats as NON-retryable; on Android the same error now crosses the JNI as its own sentinel `__ERROR_FORMAT:<msg>__` (stt/groq_jni.rs, matched BEFORE the __ERROR_NETWORK: catch-all) and KlarvoOverlayService.classifySttSentinel returns NON_RETRYABLE for it. Before 13-2 it fell into the catch-all and Android burned three Groq calls and ~7 s of backoff on a guaranteed repeat. Also closed here: D-M6, the retry BUDGET -- transcribeWithRetry's retryDelaysMs is empty, so Android makes one attempt like Desktop instead of three. DOES NOT PIN: the local-Whisper safety net or the pending-WAV terminal path (both unchanged, and the \"failed after retries\" message that gates the net still fires for a retryable exhaustion). NOTE for the reproduction: pipeline::try_local_whisper_fallback can silently rescue a test STT failure on a machine that has a local model downloaded -- remove or rename the model to observe the terminal path.",
     "wire": {
       "kind": "canned",
       "status": 200,
@@ -189,7 +195,10 @@
     },
     "kotlin": {
       "outcome": "n/a",
-      "note": "STT is shared Rust core (ADR-0017)."
+      "note": "STT is shared Rust core (ADR-0017). The Kotlin side owns only the sentinel->verdict mapping and the retry budget, both pinned by SttSentinelClassificationTest against the sentinel strings stt/groq_jni.rs emits.",
+      "sentinel": "__ERROR_FORMAT:",
+      "verdict": "NON_RETRYABLE",
+      "retry_attempts": 1
     },
     "expected_divergence": null
   },

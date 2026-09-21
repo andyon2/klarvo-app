@@ -1,0 +1,236 @@
+[
+  {
+    "id": "GUARD-ECHO-DICTIONARY-001",
+    "surface": "stt",
+    "scenario": "dictionary-word utterance",
+    "description": "The user says a short sentence made entirely of their own dictionary terms, with the dictionary 'Klarvo, Kubernetes' configured. This is drift row B2 / D-H5 and it is Andi's own reproduction on the Xiaomi. PINS: that the prompt-echo guard is fed the conditioning hint ALONE. With the hint, the word overlap is ~0.33 and the sentence survives; with the full built prompt -- which carries the comma-joined dictionary, and before story 13-2 that is exactly what the Android JNI passed -- the overlap is 1.00 and the whole dictation is returned as the empty string. Both inputs are pinned, so the fix cannot be undone by quietly restoring the wide hint. DOES NOT PIN: the 0.7 overlap constant itself, the >30-word bail-out, or the diversity branch (pipeline::is_prompt_echo owns those and no audit row re-opens them).",
+    "input": {
+      "transcript": "Klarvo und Kubernetes.",
+      "dictionary_terms": "Klarvo, Kubernetes",
+      "language": "de",
+      "stt_prompt_override": null
+    },
+    "rust": {
+      "hint_is": "builtin_de",
+      "skip": null,
+      "text": "Klarvo und Kubernetes."
+    },
+    "rust_with_full_prompt_as_hint": {
+      "skip": "PromptEcho",
+      "note": "the pre-13-2 Android input: build_stt_prompt_with_hint(...) passed as the guard hint"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT guards are shared Rust core (ADR-0017). Android reaches this chain through GroqSttBridge.nativeTranscribe -> stt::groq_jni::guard_transcript_for_jni; GuardChainBridgeTest asserts the delegation instead of re-implementing the verdict."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "GUARD-STRIP-DICTIONARY-001",
+    "surface": "stt",
+    "scenario": "long dictionary term inside a real sentence",
+    "description": "A one-term dictionary whose term is >= 10 bytes, used in an ordinary sentence. Drift row B2 / D-H6. PINS: that the fragment strip is fed the hint alone, so the dictionary term is NOT a strip candidate. Fed the full built prompt, the comma-joined dictionary tail becomes its own >= 10-byte 'fragment' and the term is deleted from EVERY transcript -- 'Das Bundesverfassungsgericht hat entschieden.' became 'Das hat entschieden.' on Android. Both readings are pinned. DOES NOT PIN: the >= 10-byte rule, the case-insensitive substring removal, or the orphaned-punctuation-token pass.",
+    "input": {
+      "transcript": "Das Bundesverfassungsgericht hat entschieden.",
+      "dictionary_terms": "Bundesverfassungsgericht",
+      "language": "de",
+      "stt_prompt_override": null
+    },
+    "rust": {
+      "hint_is": "builtin_de",
+      "skip": null,
+      "text": "Das Bundesverfassungsgericht hat entschieden."
+    },
+    "rust_with_full_prompt_as_hint": {
+      "skip": null,
+      "text": "Das hat entschieden.",
+      "note": "the pre-13-2 Android behaviour: the dictionary term is silently deleted"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT guards are shared Rust core (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "GUARD-ORDER-001",
+    "surface": "stt",
+    "scenario": "leaked hint fragment ahead of real speech",
+    "description": "Whisper leaks the whole German conditioning prompt and the user's one real word follows it. Drift row B2 / D-M9 (guard order). PINS: (a) the fragment strip runs BEFORE the echo verdict, so 'Danke' survives -- Android ran the echo check first and dropped the dictation (simulated overlap 0.88 on the raw text); (b) that within the chain the fragment strip runs before the GHOST strip. (b) is not cosmetic: the German built-in hint literally contains the STOCKPHRASE_BLOCKLIST entry 'Groß- und Kleinschreibung', so ghost-stripping first mutilates the leaked hint, the fragment strip no longer recognises it, and the residue 'Korrekte Satzzeichen und Interpunktion. Danke' is dropped as an echo -- the very outcome this row removes. That residue is recorded here as `rust_with_ghost_strip_first` so the wrong order fails loudly. DOES NOT PIN: what the echo guard does to any other residue, or the behaviour for the English/auto hints (their literals contain no blocklist entry, so the order is invisible there).",
+    "input": {
+      "transcript": "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion. Danke",
+      "dictionary_terms": "",
+      "language": "de",
+      "stt_prompt_override": null
+    },
+    "rust": {
+      "hint_is": "builtin_de",
+      "skip": null,
+      "text": "Danke"
+    },
+    "rust_with_ghost_strip_first": {
+      "skip": "PromptEcho",
+      "text": "Korrekte Satzzeichen und Interpunktion. Danke",
+      "note": "measured 2026-09-21; this is why step 1 is the fragment strip"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT guards are shared Rust core (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "GUARD-GHOST-RAW-001",
+    "surface": "stt",
+    "scenario": "raw transcript ending in a stockphrase ghost",
+    "description": "A real dictation with the audit's #1 observed ghost appended ('… Groß- und Klinge', ~1.1 % of long desktop clips). Drift row B3 / D-H7, Desktop half. PINS: the ghost is stripped BEFORE the hallucination verdict, so the dictation survives minus the ghost. Before story 13-2 the Desktop ran is_hallucination on the unstripped text; its stockphrase block has no word-count gate, so the WHOLE transcript was dropped silently -- recorded here as `rust_without_pre_guard_ghost_strip`. DOES NOT PIN: the blocklist's membership, the > 8-word gate that applies to the other blocklist family, or the 1.1 % rate.",
+    "input": {
+      "transcript": "Das ist ein Test des Systems. Groß- und Klinge",
+      "dictionary_terms": "",
+      "language": "de",
+      "stt_prompt_override": null
+    },
+    "rust": {
+      "hint_is": "builtin_de",
+      "skip": null,
+      "text": "Das ist ein Test des Systems"
+    },
+    "rust_without_pre_guard_ghost_strip": {
+      "skip": "Blocklist",
+      "note": "the pre-13-2 Desktop behaviour: the whole dictation is dropped"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT guards are shared Rust core (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "GUARD-GHOST-POSTCLEANUP-001",
+    "surface": "stt",
+    "scenario": "ghost the LLM rationalised during cleanup",
+    "description": "Cleanup turns the recognisable ghost 'Klinge' into the convincing full stockphrase 'Kleinschreibung' -- detectable junk becomes fluent junk. Drift row B3 / D-H7, Android half. PINS: strip_stockphrase_ghosts applied to the POST-cleanup text removes it. Desktop has always done this (pipeline.rs, right after sanitize_llm_output); Android had no post-cleanup strip at all and now calls the same Rust function over GroqSttBridge.nativeStripStockphraseGhosts. DOES NOT PIN: what the LLM actually returns (that is a model behaviour, not a contract), nor sanitizeLlmOutput's control-character pass.",
+    "input": {
+      "cleaned_text": "Das ist ein Test des Systems. Groß- und Kleinschreibung"
+    },
+    "rust": {
+      "function": "strip_stockphrase_ghosts",
+      "text": "Das ist ein Test des Systems"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "Android calls the same Rust function over GroqSttBridge.nativeStripStockphraseGhosts. GuardChainBridgeTest pins the call site; no Kotlin ghost-strip twin may exist (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "GUARD-ECHO-DROP-001",
+    "surface": "stt",
+    "scenario": "transcript that really is an echo of the hint",
+    "description": "Whisper returns a paraphrase of its own conditioning prompt -- the case the echo guard exists for. PINS: the guard still DROPS, and the drop reaches Kotlin as the empty string. Without a dropping vector the whole chain could be replaced by a passthrough and every other vector here would still be green: the five rows above all assert SURVIVAL, which is what 13-2 widened. DOES NOT PIN: the 0.7 overlap constant or the diversity branch.",
+    "input": {
+      "transcript": "Diktat auf Deutsch mit englischen Fachbegriffen",
+      "dictionary_terms": "",
+      "language": "de",
+      "stt_prompt_override": null
+    },
+    "rust": {
+      "hint_is": "builtin_de",
+      "skip": "PromptEcho",
+      "text": "Diktat auf Deutsch mit englischen Fachbegriffen",
+      "jni_returns": ""
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT guards are shared Rust core (ADR-0017); a dropped transcript reaches Kotlin as the empty string and takes the shipped blank-transcript ending, which after D11 is silent."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "GUARD-BLOCKLIST-DROP-001",
+    "surface": "stt",
+    "scenario": "transcript that is nothing but a known hallucination",
+    "description": "A training-data artefact with no real speech around it ('Untertitelung des ZDF, 2020'). PINS: the blocklist still DROPS after the ghost strip was moved ahead of it (B3) -- the pre-guard strip must not turn the blocklist into a no-op -- and the drop reaches Kotlin as the empty string. DOES NOT PIN: the blocklist's membership, or the >8-word gate that applies to the non-stockphrase family.",
+    "input": {
+      "transcript": "Untertitelung des ZDF, 2020",
+      "dictionary_terms": "",
+      "language": "de",
+      "stt_prompt_override": null
+    },
+    "rust": {
+      "hint_is": "builtin_de",
+      "skip": "Blocklist",
+      "text": "Untertitelung des ZDF, 2020",
+      "jni_returns": ""
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT guards are shared Rust core (ADR-0017); a dropped transcript reaches Kotlin as the empty string and takes the shipped blank-transcript ending, which after D11 is silent."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "STT-PROMPT-JOIN-BUILTIN-001",
+    "surface": "stt",
+    "scenario": "built-in hint joined with dictionary terms",
+    "description": "The prompt builder's separator, story 13-2 / B4. PINS: that making the join EXPLICIT left the built-in output byte-identical. Until this story the join was format!(\"{hint}{terms}\") and worked only because each built-in literal ended in a space; hint and terms are now trimmed and joined with exactly one space. DOES NOT PIN: the hint literals themselves (stt::STT_HINT_DE/EN/AUTO), or the language selection (that is select_stt_hint_override).",
+    "input": {
+      "language": "de",
+      "dictionary_terms": "Klarvo, Kubernetes",
+      "stt_prompt_override": null
+    },
+    "rust": {
+      "function": "build_stt_prompt_with_hint",
+      "prompt": "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion. Klarvo, Kubernetes"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "The STT prompt is built in Rust for both platforms (ADR-0017); Kotlin passes the raw config values to nativeTranscribe."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "STT-PROMPT-JOIN-CUSTOM-001",
+    "surface": "stt",
+    "scenario": "user hint without a trailing space, joined with dictionary terms",
+    "description": "The defect the explicit separator fixes, story 13-2 / B4. A user-supplied advanced.sttPromptDe that does not happen to end in a space used to glue straight into the first dictionary term ('Technisches Diktat.Kubernetes, TypeScript') on BOTH platforms, which both conditions Whisper wrongly and makes the glued token a strip candidate. PINS: exactly one space between hint and terms. DOES NOT PIN: what Whisper does with either string -- that is not decidable on a Linux test host.",
+    "input": {
+      "language": "de",
+      "dictionary_terms": "Kubernetes, TypeScript",
+      "stt_prompt_override": "Technisches Diktat."
+    },
+    "rust": {
+      "function": "build_stt_prompt_with_hint",
+      "prompt": "Technisches Diktat. Kubernetes, TypeScript",
+      "pre_13_2_prompt": "Technisches Diktat.Kubernetes, TypeScript"
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "The STT prompt is built in Rust for both platforms (ADR-0017)."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "STT-HINT-SELECT-DE-FALLTHROUGH-001",
+    "surface": "stt",
+    "scenario": "language de with an empty sttPromptDe but a set sttPromptAuto",
+    "description": "The selection Android must mirror, story 13-2 / B4 / D-H4. PINS: the shipped fall-through -- a 'de' run whose sttPromptDe is empty still picks up a non-empty sttPromptAuto, because the Rust match's third arm is `_ if !auto.is_empty()`, not `\"auto\" if ...`. A Kotlin twin written from the obvious reading ('de -> de, en -> en, else -> auto') would agree on every other row and disagree here. DOES NOT PIN: what the override text should be, or the empty-vs-blank question (the shipped check is is_empty(), not is_blank()).",
+    "input": {
+      "language": "de",
+      "stt_prompt_de": "",
+      "stt_prompt_en": "",
+      "stt_prompt_auto": "Automatischer Hinweis."
+    },
+    "rust": {
+      "function": "select_stt_hint_override",
+      "selected": "Automatischer Hinweis."
+    },
+    "kotlin": {
+      "outcome": "same",
+      "function": "KlarvoApi.selectSttHintOverride",
+      "selected": "Automatischer Hinweis.",
+      "note": "This one vector DOES have a Kotlin reader: the selection is config plumbing on the Kotlin side (which string to pass to the JNI), not STT logic, so it is a twin rather than shared core."
+    },
+    "expected_divergence": null
+  }
+]

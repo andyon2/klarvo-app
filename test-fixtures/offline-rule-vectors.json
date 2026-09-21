@@ -1,0 +1,84 @@
+[
+  {
+    "id": "OFFLINE-CLOUD-CLOUD-001",
+    "scenario": "cloud STT + cloud cleanup",
+    "description": "The default configuration. PINS: the ordinary path still calls cleanup. DOES NOT PIN: which cloud provider is picked (resolve_cleanup_provider / resolveLlmProvider own that), or the fallback ladder.",
+    "stt_provider": "groq",
+    "llm_provider": "deepseek",
+    "local_cleanup_available": true,
+    "expected_skips_cleanup": false
+  },
+  {
+    "id": "OFFLINE-CLOUD-CLOUD-002",
+    "scenario": "cloud STT + cloud cleanup, no local provider on this platform",
+    "description": "Same as OFFLINE-CLOUD-CLOUD-001 on a build without a local LLM (every non-Windows desktop build, and Android). PINS: platform availability changes nothing when neither side asked for local.",
+    "stt_provider": "groq",
+    "llm_provider": "deepseek",
+    "local_cleanup_available": false,
+    "expected_skips_cleanup": false
+  },
+  {
+    "id": "OFFLINE-LOCAL-CLOUD-001",
+    "scenario": "local STT + cloud cleanup -- the G2a rule",
+    "description": "The user chose 'Offline' for STT and left a cloud cleanup provider configured. Drift row E2 / D-H10, and grundsatzurteil G2a: no byte leaves the device. PINS: no cleanup call. This is what the desktop HOTKEY has always done and what the React in-app button (D-M20) and Android (D-H10) did not. DOES NOT PIN: what Settings lets the user select (13-3 gates the Android control), only what the runtime does with a stored value.",
+    "stt_provider": "local",
+    "llm_provider": "deepseek",
+    "local_cleanup_available": true,
+    "expected_skips_cleanup": true
+  },
+  {
+    "id": "OFFLINE-LOCAL-CLOUD-002",
+    "scenario": "local STT + cloud cleanup, no local provider on this platform",
+    "description": "The Android shape of OFFLINE-LOCAL-CLOUD-001: a stored sttProvider = 'local' survives the hidden control (13-3), and the configured cloud cleanup must still not run.",
+    "stt_provider": "local",
+    "llm_provider": "deepseek",
+    "local_cleanup_available": false,
+    "expected_skips_cleanup": true
+  },
+  {
+    "id": "OFFLINE-LOCAL-LOCAL-001",
+    "scenario": "local STT + local cleanup, where local cleanup exists",
+    "description": "Windows with llama.cpp. PINS: cleanup RUNS -- offline does not mean 'no cleanup', it means 'no network'. The predicate must not collapse into 'stt == local => raw text', which is exactly the second definition D-M20 is about.",
+    "stt_provider": "local",
+    "llm_provider": "local",
+    "local_cleanup_available": true,
+    "expected_skips_cleanup": false
+  },
+  {
+    "id": "OFFLINE-LOCAL-LOCAL-002",
+    "scenario": "local STT + local cleanup, where local cleanup does NOT exist",
+    "description": "The same config on a platform with no local LLM. PINS: no cleanup. Before story 13-2 this reached resolve_cleanup_provider's `_ => deepseek` arm, so a fully offline configuration made a cloud call.",
+    "stt_provider": "local",
+    "llm_provider": "local",
+    "local_cleanup_available": false,
+    "expected_skips_cleanup": true
+  },
+  {
+    "id": "OFFLINE-CLOUD-LOCAL-001",
+    "scenario": "cloud STT + local cleanup, where local cleanup exists",
+    "description": "The mixed configuration the two pickers allow. PINS: on-device cleanup runs, no skip.",
+    "stt_provider": "groq",
+    "llm_provider": "local",
+    "local_cleanup_available": true,
+    "expected_skips_cleanup": false
+  },
+  {
+    "id": "OFFLINE-CLOUD-LOCAL-002",
+    "scenario": "cloud STT + local cleanup, where local cleanup does NOT exist -- drift row D-M21",
+    "description": "The discriminating row, and the one no pre-13-2 definition got right. One setting ('Local (Offline)' cleanup), three outcomes: on-device on Windows, inert on the Android overlay path, and -- through the Rust in-app button inside TauriActivity, or any non-Windows desktop build -- a plain DeepSeek call, because `\"local\"` fell through to `_ => cleanup_provider_for(\"deepseek\", …)`. PINS: the answer is NO cleanup. DOES NOT PIN: any user-facing wording; the shipped OfflineRaw outcome is reused and nothing new is shown.",
+    "stt_provider": "groq",
+    "llm_provider": "local",
+    "local_cleanup_available": false,
+    "expected_skips_cleanup": true
+  },
+  {
+    "id": "OFFLINE-PLATFORM-AVAILABILITY-001",
+    "scenario": "what each platform reports for local_cleanup_available",
+    "description": "PINS the platform constants the rows above are parameterised on, so the matrix cannot be read as hypothetical. Rust: `pipeline::local_cleanup_available()` is `cfg!(target_os = \"windows\")` -- llama-cpp-2 is a Windows-only dependency (project-context: it needs libclang + CMake). Kotlin: `KlarvoOverlayService.LOCAL_CLEANUP_AVAILABLE` is `false` -- Android has no local cleanup and, per G3b, will not get one in this epic. DOES NOT PIN: whether a local provider SHOULD exist on a platform; that is a build decision, not a runtime one.",
+    "platform_constants": {
+      "rust_windows": true,
+      "rust_non_windows": false,
+      "android_kotlin": false
+    }
+  }
+]

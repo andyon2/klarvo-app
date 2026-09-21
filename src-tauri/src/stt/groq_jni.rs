@@ -8,6 +8,7 @@
 //! - `nativeIsHallucination(text: String): Boolean`
 //! - `nativeIsPromptEcho(transcription: String, sttHint: String): Boolean`
 //! - `nativeStripPromptFragments(text: String, sttHint: String): String`
+//! - `nativeStripStockphraseGhosts(text: String): String`
 //! - `nativeSilenceCheck(wavBase64: String, minRecordingMs: Long, silenceThreshold: Float): String`
 //!
 //! ## Why this module exists
@@ -59,6 +60,41 @@ use super::{GroqWhisper, SttProvider};
 use super::{build_stt_prompt_with_hint, is_hallucination, strip_stockphrase_ghosts};
 #[cfg(target_os = "android")]
 use crate::pipeline::{compute_wav_rms, is_prompt_echo, silence_skip, strip_prompt_fragments};
+
+// ---------------------------------------------------------------------------
+// The shared guard chain, reachable from `cargo test --lib` (story 13-2)
+// ---------------------------------------------------------------------------
+
+/// Runs the ONE post-STT guard chain for the Android JNI and maps its verdict
+/// to what `nativeTranscribe` hands back to Kotlin.
+///
+/// `Some(text)` — the transcript survived; `None` — it was dropped by the echo
+/// or blocklist guard, which Kotlin sees as the empty string (the shipped
+/// "nothing recognised" ending, silent on both platforms after D11).
+///
+/// Story 13-2 (B2 / D-H5, D-H6, D-M9 and B3 / D-H7). Until this story
+/// `nativeTranscribe` re-implemented the chain inline, in the wrong order, fed
+/// with the **full built prompt** (hint + dictionary + the LLM cleanup
+/// instruction) where the desktop feeds the hint alone. Those were not three
+/// bugs but one: a second copy of a decision that already lived in one pure
+/// function. There is no copy any more — this delegates to
+/// [`crate::pipeline::guard_transcript`], which is what the desktop pipeline
+/// calls.
+///
+/// Plain Rust, not `#[cfg(target_os = "android")]`, following the
+/// [`select_stt_provider`] precedent: an android-gated chain is a chain no
+/// executing test can reach, and every B2/B3 claim would be agent-only.
+#[cfg_attr(not(any(test, target_os = "android")), allow(dead_code))]
+pub fn guard_transcript_for_jni(text: &str, stt_hint: &str) -> Option<String> {
+    let outcome = crate::pipeline::guard_transcript(text, stt_hint);
+    match outcome.skip {
+        Some(skip) => {
+            log::info!("[groq_jni] transcript dropped by the shared guard chain: {skip:?}");
+            None
+        }
+        None => Some(outcome.text),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Provider choice — the ONE decision nativeTranscribe makes (story 13-1)
@@ -178,7 +214,14 @@ fn read_jstring(env: &mut JNIEnv, arg: JString, name: &str) -> Option<String> {
 /// - `api_key`:          Groq API Bearer token from `config.groqApiKey`.
 /// - `language`:         ISO-639-1 code ("de", "en") or empty for auto-detect.
 /// - `dictionary_terms`: Comma-separated user dictionary (or empty).
-/// - `custom_prompt`:    User custom STT hint (or empty).
+/// - `custom_prompt`:    The Whisper CONDITIONING hint — `advanced.sttPromptDe`
+///                       / `…En` / `…Auto`, selected for `language` by
+///                       `KlarvoApi.selectSttHintOverride`, or empty for the
+///                       built-in hint. Story 13-2 (B4 / D-H4): Kotlin used to
+///                       pass `config.customPrompt`, the **LLM cleanup
+///                       instruction**, which replaced the language hint in the
+///                       Whisper request and poisoned both guards.
+///                       `customPrompt` now reaches the LLM and nothing else.
 /// - `stt_model`:        Groq model name (e.g. "whisper-large-v3-turbo").
 /// - `temperature`:      Whisper sampling temperature (0.0 = deterministic).
 /// - `test_provider_stt`: `config.advanced.testProviderStt`, carried through by
@@ -200,12 +243,20 @@ fn read_jstring(env: &mut JNIEnv, arg: JString, name: &str) -> Option<String> {
 /// Returns: transcribed text, or an empty string on any error.
 ///
 /// Error codes embedded in the return string for distinguishable failures:
-/// - `"__ERROR_EMPTY_AUDIO__"` — WAV decoded to zero bytes.
-/// - `"__ERROR_API:<msg>__"`   — Groq API returned a non-2xx status.
+/// - `"__ERROR_EMPTY_AUDIO__"` — WAV decoded to zero bytes. NOT retryable.
+/// - `"__ERROR_API:<msg>__"`   — Groq API returned a non-2xx status. Retryable
+///   iff the embedded status is not 4xx.
+/// - `"__ERROR_FORMAT:<msg>__"` — the answer arrived but is empty or does not
+///   parse (`SttError::ResponseFormat`). **NOT retryable**, matching
+///   `pipeline::is_retryable_stt_error`. Added by story 13-2 (D9 / D-M5):
+///   without its own sentinel this class fell into the `__ERROR_NETWORK:`
+///   catch-all and Android burned three Groq calls and ~7 s of backoff on a
+///   guaranteed repeat that Desktop reports on the first attempt.
 /// - `"__ERROR_NETWORK:<msg>__"` — network failure (caller may retry).
 ///
 /// The double-underscore prefix makes these machine-detectable by the Kotlin
 /// retry wrapper so it can distinguish retriable from non-retriable errors.
+/// The classification itself is `KlarvoOverlayService.classifySttSentinel`.
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
@@ -267,6 +318,15 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
     let custom_opt = if custom.trim().is_empty() { None } else { Some(custom.trim()) };
     let prompt = build_stt_prompt_with_hint(dict_opt, &lang, custom_opt);
 
+    // Story 13-2 (B2): the guards need the conditioning hint ALONE, not the
+    // built prompt. Rather than widen the JNI signature — `#[no_mangle]`
+    // exports the short name, so an arity change can misbind a stale `.so`
+    // silently — the hint is rebuilt here from the two arguments that already
+    // cross the boundary, by the same function the desktop pipeline uses.
+    // `custom_prompt` carries `advanced.sttPrompt*` since this story (B4), so
+    // the two sides compute the identical string.
+    let hint = crate::stt::stt_hint_text(&lang, custom_opt);
+
     // --- Build client (H9: sttModel from config, H10: no hardcoded model literal) ---
     //
     // Story 13-1b: a non-`off` `advanced.testProviderStt` swaps in the
@@ -299,21 +359,13 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
         Ok(text) => {
             log::info!("[groq_jni] transcribe ok, len={}", text.len());
 
-            // AC2 (Finding 4): apply is_prompt_echo (H6) and strip_prompt_fragments (H7)
-            // inline here, exactly as the desktop pipeline does (pipeline.rs:501, 1032).
-            // This ensures Android inherits these guards without requiring any Kotlin change.
-            // The separate nativeIsPromptEcho / nativeStripPromptFragments JNI fns remain
-            // but are no longer the primary path for the nativeTranscribe caller.
-            let hint = prompt.as_deref().unwrap_or("");
-            if is_prompt_echo(&text, hint) {
-                log::info!("[groq_jni] transcript is prompt echo (H6), returning empty");
-                return to_jstring(&mut env, "");
+            // Story 13-2 (B2/B3): ONE chain, the desktop's own. See
+            // [`guard_transcript_for_jni`]. A dropped transcript comes back as
+            // the empty string, exactly as before.
+            match guard_transcript_for_jni(&text, &hint) {
+                Some(cleaned) => to_jstring(&mut env, &cleaned),
+                None => to_jstring(&mut env, ""),
             }
-            let stripped = strip_prompt_fragments(&text, hint);
-            // Also strip stockphrase ghosts (AC7) from the post-strip output.
-            let cleaned = strip_stockphrase_ghosts(&stripped);
-
-            to_jstring(&mut env, &cleaned)
         }
         Err(crate::stt::SttError::EmptyAudio) => {
             log::warn!("[groq_jni] transcribe: empty audio");
@@ -324,12 +376,54 @@ pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(
             log::warn!("[groq_jni] transcribe API error: {msg}");
             to_jstring(&mut env, &msg)
         }
+        // Story 13-2 (D9 / D-M5): matched BEFORE the catch-all below. An empty
+        // or unparseable STT answer is `SttError::ResponseFormat`, which
+        // `pipeline::is_retryable_stt_error` calls NON-retryable — but it used
+        // to reach Kotlin as `__ERROR_NETWORK:` and burn three Groq calls plus
+        // ~7 s of backoff before reporting the same terminal state Desktop
+        // reports at once.
+        Err(crate::stt::SttError::ResponseFormat(message)) => {
+            let msg = format!("__ERROR_FORMAT:{message}__");
+            log::warn!("[groq_jni] transcribe response-format error (non-retryable): {msg}");
+            to_jstring(&mut env, &msg)
+        }
         Err(e) => {
             let msg = format!("__ERROR_NETWORK:{e}__");
             log::warn!("[groq_jni] transcribe network error: {msg}");
             to_jstring(&mut env, &msg)
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// nativeStripStockphraseGhosts — post-cleanup ghost strip (story 13-2, B3)
+// ---------------------------------------------------------------------------
+
+/// Strips stockphrase ghosts from already-cleaned text.
+///
+/// The second half of B3 / D-H7: the desktop runs `strip_stockphrase_ghosts`
+/// once more **after** LLM cleanup (`pipeline.rs`, right after
+/// `sanitize_llm_output`), because cleanup rationalises a recognisable ghost
+/// (`"Klinge"`) into a convincing full stockphrase (`"Kleinschreibung"`) —
+/// detectable junk turned fluent. Android had no post-cleanup strip at all.
+///
+/// A sibling of [`Java_com_klarvo_voice_GroqSttBridge_nativeStripPromptFragments`]
+/// rather than a reuse of it: that one also applies `strip_prompt_fragments`,
+/// which the desktop does NOT do after cleanup. Same job, same function, same
+/// position — no Kotlin ghost-strip twin (ADR-0017).
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_klarvo_voice_GroqSttBridge_nativeStripStockphraseGhosts(
+    mut env: JNIEnv,
+    _class: JClass,
+    text: JString,
+) -> jstring {
+    let t = match read_jstring(&mut env, text, "text") {
+        Some(s) => s,
+        None => return empty_jstring(&mut env),
+    };
+    let result = strip_stockphrase_ghosts(&t);
+    to_jstring(&mut env, &result)
 }
 
 // ---------------------------------------------------------------------------

@@ -83,5 +83,30 @@
     "description": "stop-latency at a very small tuned silenceSecs=0.05 -- exercises the AC2 200ms-equivalent floor (ceil(0.05 * 31.25) = 2, floored up to 7)",
     "silence_secs": 0.05,
     "expected_frames": 7
+  },
+  {
+    "id": "VAD-HANGOVER-EDGE-001",
+    "category": "hangover-edge",
+    "config": "default",
+    "description": "The hangover TRIGGER EDGE, story 13-2 / B6 / D-L21. The VAD-LATENCY-* vectors above pin how many silent frames are REQUIRED (ceil(secs * 31.25), floored at 7); they say nothing about which frame actually fires, and both platforms passed them while disagreeing by one frame. PINS: with required_silent_frames = N consecutive non-speech frames after speech, the auto-stop edge has NOT fired at the N-th and HAS fired at the (N+1)-th. That is what Rust's advance_state has always done (Speaking -> Hangover{N} on the first non-speech frame, then one decrement per frame, Silence when frames_left <= 1, i.e. on frame N+1; its own test feeds 1+18+1 for N=19). Android fired at the N-th (`silentFrames >= requiredSilentFrames`) and auto-stopped ~32 ms early for the same configured silenceSecs. DOES NOT PIN: the 200 ms / 7-frame floor (VAD-LATENCY-003), the frames-per-second constant (VAD-LATENCY-001), or the repeatable live-preview pause counter, which keeps the one-frame difference on purpose -- audit row D-L21 cites only the auto-stop counter and ADR-0016:260 narrows B6 to the three measured deltas (see the story's Design Notes and frontmatter `deferred`).",
+    "required_silent_frames": 19,
+    "not_fired_at_frame": 19,
+    "fires_at_frame": 20,
+    "rust_reader": "vad::tests::spec_hangover_fires_on_the_frame_after_the_required_count",
+    "kotlin_reader": "VadGateGoldenVectorsTest.hangoverEdgeVector_matchesHangoverFired"
+  },
+  {
+    "id": "VAD-ENGINE-CALL-SUBFLOOR-001",
+    "category": "engine-call",
+    "config": "default",
+    "signal": "digital_silence",
+    "amplitude_short": 0,
+    "description": "Story 13-2 / B6 / D-L19, direction reversed by Andi 2026-09-21 (Desktop adapts to Android). PINS: on a frame whose RMS is BELOW the energy floor, (a) the speech predictor is still invoked exactly once with that frame, and (b) the energy gate still reports closed, so the frame is classified Silence. Silero is recurrent -- `predict(&mut self)` mutates the LSTM hidden state -- so skipping the call freezes the model's sliding window through every quiet passage and the frames AFTER the pause are scored from a stale state. Android has always called on every frame (KlarvoAudioRecorder.vadGateDecision); Desktop skipped (`if energy_ok { predict } else { 0.0 }`) and now does not. DOES NOT PIN: the resulting per-frame VERDICT changing -- it provably does not, because advance_state ANDs energy_ok into both thresholds; nor the probability the real model returns for silence (no Linux test can decide that); nor the CPU cost, which is recorded in the story rather than measured here.",
+    "energy_floor": 0.001,
+    "silence_threshold": 0.005,
+    "expected_predictor_calls": 1,
+    "expected_gate_open": false,
+    "rust_reader": "vad::tests::spec_predictor_runs_on_a_sub_floor_frame",
+    "kotlin_reader": "VadGateGoldenVectorsTest.engineCallVector_predictorRunsOnSubFloorFrame"
   }
 ]

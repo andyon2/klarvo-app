@@ -100,6 +100,72 @@ pub trait SttProvider: Send + Sync {
 // Prompt builder
 // ---------------------------------------------------------------------------
 
+/// The built-in German conditioning hint.
+pub const STT_HINT_DE: &str = "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.";
+/// The built-in English conditioning hint.
+pub const STT_HINT_EN: &str =
+    "Voice dictation in English. Proper punctuation, capitalization, and spelling.";
+/// The built-in multilingual (auto-detect) conditioning hint.
+pub const STT_HINT_AUTO: &str =
+    "Multilingual voice dictation. German and English with proper punctuation.";
+
+/// Every built-in conditioning prompt, in one place.
+///
+/// Story 13-2 (B2/B4): these three literals existed twice — once here with a
+/// trailing space (the prompt builder used it as the separator) and once in
+/// `pipeline::DEFAULT_STT_HINTS` without one. Two copies of a string that must
+/// stay byte-identical is the drift class this epic closes, so the separator
+/// moved into [`build_stt_prompt_with_hint`] and the literals became one const
+/// each.
+pub const DEFAULT_STT_HINTS: &[&str] = &[STT_HINT_DE, STT_HINT_EN, STT_HINT_AUTO];
+
+/// The built-in conditioning hint for `language`, with **no** trailing space.
+pub fn builtin_stt_hint(language: &str) -> &'static str {
+    match language {
+        "de" => STT_HINT_DE,
+        "en" => STT_HINT_EN,
+        _ => STT_HINT_AUTO,
+    }
+}
+
+/// Picks the user's `advanced.sttPrompt{De,En,Auto}` override for `language`,
+/// or `None` when none applies.
+///
+/// Extracted verbatim out of `pipeline::stop_and_process_pipeline`
+/// (story 13-2, B4). Note the fall-through the shipped code has and this
+/// preserves: a `"de"` run whose `sttPromptDe` is empty still picks up a
+/// non-empty `sttPromptAuto`.
+///
+/// Rust↔Kotlin TWIN of `KlarvoApi.selectSttHintOverride` — Android needs the
+/// same selection to condition Whisper with the same string (drift row D-H4).
+pub fn select_stt_hint_override<'a>(
+    language: &str,
+    prompt_de: &'a str,
+    prompt_en: &'a str,
+    prompt_auto: &'a str,
+) -> Option<&'a str> {
+    match language {
+        "de" if !prompt_de.is_empty() => Some(prompt_de),
+        "en" if !prompt_en.is_empty() => Some(prompt_en),
+        _ if !prompt_auto.is_empty() => Some(prompt_auto),
+        _ => None,
+    }
+}
+
+/// The conditioning hint **alone** — without dictionary terms.
+///
+/// This is the value the post-STT guards are fed
+/// (`pipeline::guard_transcript`'s `stt_hint`). Feeding them the full built
+/// prompt instead makes the dictionary look like prompt text, which is drift
+/// rows D-H5 / D-H6. One function, so the desktop pipeline and the Android JNI
+/// cannot disagree about what "the hint" is.
+pub fn stt_hint_text(language: &str, custom_hint: Option<&str>) -> String {
+    match custom_hint {
+        Some(h) if !h.trim().is_empty() => h.trim().to_string(),
+        _ => builtin_stt_hint(language).to_string(),
+    }
+}
+
 /// Builds the full Whisper `prompt` string from dictionary terms and language.
 ///
 /// When `language` is `"de"`, a code-switching hint is prepended so Whisper
@@ -118,30 +184,35 @@ pub fn build_stt_prompt(dict_terms: Option<&str>, language: &str) -> Option<Stri
 ///
 /// When `custom_hint` is `Some(s)` and non-empty, it replaces the default
 /// language hint. Dictionary terms are still appended after the hint.
+///
+/// **The separator is explicit** (story 13-2, B4). Until this story the join
+/// was `format!("{hint}{terms}")` and worked only because every built-in
+/// literal happened to end in a space; a user-supplied `advanced.sttPromptDe`
+/// without one glued straight into the first dictionary term
+/// (`"…Fachsprache.Kubernetes, TypeScript"`) on **both** platforms. Hint and
+/// terms are now trimmed and joined with exactly one space, which leaves every
+/// built-in output byte-identical and fixes the custom-hint case. Pinned by
+/// the `STT-PROMPT-JOIN-*` vectors in `test-fixtures/guard-chain-vectors.json`.
 pub fn build_stt_prompt_with_hint(
     dict_terms: Option<&str>,
     language: &str,
     custom_hint: Option<&str>,
 ) -> Option<String> {
-    // If the caller supplied a non-empty custom hint, use that instead of the
-    // built-in language-specific conditioning text.
-    let hint: &str = match custom_hint {
-        Some(h) if !h.trim().is_empty() => h,
-        _ => match language {
-            "de" => "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion. ",
-            "en" => "Voice dictation in English. Proper punctuation, capitalization, and spelling. ",
-            _ => "Multilingual voice dictation. German and English with proper punctuation. ",
-        },
+    let hint = stt_hint_text(language, custom_hint);
+    let terms = dict_terms.unwrap_or("").trim();
+
+    let combined = if terms.is_empty() {
+        hint
+    } else if hint.is_empty() {
+        terms.to_string()
+    } else {
+        format!("{hint} {terms}")
     };
 
-    let terms = dict_terms.unwrap_or("");
-
-    let combined = format!("{hint}{terms}");
-    let trimmed = combined.trim();
-    if trimmed.is_empty() {
+    if combined.is_empty() {
         None
     } else {
-        Some(trimmed.to_string())
+        Some(combined)
     }
 }
 

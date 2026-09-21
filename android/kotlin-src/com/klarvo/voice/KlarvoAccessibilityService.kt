@@ -30,6 +30,25 @@ import android.view.inputmethod.InputMethodManager
  */
 class KlarvoAccessibilityService : AccessibilityService() {
 
+    /**
+     * What [pasteIntoFocusedField] actually did.
+     *
+     * Story 13-2 (D4 / D-H20). Only [PASTED] is a success; the other three are
+     * the three ways the shipped code used to no-op in silence. They are kept
+     * apart rather than collapsed to a Boolean so the log names the cause —
+     * the delivery decision treats every non-[PASTED] value the same way.
+     */
+    enum class PasteOutcome {
+        /** ACTION_PASTE was accepted by the focused editable node. */
+        PASTED,
+        /** `rootInActiveWindow` was null — no window to search. */
+        NO_ACTIVE_WINDOW,
+        /** A window, but no focused editable node in it. */
+        NO_FOCUSED_FIELD,
+        /** A focused editable node that refused ACTION_PASTE. */
+        ACTION_REFUSED,
+    }
+
     companion object {
         private const val TAG = "KlarvoAccess"
         /** Live reference to the running service; null when the service is not connected. */
@@ -173,15 +192,46 @@ class KlarvoAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Performs a paste action on the currently focused editable node.
-     * Called by KlarvoOverlayService after the transcription result is on the clipboard.
+     * Performs a paste action on the currently focused editable node and says
+     * what happened.
+     *
+     * Called by KlarvoOverlayService after the transcription result is on the
+     * clipboard — exactly one caller.
+     *
+     * **Story 13-2 (D4 / D-H20).** This returned `Unit` and discarded the
+     * `Boolean` from `performAction`, so all three ways it can do nothing —
+     * no active window, no focused editable node, an app that refuses
+     * ACTION_PASTE — were silent, unlogged, and indistinguishable from a
+     * successful paste. Step 4 then decided on `instance != null` alone and
+     * flashed the DONE checkmark while nothing appeared anywhere. Desktop has
+     * always reported the same failure as `PasteResult::ClipboardOnly` and
+     * says "In Clipboard".
+     *
+     * The three misses were already distinguishable in the control flow; only
+     * the reporting was missing. [performEnter] next door is the shipped
+     * precedent for logging all three.
      */
-    fun pasteIntoFocusedField() {
-        val rootNode = rootInActiveWindow ?: return
+    fun pasteIntoFocusedField(): PasteOutcome {
+        val rootNode = rootInActiveWindow ?: run {
+            KlarvoLogger.w(TAG, "pasteIntoFocusedField: rootInActiveWindow is null")
+            return PasteOutcome.NO_ACTIVE_WINDOW
+        }
         val focusedNode = findFocusedEditable(rootNode)
-        focusedNode?.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-        focusedNode?.recycle()
+        if (focusedNode == null) {
+            KlarvoLogger.d(TAG, "pasteIntoFocusedField: no focused editable node found")
+            rootNode.recycle()
+            return PasteOutcome.NO_FOCUSED_FIELD
+        }
+        val performed = focusedNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        if (!performed) {
+            KlarvoLogger.d(
+                TAG,
+                "pasteIntoFocusedField: ACTION_PASTE returned false (app may not support it)"
+            )
+        }
+        focusedNode.recycle()
         rootNode.recycle()
+        return if (performed) PasteOutcome.PASTED else PasteOutcome.ACTION_REFUSED
     }
 
     /**

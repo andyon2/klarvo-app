@@ -34,6 +34,30 @@ import org.junit.Test
  */
 class CleanupFailureDeliveryTest {
 
+    /**
+     * Drives the real decision for the ordinary case: the clipboard write
+     * worked, and the paste landed **iff** it was attempted. Story 13-2 gave
+     * `decideDelivery` the paste OUTCOME, so every call now has to say what
+     * the paste did; this keeps the pre-existing tests reading as before while
+     * the new rows below vary the two new inputs explicitly.
+     */
+    private fun pasted(
+        llmCleanupFailed: Boolean,
+        accessibilityConnected: Boolean,
+    ): KlarvoOverlayService.DeliveryDecision {
+        val attempted = KlarvoOverlayService.shouldAttemptPaste(
+            llmCleanupFailed,
+            accessibilityConnected,
+            clipboardOk = true,
+        )
+        return KlarvoOverlayService.decideDelivery(
+            llmCleanupFailed = llmCleanupFailed,
+            accessibilityConnected = accessibilityConnected,
+            clipboardOk = true,
+            pasteOutcome = if (attempted) KlarvoAccessibilityService.PasteOutcome.PASTED else null,
+        )
+    }
+
     // -----------------------------------------------------------------------
     // AC2: cleanup failed → clipboard only
     // -----------------------------------------------------------------------
@@ -48,10 +72,7 @@ class CleanupFailureDeliveryTest {
      */
     @Test
     fun cleanupFailure_withAccessibilityConnected_doesNotPaste() {
-        val decision = KlarvoOverlayService.decideDelivery(
-            llmCleanupFailed = true,
-            accessibilityConnected = true
-        )
+        val decision = pasted(llmCleanupFailed = true, accessibilityConnected = true)
 
         assertFalse(
             "a failed cleanup must never insert filler-laden raw text",
@@ -62,14 +83,8 @@ class CleanupFailureDeliveryTest {
     /** Q5: exactly one toast on this path — the combined degrade message. */
     @Test
     fun cleanupFailure_suppressesCopiedToast() {
-        val connected = KlarvoOverlayService.decideDelivery(
-            llmCleanupFailed = true,
-            accessibilityConnected = true
-        )
-        val notConnected = KlarvoOverlayService.decideDelivery(
-            llmCleanupFailed = true,
-            accessibilityConnected = false
-        )
+        val connected = pasted(llmCleanupFailed = true, accessibilityConnected = true)
+        val notConnected = pasted(llmCleanupFailed = true, accessibilityConnected = false)
 
         assertFalse("Q5: the degrade toast is the only one", connected.showCopiedToast)
         assertFalse("Q5: also when no a11y service is connected", notConnected.showCopiedToast)
@@ -79,8 +94,8 @@ class CleanupFailureDeliveryTest {
     @Test
     fun cleanupFailure_decisionIsIndependentOfAccessibilityState() {
         assertEquals(
-            KlarvoOverlayService.decideDelivery(true, accessibilityConnected = true),
-            KlarvoOverlayService.decideDelivery(true, accessibilityConnected = false)
+            pasted(llmCleanupFailed = true, accessibilityConnected = true),
+            pasted(llmCleanupFailed = true, accessibilityConnected = false)
         )
     }
 
@@ -105,27 +120,27 @@ class CleanupFailureDeliveryTest {
      */
     @Test
     fun cleanupOk_pastesWhenAccessibilityConnected() {
-        val decision = KlarvoOverlayService.decideDelivery(
-            llmCleanupFailed = false,
-            accessibilityConnected = true
-        )
+        val decision = pasted(llmCleanupFailed = false, accessibilityConnected = true)
 
         assertTrue("a successful cleanup must still paste", decision.paste)
         assertFalse("a successful paste stays silent (story 12-1)", decision.showCopiedToast)
+        assertTrue("a landed paste is the success path", decision.success)
     }
 
     @Test
     fun cleanupOk_withoutAccessibility_showsCopiedToastInstead() {
-        val decision = KlarvoOverlayService.decideDelivery(
-            llmCleanupFailed = false,
-            accessibilityConnected = false
-        )
+        val decision = pasted(llmCleanupFailed = false, accessibilityConnected = false)
 
         assertFalse(decision.paste)
         assertTrue(
             "without an a11y service the user must learn the text is on the clipboard",
             decision.showCopiedToast
         )
+        // Unchanged by story 13-2 and deliberately so: clipboard delivery with
+        // no accessibility service is the intended outcome, not a failure. No
+        // audit row re-opens it, and Desktop's twin (`DoneClipboard`) is a
+        // terminal state rather than an error either.
+        assertTrue("nothing was attempted, so nothing failed", decision.success)
     }
 
     // -----------------------------------------------------------------------
@@ -165,5 +180,148 @@ class CleanupFailureDeliveryTest {
         assertFalse(msg.contains("eingefügt"))
         assertFalse(msg.contains("inserted"))
         assertTrue(msg.contains("clipboard"))
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 13-2 — D4 / D-H20: an attempted paste that did not land
+    // -----------------------------------------------------------------------
+
+    /**
+     * The row's own case: the accessibility service IS connected (so a paste
+     * was genuinely attempted) but no editable field was focused. That is the
+     * discriminating setup — asserting against a disconnected service would
+     * pass against code that never had the option.
+     *
+     * Before story 13-2 `pasteIntoFocusedField()` returned `Unit`, Step 4
+     * decided on `instance != null`, and this path showed the DONE checkmark
+     * with no toast: the pill claimed success for text that appeared nowhere.
+     */
+    @Test
+    fun pasteAttemptedButNoFocusedField_showsClipboardToastAndNoCheck() {
+        for (miss in listOf(
+            KlarvoAccessibilityService.PasteOutcome.NO_ACTIVE_WINDOW,
+            KlarvoAccessibilityService.PasteOutcome.NO_FOCUSED_FIELD,
+            KlarvoAccessibilityService.PasteOutcome.ACTION_REFUSED,
+        )) {
+            val decision = KlarvoOverlayService.decideDelivery(
+                llmCleanupFailed = false,
+                accessibilityConnected = true,
+                clipboardOk = true,
+                pasteOutcome = miss,
+            )
+            assertTrue("$miss: the paste was attempted", decision.paste)
+            assertTrue("$miss: the user must learn the text is on the clipboard", decision.showCopiedToast)
+            assertFalse("$miss: a miss is not a success", decision.success)
+            assertEquals(
+                "$miss: a run that delivered nothing ends in the shipped IDLE",
+                KlarvoOverlayService.RecordingState.IDLE,
+                KlarvoOverlayService.terminalStateFor(decision),
+            )
+        }
+    }
+
+    /**
+     * Inversion guard for the row above: the ONLY difference between the two
+     * calls is the paste outcome. If `decideDelivery` ever stops reading it,
+     * these two agree and the test goes red.
+     */
+    @Test
+    fun inversion_pasteOutcomeIsLoadBearing() {
+        val landed = KlarvoOverlayService.decideDelivery(
+            llmCleanupFailed = false,
+            accessibilityConnected = true,
+            clipboardOk = true,
+            pasteOutcome = KlarvoAccessibilityService.PasteOutcome.PASTED,
+        )
+        val missed = KlarvoOverlayService.decideDelivery(
+            llmCleanupFailed = false,
+            accessibilityConnected = true,
+            clipboardOk = true,
+            pasteOutcome = KlarvoAccessibilityService.PasteOutcome.NO_FOCUSED_FIELD,
+        )
+        assertTrue(
+            "a landed paste and a missed paste must not produce the same delivery",
+            landed != missed,
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 13-2 — D5 / D-M24: no DONE flash after a cleanup failure
+    // -----------------------------------------------------------------------
+
+    /**
+     * What the DONE-flash block's own comment has always claimed ("Only the
+     * success path gets the DONE state; error paths go straight to IDLE") and
+     * what the code did not do: `setState(DONE)` ran on every non-blocked
+     * Step-4 exit, so Android flashed the success checkmark next to the
+     * cleanup-failure degrade toast.
+     */
+    @Test
+    fun cleanupFailure_getsNoDoneFlash() {
+        val decision = pasted(llmCleanupFailed = true, accessibilityConnected = true)
+        assertFalse(decision.success)
+        assertEquals(
+            KlarvoOverlayService.RecordingState.IDLE,
+            KlarvoOverlayService.terminalStateFor(decision),
+        )
+    }
+
+    /**
+     * No new bubble state (Andi, 2026-09-21): the terminal choice is only ever
+     * between the two shipped endings.
+     */
+    @Test
+    fun terminalStateIsOnlyEverDoneOrIdle() {
+        for (failed in listOf(true, false)) {
+            for (connected in listOf(true, false)) {
+                val state = KlarvoOverlayService.terminalStateFor(pasted(failed, connected))
+                assertTrue(
+                    "terminalStateFor must not invent a state: $state",
+                    state == KlarvoOverlayService.RecordingState.DONE ||
+                        state == KlarvoOverlayService.RecordingState.IDLE,
+                )
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 13-2 — D6 / D-M12: the clipboard write itself failed
+    // -----------------------------------------------------------------------
+
+    /**
+     * `copyToClipboard` is now guarded (a throwing `setPrimaryClip` used to be
+     * an uncaught main-thread exception). When it fails there is nothing on
+     * the clipboard, so nothing may be pasted from it, the "Copied: …" toast
+     * would be a lie, and no success may be shown.
+     *
+     * The real `setPrimaryClip` failure is NOT reproducible on Andi's device
+     * and the test provider cannot inject it — ADR-0016 Amendment 4 already
+     * records D6 as agent-verified only (Weg 2). This decides the branch
+     * logic; the try/catch itself is covered by inspection.
+     */
+    @Test
+    fun clipboardWriteFailed_showsNothingAndClaimsNothing() {
+        val decision = KlarvoOverlayService.decideDelivery(
+            llmCleanupFailed = false,
+            accessibilityConnected = true,
+            clipboardOk = false,
+            pasteOutcome = null,
+        )
+        assertFalse("nothing is on the clipboard to paste from", decision.paste)
+        assertFalse("\"Copied: …\" would be a lie", decision.showCopiedToast)
+        assertFalse("a lost text is not a success", decision.success)
+        assertEquals(
+            KlarvoOverlayService.RecordingState.IDLE,
+            KlarvoOverlayService.terminalStateFor(decision),
+        )
+    }
+
+    /** The pre-paste gate reads the clipboard outcome too. */
+    @Test
+    fun shouldAttemptPaste_requiresAClipboardThatWasWritten() {
+        assertTrue(KlarvoOverlayService.shouldAttemptPaste(false, true, clipboardOk = true))
+        assertFalse(KlarvoOverlayService.shouldAttemptPaste(false, true, clipboardOk = false))
+        assertFalse(KlarvoOverlayService.shouldAttemptPaste(true, true, clipboardOk = true))
+        assertFalse(KlarvoOverlayService.shouldAttemptPaste(false, false, clipboardOk = true))
     }
 }

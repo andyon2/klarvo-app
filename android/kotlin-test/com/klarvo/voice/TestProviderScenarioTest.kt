@@ -204,23 +204,38 @@ class TestProviderScenarioTest {
                 expected.getString("text"),
                 KlarvoApi.mapCleanupResponse(status, body, KlarvoApi.TEST_MODEL)
             )
-            "throws" -> when (val thrown = expected.getString("throws")) {
-                "IOException" -> {
-                    val e = assertThrows(IOException::class.java) {
-                        KlarvoApi.mapCleanupResponse(status, body, KlarvoApi.TEST_MODEL)
-                    }
-                    val needle = expected.optString("message_contains", "")
-                    if (needle.isNotEmpty()) {
-                        assertTrue(
-                            "$id: message ${e.message} must contain $needle",
-                            e.message!!.contains(needle)
-                        )
-                    }
+            "throws" -> {
+                val expectedType: Class<out Throwable> = when (val thrown = expected.getString("throws")) {
+                    "IOException" -> IOException::class.java
+                    "JSONException" -> JSONException::class.java
+                    // Story 13-2: the two named non-retryable cleanup failures.
+                    "CleanupResponseFormatException" ->
+                        KlarvoApi.CleanupResponseFormatException::class.java
+                    "CleanupOutputTruncatedException" ->
+                        KlarvoApi.CleanupOutputTruncatedException::class.java
+                    else -> error("$id: unknown kotlin.throws $thrown")
                 }
-                "JSONException" -> assertThrows(JSONException::class.java) {
+                val e = assertThrows(expectedType) {
                     KlarvoApi.mapCleanupResponse(status, body, KlarvoApi.TEST_MODEL)
                 }
-                else -> error("$id: unknown kotlin.throws $thrown")
+                val needle = expected.optString("message_contains", "")
+                if (needle.isNotEmpty()) {
+                    assertTrue(
+                        "$id: message ${e.message} must contain $needle",
+                        e.message!!.lowercase().contains(needle.lowercase())
+                    )
+                }
+                // Story 13-2: the fixture states the ladder verdict, and the
+                // production classifier must agree. Without this the exception
+                // TYPE could be right while the ladder still burned a provider
+                // on a guaranteed repeat (or skipped one it should have tried).
+                if (expected.has("retryable")) {
+                    assertEquals(
+                        "$id: isRetryableCleanupFailure verdict",
+                        expected.getBoolean("retryable"),
+                        KlarvoOverlayService.isRetryableCleanupFailure(e)
+                    )
+                }
             }
             else -> error("$id: unknown kotlin.outcome $outcome")
         }
@@ -232,52 +247,109 @@ class TestProviderScenarioTest {
     }
 
     /**
-     * DIVERGENCE (drift row D2 / D-H19), asserted on purpose: Rust rejects an
-     * empty answer with `LlmError::ResponseFormat`; Kotlin returns `""`, which
-     * today is pasted into the focused field and stored as the dictation. Story
-     * 13-2 closes this; until then the fixture records it and this test keeps it
-     * visible instead of letting it be "fixed" by accident.
+     * Drift row D2 / D-H19, **closed by story 13-2**: an empty answer is
+     * rejected, not returned. The fixture's `expected_divergence` is now
+     * `null`, and this asserts that too — a fixture that still claimed a
+     * divergence while the code had closed it would be the drift, one level up.
+     *
+     * The discriminating half is the ladder verdict: a
+     * [KlarvoApi.CleanupResponseFormatException] carries no `HTTP nnn`, so the
+     * status regex alone reads "no status" as "transport failure, retry". The
+     * type must be named non-retryable explicitly, or the fix would turn a
+     * silent paste into three burned provider calls.
      */
     @Test
-    fun emptyAnswerIsReturnedAsAnEmptyString_divergesFromRust() {
+    fun emptyAnswerIsRejectedAsNonRetryable() {
         assertKotlinVerdict("TEST-LLM-EMPTY-001")
         assertTrue(
-            "the fixture must record this as an expected divergence",
-            vector("TEST-LLM-EMPTY-001").getString("expected_divergence").contains("D-H19")
+            "the fixture must no longer record a divergence for D-H19",
+            vector("TEST-LLM-EMPTY-001").isNull("expected_divergence")
+        )
+        assertFalse(
+            "a named empty answer must not fire the provider ladder",
+            KlarvoOverlayService.isRetryableCleanupFailure(
+                KlarvoApi.CleanupResponseFormatException("empty content in response")
+            )
+        )
+        // Inversion guard: the same message in a PLAIN IOException is still
+        // retryable, so the verdict above comes from the TYPE and not from the
+        // wording. Without this the assertion would also pass against a
+        // classifier that had simply stopped retrying everything.
+        assertTrue(
+            KlarvoOverlayService.isRetryableCleanupFailure(IOException("empty content in response"))
         )
     }
 
     /**
-     * DIVERGENCE (drift row D3 / D-M16): Kotlin never inspects `finish_reason`,
-     * so a truncated answer is returned as the half sentence. Rust maps it to
-     * `LlmError::OutputTruncated`.
+     * Drift row D3 / D-M16, **closed by story 13-2**: `finish_reason == "length"`
+     * is inspected and the half sentence is never returned.
      */
     @Test
-    fun truncatedAnswerIsReturnedAsThePartialText_divergesFromRust() {
+    fun truncatedAnswerIsRejectedAsNonRetryable() {
         assertKotlinVerdict("TEST-LLM-TRUNCATED-001")
         assertTrue(
-            "the fixture must record this as an expected divergence",
-            vector("TEST-LLM-TRUNCATED-001").getString("expected_divergence").contains("D-M16")
+            "the fixture must no longer record a divergence for D-M16",
+            vector("TEST-LLM-TRUNCATED-001").isNull("expected_divergence")
+        )
+        assertFalse(
+            "a truncated answer repeats under the same max_tokens cap",
+            KlarvoOverlayService.isRetryableCleanupFailure(
+                KlarvoApi.CleanupOutputTruncatedException("answer truncated (finish_reason=length)")
+            )
         )
     }
 
     /**
-     * DIVERGENCE (drift row D10 / D-M2, Android half), SINGLE-CALL path: the
-     * canned `malformed` body does not parse at all, so `JSONObject(body)`
-     * throws a bare [JSONException], which is NOT an [IOException] — and
-     * `KlarvoOverlayService` gates its cleanup-fallback ladder on
-     * `e is IOException` first. So on a short dictation (< CHUNK_THRESHOLD)
-     * the ladder never runs and the dictation degrades straight to
-     * clipboard-only, while the Rust twin fires its ladder for the same bytes.
+     * Drift row D10 / D-M2, Android half, SINGLE-CALL path — **the behavioural
+     * half is closed by story 13-2**.
+     *
+     * The canned `malformed` body still does not parse, so `JSONObject(body)`
+     * still throws a bare [JSONException] which is still not an [IOException].
+     * What changed is the gate: `KlarvoOverlayService` no longer pre-filters on
+     * `e is IOException`, and the pure `isRetryableCleanupFailure` classifies a
+     * JSONException as retryable — the twin of Rust's `LlmError::Request` for
+     * the same bytes — so the ladder fires on the single-call path exactly as
+     * it already did on the chunked one.
+     *
+     * Both facts are asserted: the type (unchanged, by construction — the two
+     * twins parse with different libraries) and the verdict (now identical).
      */
     @Test
-    fun malformedAnswerThrowsAJsonException_notAnIoException() {
+    fun malformedAnswerThrowsAJsonException_andNowFiresTheLadder() {
         assertKotlinVerdict("TEST-LLM-MALFORMED-001")
-        // The discriminating half: it really is NOT an IOException. Without this
-        // the assertion above would also pass if JSONException were one.
         assertFalse(
-            "a JSONException must not be an IOException, or the ladder would fire and D-M2 would not reproduce",
+            "a JSONException is still not an IOException — that is why the gate had to change",
             IOException::class.java.isAssignableFrom(JSONException::class.java)
+        )
+        assertTrue(
+            "the fixture must state that the single-call ladder now fires",
+            vector("TEST-LLM-MALFORMED-001")
+                .getJSONObject("kotlin")
+                .getBoolean("ladder_fires_on_single_call_path")
+        )
+    }
+
+    /**
+     * The gate's shape, asserted directly: a non-IOException that is *not* a
+     * JSONException stays non-retryable, as it was before story 13-2. Without
+     * this, "classify JSONException as retryable" could have been implemented
+     * as "classify everything as retryable", which would burn a second
+     * provider on every RuntimeException.
+     */
+    @Test
+    fun cleanupLadderStillIgnoresUnrelatedRuntimeFailures() {
+        assertFalse(
+            KlarvoOverlayService.isRetryableCleanupFailure(IllegalStateException("boom"))
+        )
+        assertFalse(
+            "a 401 is a config error, not a transient one",
+            KlarvoOverlayService.isRetryableCleanupFailure(IOException("HTTP 401 -- unauthorized"))
+        )
+        assertTrue(
+            KlarvoOverlayService.isRetryableCleanupFailure(IOException("HTTP 429 -- slow down"))
+        )
+        assertTrue(
+            KlarvoOverlayService.isRetryableCleanupFailure(IOException("HTTP 503 -- unavailable"))
         )
     }
 
@@ -498,13 +570,19 @@ class TestProviderScenarioTest {
                 "returns the test provider first.",
             gateLines.isNotEmpty()
         )
-        // The gate must belong to THAT branch: within two lines of it, since the
-        // condition is split across lines by the formatter.
-        val branch = branchLines.first()
+        // The gate must belong to ONE of those branches: within two lines of it,
+        // since the condition is split across lines by the formatter.
+        //
+        // Story 13-2 (E1 / D-H9) made `config.sttProvider == "local"` appear
+        // MORE than once -- `flushPreviewDelta` re-checks it at flush time, as
+        // `pipeline.rs` does -- so this can no longer assume the first match is
+        // the local-STT branch. It asserts that SOME occurrence is the gated
+        // one, which is the claim the row actually makes.
         assertTrue(
             "KlarvoOverlayService.kt: the testProviderStt gate is at $gateLines but the " +
-                "local-STT branch is at line $branch — they are not the same condition",
-            gateLines.any { kotlin.math.abs(it - branch) <= 2 }
+                "local-STT branch candidates are at $branchLines — none of them is the " +
+                "same condition",
+            branchLines.any { branch -> gateLines.any { kotlin.math.abs(it - branch) <= 2 } }
         )
     }
 

@@ -45,6 +45,44 @@ import kotlin.math.abs
  */
 class KlarvoOverlayService : Service() {
 
+    // -----------------------------------------------------------------------
+    // Pure delivery / retry decision TYPES (story 13-2).
+    //
+    // Declared at class level, not inside the companion: a type nested in a
+    // companion object is `KlarvoOverlayService.Companion.X` to a caller, and
+    // the JVM tests that drive these decisions should name them the way the
+    // shipped `RecordingState` is named.
+    // -----------------------------------------------------------------------
+
+    /**
+     * What Step 4 of [processAudio] does with the finished text.
+     *
+     * @param paste            call `pasteIntoFocusedField()`.
+     * @param showCopiedToast  show the short "Copied: …" toast.
+     * @param success          the run really delivered — the only state
+     *                         that earns the DONE checkmark
+     *                         (see [terminalStateFor]).
+     */
+    data class DeliveryDecision(
+        val paste: Boolean,
+        val showCopiedToast: Boolean,
+        val success: Boolean
+    )
+
+    /**
+     * The verdict [Companion.classifySttSentinel] returns for one
+     * `__ERROR_*` sentinel from `GroqSttBridge.nativeTranscribe`
+     * (story 13-2, D9 / D-M5).
+     *
+     * Pure, so the whole ladder is JVM-testable; only the backoff loop itself
+     * stays on-device. The sentinels are emitted by the real Rust mapping
+     * (`stt/groq_jni.rs`), never forged in Kotlin — ADR-0017.
+     */
+    enum class SttVerdict { SUCCESS, RETRYABLE, NON_RETRYABLE }
+
+    /** [Companion.classifySttSentinel]'s answer: the verdict plus the message to carry. */
+    data class SttSentinel(val verdict: SttVerdict, val message: String)
+
     companion object {
         private const val TAG = "KlarvoOverlayService"
 
@@ -176,12 +214,47 @@ class KlarvoOverlayService : Service() {
             "Cleanup failed — raw text in clipboard"
 
         /**
-         * What Step 4 of [processAudio] does with the finished text.
+         * Android has no on-device LLM cleanup provider.
          *
-         * @param paste            call `pasteIntoFocusedField()`.
-         * @param showCopiedToast  show the short "Copied: …" toast.
+         * Kotlin twin of `pipeline::local_cleanup_available()`, which is
+         * `cfg!(target_os = "windows")`. Per grundsatzurteil G3b the Android
+         * local path is not built in this epic, so the constant is `false` and
+         * [skipsCloudCleanup] turns a stored `llmProvider = "local"` into
+         * "no cleanup" rather than a silent cloud call.
          */
-        data class DeliveryDecision(val paste: Boolean, val showCopiedToast: Boolean)
+        const val LOCAL_CLEANUP_AVAILABLE = false
+
+        /**
+         * **The** offline rule (story 13-2, E2 / G2a). `true` means this
+         * dictation makes no cleanup call at all — the raw transcript is the
+         * output.
+         *
+         * Rust↔Kotlin TWIN of `pipeline::offline_rule_with`, pinned row for row
+         * by `test-fixtures/offline-rule-vectors.json` (read here by
+         * `OfflineRuleVectorsTest` and in Rust by
+         * `pipeline::tests::spec_offline_rule_matches_the_fixture_matrix`).
+         *
+         * Two clauses:
+         * - a selected local cleanup that this platform does not have degrades
+         *   to *no cleanup*, never to a cloud call (drift row D-M21);
+         * - local STT implies local cleanup or none (G2a / drift row D-H10) —
+         *   Android branched on `config.llmProvider == "local"` alone, so after
+         *   a local transcript the cloud cleanup arm ran for any cloud
+         *   `llmProvider`.
+         *
+         * [llmProvider] must be the EFFECTIVE provider
+         * ([KlarvoApi.effectiveLlmProviderName]), so an active test provider is
+         * still reached.
+         */
+        internal fun skipsCloudCleanup(
+            sttProvider: String,
+            llmProvider: String,
+            localCleanupAvailable: Boolean
+        ): Boolean {
+            val localLlm = llmProvider == "local"
+            if (localLlm && !localCleanupAvailable) return true
+            return sttProvider == "local" && !localLlm
+        }
 
         /**
          * Decides the Step-4 delivery (Story 7-10, AC2) — the Kotlin twin of the
@@ -209,17 +282,159 @@ class KlarvoOverlayService : Service() {
          * write, real accessibility paste — is covered by the on-device smoke,
          * not by this function's unit test.**
          */
+        /**
+         * Step 4a, **before** the paste: may this text be inserted at all?
+         *
+         * Split out of [decideDelivery] by story 13-2 because the rest of the
+         * decision now needs the paste OUTCOME, which does not exist yet at
+         * this point. [clipboardOk] is new here too: after story 13-2 the
+         * clipboard write is guarded, and a paste that would read a clipboard
+         * that was never written is worse than no paste.
+         */
+        internal fun shouldAttemptPaste(
+            llmCleanupFailed: Boolean,
+            accessibilityConnected: Boolean,
+            clipboardOk: Boolean
+        ): Boolean = !llmCleanupFailed && accessibilityConnected && clipboardOk
+
+        /**
+         * Step 4b, **after** the paste: what the user sees.
+         *
+         * [pasteOutcome] is `null` when no paste was attempted
+         * ([shouldAttemptPaste] said no, e.g. no accessibility service).
+         *
+         * Story 13-2 rows:
+         * - **D4 / D-H20** — an attempted paste that did not land shows the
+         *   shipped `"Copied: …"` toast and **no** DONE checkmark. Step 4 used
+         *   to decide on `instance != null` alone, and `pasteIntoFocusedField`
+         *   returned `Unit`, so a paste into a non-editable surface flashed
+         *   success while nothing appeared anywhere.
+         * - **D5 / D-M24** — a cleanup failure gets no DONE flash at all,
+         *   which is what the flash's own comment has always claimed ("Only
+         *   the success path gets the DONE state").
+         * - **D6 / D-M12** — a clipboard write that threw shows neither the
+         *   toast nor the check: nothing is on the clipboard to copy.
+         *
+         * Unchanged on purpose: when no accessibility service is connected,
+         * nothing is attempted, the `"Copied: …"` toast fires and the run still
+         * ends in DONE. That is the shipped clipboard-delivery ending and no
+         * audit row re-opens it (Desktop's twin, `DoneClipboard`, is likewise a
+         * terminal state rather than an error).
+         */
         fun decideDelivery(
             llmCleanupFailed: Boolean,
-            accessibilityConnected: Boolean
-        ): DeliveryDecision = when {
-            llmCleanupFailed -> DeliveryDecision(paste = false, showCopiedToast = false)
-            else -> DeliveryDecision(
-                paste = accessibilityConnected,
-                // Pre-7-10 behaviour: a successful paste is silent; only the
-                // clipboard-fallback case is surfaced.
-                showCopiedToast = !accessibilityConnected
+            accessibilityConnected: Boolean,
+            clipboardOk: Boolean,
+            pasteOutcome: KlarvoAccessibilityService.PasteOutcome?
+        ): DeliveryDecision {
+            val attempted = shouldAttemptPaste(llmCleanupFailed, accessibilityConnected, clipboardOk)
+            val pasted = pasteOutcome == KlarvoAccessibilityService.PasteOutcome.PASTED
+            return DeliveryDecision(
+                paste = attempted,
+                // Pre-7-10 behaviour kept: a successful paste is silent; every
+                // other delivery that DID reach the clipboard says so. Story
+                // 7-10 Q5: on the cleanup-failure path the single degrade toast
+                // is the only one.
+                showCopiedToast = clipboardOk && !llmCleanupFailed && !pasted,
+                success = clipboardOk && !llmCleanupFailed && (pasted || !attempted)
             )
+        }
+
+        /**
+         * The terminal bubble state for a finished run.
+         *
+         * **No new [RecordingState] value** (Andi, 2026-09-21): a run that did
+         * not deliver ends in the shipped IDLE state and its cause is carried
+         * by the existing degrade toast. Desktop's `DoneClipboard` /
+         * `DoneDegraded` are the conceptual twins but porting them would mean
+         * designing a new Android bubble drawing, which this story does not do.
+         */
+        internal fun terminalStateFor(decision: DeliveryDecision): RecordingState =
+            if (decision.success) RecordingState.DONE else RecordingState.IDLE
+
+        /**
+         * Maps one `nativeTranscribe` return value to a retry verdict.
+         *
+         * - a non-`__ERROR_` string is the transcript;
+         * - `__ERROR_EMPTY_AUDIO__` — nothing to send, never retryable;
+         * - `__ERROR_API:` — 4xx is permanent, everything else (5xx, an
+         *   unparseable status) is retryable;
+         * - `__ERROR_FORMAT:` — **story 13-2 / D9 / D-M5.** The answer arrived
+         *   but is empty or unparseable (`SttError::ResponseFormat`), which
+         *   `pipeline::is_retryable_stt_error` calls non-retryable. It used to
+         *   have no sentinel of its own, fell into the `__ERROR_NETWORK:`
+         *   catch-all, and cost three Groq calls plus ~7 s of backoff before
+         *   reaching the same terminal state Desktop reaches on the first
+         *   attempt. Reachable at defaults (quiet noise that passes the RMS
+         *   gate and whose segments are all dropped by `no_speech_prob > 0.6`);
+         *   reproducible with `advanced.testProviderStt = "empty"`.
+         * - `__ERROR_NETWORK:` and any unknown sentinel — retryable.
+         */
+        internal fun classifySttSentinel(result: String): SttSentinel = when {
+            !result.startsWith("__ERROR_") ->
+                SttSentinel(SttVerdict.SUCCESS, result)
+
+            result == "__ERROR_EMPTY_AUDIO__" ->
+                SttSentinel(SttVerdict.NON_RETRYABLE, "Groq STT: empty audio")
+
+            result.startsWith("__ERROR_FORMAT:") ->
+                SttSentinel(
+                    SttVerdict.NON_RETRYABLE,
+                    "Groq STT failed: ${result.removeSurrounding("__ERROR_FORMAT:", "__")}"
+                )
+
+            result.startsWith("__ERROR_API:") -> {
+                val msg = result.removeSurrounding("__ERROR_API:", "__")
+                val statusCode = Regex("HTTP (\\d{3})").find(msg)
+                    ?.groupValues?.getOrNull(1)?.toIntOrNull()
+                if (statusCode != null && statusCode in 400..499) {
+                    SttSentinel(SttVerdict.NON_RETRYABLE, "Groq STT failed: $msg")
+                } else {
+                    SttSentinel(SttVerdict.RETRYABLE, msg)
+                }
+            }
+
+            result.startsWith("__ERROR_NETWORK:") ->
+                SttSentinel(
+                    SttVerdict.RETRYABLE,
+                    result.removeSurrounding("__ERROR_NETWORK:", "__")
+                )
+
+            else -> SttSentinel(SttVerdict.RETRYABLE, result)
+        }
+
+        /**
+         * Classifies a cleanup failure as retryable, mirroring Rust's
+         * `is_retryable_llm_error` (429 / 5xx / a transport failure with no
+         * HTTP response at all).
+         *
+         * Moved to the companion by story 13-2 so a JVM test can drive it, and
+         * widened in two ways:
+         * - **D10 / D-M2**: a [org.json.JSONException] — a body that does not
+         *   decode — is RETRYABLE. The single-call path used to gate the ladder
+         *   on `e is IOException` first, and JSONException is not one, so a
+         *   malformed answer on a dictation under [KlarvoApi.CHUNK_THRESHOLD]
+         *   got no fallback at all while the chunked path (where
+         *   `collectChunkResults` rewraps it) did. Rust lets `response.json()`
+         *   fail into the retryable `LlmError::Request` for the same bytes.
+         * - **D2 / D3**: the two answers that arrived but say nothing usable
+         *   are named non-retryable explicitly. They carry no `HTTP <code>`, so
+         *   the regex below would otherwise read them as transport failures and
+         *   burn the ladder on a guaranteed repeat.
+         *
+         * Anything that is not an [IOException] or a [org.json.JSONException]
+         * stays non-retryable, as before.
+         */
+        internal fun isRetryableCleanupFailure(e: Throwable): Boolean = when (e) {
+            is KlarvoApi.CleanupResponseFormatException -> false
+            is KlarvoApi.CleanupOutputTruncatedException -> false
+            is org.json.JSONException -> true
+            is IOException -> {
+                val status = Regex("HTTP (\\d{3})").find(e.message ?: "")
+                    ?.groupValues?.getOrNull(1)?.toIntOrNull()
+                status == null || status == 429 || status >= 500
+            }
+            else -> false
         }
     }
 
@@ -290,13 +505,39 @@ class KlarvoOverlayService : Service() {
              * the setting. Pure function -- no Android Context needed -- same testable-shape
              * pattern as [selectSilenceSecs] (AC-3/AC-4's JVM test lives next to
              * `RecordingModeSilenceSelectionTest.kt`).
+             *
+             * **Story 13-2 (E1 / D-H9) added [sttProvider].** With a stored
+             * `sttProvider = "local"` the live preview used to upload every
+             * pause's delta WAV to Groq — with or without a Groq key, because
+             * `readConfig` admits `local` with a blank key and
+             * `WhisperStt::transcribe` sends the whole multipart body before
+             * the 401 comes back. Audio left the device under a setting called
+             * "Offline". The desktop twin,
+             * `pipeline::preview_flush_should_install`, has always taken
+             * `stt_provider`; this closes the Android half.
+             *
+             * This is mandatory independently of 13-3: hiding the control
+             * leaves the stored value behind (ADR-0016's gate definition), and
+             * `flushPreviewDelta` re-checks at flush time as
+             * `pipeline.rs` does, because the config can change between the
+             * install and the pause.
              */
-            fun shouldInstallPreviewFlush(mode: RecordingMode, livePreviewEnabled: Boolean): Boolean =
-                (mode == HOLD || mode == TOGGLE) && livePreviewEnabled
+            fun shouldInstallPreviewFlush(
+                mode: RecordingMode,
+                livePreviewEnabled: Boolean,
+                sttProvider: String
+            ): Boolean =
+                (mode == HOLD || mode == TOGGLE) && livePreviewEnabled && sttProvider != "local"
         }
     }
 
-    private enum class RecordingState { IDLE, RECORDING, TRANSCRIBING, DONE }
+    /**
+     * Story 13-2: `internal` (was `private`) so the pure [terminalStateFor]
+     * seam can return it and a JVM test can assert the choice. **The set of
+     * values is unchanged** — this story adds no state; a run that did not
+     * deliver ends in the shipped IDLE.
+     */
+    internal enum class RecordingState { IDLE, RECORDING, TRANSCRIBING, DONE }
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -1663,7 +1904,12 @@ class KlarvoOverlayService : Service() {
         // Story 11-2 (AC-1/AC-3/AC-4, Task 2.3): repeatable preview-flush callback, HOLD/TOGGLE
         // only, opt-in via Settings. Fresh accumulator for this recording (AC-7's clear-on-finish
         // guarantees this is already empty, but reset defensively in case of an earlier bail-out).
-        if (RecordingMode.shouldInstallPreviewFlush(activeMode, cachedConfig?.livePreviewEnabled == true)) {
+        if (RecordingMode.shouldInstallPreviewFlush(
+                activeMode,
+                cachedConfig?.livePreviewEnabled == true,
+                cachedConfig?.sttProvider ?: "groq"
+            )
+        ) {
             previewAccumulatedText = ""
             recorder.onPreviewPause = {
                 handler.post { flushPreviewDelta() }
@@ -1755,6 +2001,15 @@ class KlarvoOverlayService : Service() {
         if (currentState != RecordingState.RECORDING) return
         val recorder = audioRecorder ?: return
         val config = cachedConfig ?: return
+        // Story 13-2 (E1 / D-H9): re-checked AT FLUSH TIME, not only at
+        // install time, exactly as `pipeline::flush_preview_delta` does -- the
+        // config can change between starting a recording and the first pause.
+        // With a stored `local` STT provider no byte may leave the device, key
+        // or no key.
+        if (config.sttProvider == "local") {
+            KlarvoLogger.d(TAG, "[preview] offline STT stored -- flush suppressed, nothing uploaded")
+            return
+        }
         val wavBytes = recorder.deltaSnapshotWav() ?: return
 
         previewFlushExecutor.execute {
@@ -1765,7 +2020,7 @@ class KlarvoOverlayService : Service() {
                     config.language,
                     "whisper-large-v3-turbo",
                     config.dictionaryTerms,
-                    config.customPrompt,
+                    sttHintFor(config),
                     null, // preview chunks are display-only -- no pending-WAV backup needed
                     config.testProviderStt
                 )
@@ -1916,6 +2171,12 @@ class KlarvoOverlayService : Service() {
         val t0 = System.currentTimeMillis()
         if (wavBytes.isEmpty()) {
             handler.post {
+                // Story 13-2 (D11 / D-M14): this toast STAYS while the other
+                // four go. An empty capture buffer is a recorder/plumbing
+                // fault, not a recognition result -- there is nothing for the
+                // user to have said differently, and swallowing it would create
+                // exactly the silent loss this story exists to remove. Andi
+                // confirmed the four-of-five reading on 2026-09-21.
                 showToast("No audio recorded")
                 autoLoopActive = false
                 hideListeningPanel()
@@ -1942,7 +2203,9 @@ class KlarvoOverlayService : Service() {
                     val durationMs = silenceResult.removePrefix("TooShort:").toLongOrNull() ?: 0L
                     KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: TooShort (${durationMs}ms < ${filterMinRecordingMs}ms)")
                     handler.post {
-                        showToast("Recording too short")
+                        // Story 13-2 (D11 / D-M14): silent, like Desktop's
+                        // message-less `PipelineEvent::idle()`. See the note at
+                        // "No audio recorded" below for why that one stays.
                         autoLoopActive = false
                         hideListeningPanel()
                         val prev = currentState
@@ -1955,7 +2218,7 @@ class KlarvoOverlayService : Service() {
                     val rms = silenceResult.removePrefix("Silent:").toFloatOrNull() ?: 0f
                     KlarvoLogger.d(TAG, "[pipeline] pre-STT filter: Silent (rms=$rms < $filterSilenceThreshold)")
                     handler.post {
-                        showToast("No speech detected")
+                        // Story 13-2 (D11 / D-M14): silent, like Desktop.
                         autoLoopActive = false
                         hideListeningPanel()
                         val prev = currentState
@@ -2088,7 +2351,12 @@ class KlarvoOverlayService : Service() {
                         config.language,
                         "whisper-large-v3-turbo", // H9: model comes from Rust config (sttModel not yet in Android AppConfig; default parity)
                         config.dictionaryTerms,
-                        config.customPrompt,
+                        // Story 13-2 (B4 / D-H4): the conditioning hint. This
+                        // was `config.customPrompt` -- the LLM cleanup
+                        // instruction -- which replaced Whisper's language hint
+                        // in the request AND became the input of both post-STT
+                        // guards.
+                        sttHintFor(config),
                         pendingWavFile,
                         config.testProviderStt
                     )
@@ -2136,9 +2404,13 @@ class KlarvoOverlayService : Service() {
             // STT succeeded -- safe to remove the pending WAV backup.
             pendingWavFile?.delete()
 
+            // A blank transcript is also what the shared guard chain returns
+            // when it drops the text as a prompt echo or a blocklist match
+            // (`stt::groq_jni::guard_transcript_for_jni`), so this one branch
+            // is the shipped ending for every "nothing recognised" outcome.
             if (transcript.isBlank()) {
                 handler.post {
-                    showToast("No speech detected")
+                    // Story 13-2 (D11 / D-M14): silent, like Desktop.
                     autoLoopActive = false
                     hideListeningPanel()
                     val prev = currentState
@@ -2165,7 +2437,7 @@ class KlarvoOverlayService : Service() {
             if (GroqSttBridge.nativeIsHallucination(transcript)) {
                 KlarvoLogger.d(TAG, "[pipeline] hallucination filtered (Rust): '${transcript.take(60)}'")
                 handler.post {
-                    showToast("Speech not recognized")
+                    // Story 13-2 (D11 / D-M14): silent, like Desktop.
                     autoLoopActive = false
                     hideListeningPanel()
                     val prev = currentState
@@ -2180,18 +2452,29 @@ class KlarvoOverlayService : Service() {
             var llmLatencyMs: Long? = null
 
             // Step 2: Text cleanup via configured LLM provider (optional -- skip if no key)
-            val finalText = if (config.llmProvider == "local") {
-                // Offline cleanup via MNN (local inference, no internet needed)
-                try {
-                    val result = KlarvoApi.cleanupLocal(this, transcript, config.cleanupStyle)
-                    val tCleanup = System.currentTimeMillis()
-                    llmLatencyMs = tCleanup - tStt
-                    KlarvoLogger.d(TAG, "[pipeline] cleanup: ${tCleanup - tStt}ms (local/mnn)")
-                    result
-                } catch (e: Exception) {
-                    KlarvoLogger.w(TAG, "Local cleanup failed -- using raw transcript", e)
-                    KlarvoApi.sanitizeLlmOutput(transcript)
-                }
+            //
+            // Story 13-2 (E2 / G2a, rows D-H10 / D-M21): THE offline rule, the
+            // twin of `pipeline::offline_rule_with`. It replaced
+            // `config.llmProvider == "local"`, which read only half the
+            // question: after a LOCAL transcript the cloud cleanup arm still
+            // ran for any cloud `llmProvider`, so "Offline" uploaded the text
+            // it had just kept on the device.
+            //
+            // The `cleanupLocal` (MNN) call is gone from this path rather than
+            // guarded: [LOCAL_CLEANUP_AVAILABLE] is false, so the predicate
+            // returns "no cleanup" for every `llmProvider = "local"` config and
+            // the branch was unreachable. It was also inert (drift row D-H18) --
+            // it threw and the catch degraded to the raw transcript, i.e. the
+            // same output this takes directly. `KlarvoApi.cleanupLocal` itself
+            // is left alone; hiding the control is 13-3's row and building the
+            // local path is a separate decision (G3b).
+            val effectiveLlm = KlarvoApi.effectiveLlmProviderName(config)
+            val finalText = if (skipsCloudCleanup(config.sttProvider, effectiveLlm, LOCAL_CLEANUP_AVAILABLE)) {
+                KlarvoLogger.i(
+                    TAG,
+                    "[pipeline] Offline rule: no cleanup (stt=${config.sttProvider}, llm=$effectiveLlm, localCleanup=$LOCAL_CLEANUP_AVAILABLE)"
+                )
+                KlarvoApi.sanitizeLlmOutput(transcript)
             } else {
                 val llmProvider = KlarvoApi.resolveLlmProvider(config)
                 if (llmProvider != null) {
@@ -2230,10 +2513,21 @@ class KlarvoOverlayService : Service() {
                         //
                         // Finding D: only actually attempt a fallback for a RETRYABLE
                         // failure (429/5xx/transport) -- mirrors Rust's is_retryable_llm_error
-                        // gate. A non-retryable (e.g. 400/401 config/auth) failure or a
-                        // non-IOException is a guaranteed repeat, so degrade straight to
-                        // raw text instead of burning another provider's quota for nothing.
-                        val fallbackProvider = if (e is IOException && isRetryableCleanupFailure(e)) {
+                        // gate. A non-retryable (e.g. 400/401 config/auth) failure is a
+                        // guaranteed repeat, so degrade straight to raw text instead of
+                        // burning another provider's quota for nothing.
+                        //
+                        // Story 13-2 (D10 / D-M2): the `e is IOException &&` pre-gate is
+                        // gone -- it WAS the bug. A malformed provider answer throws a bare
+                        // JSONException, which is not an IOException, so on a dictation
+                        // under CHUNK_THRESHOLD the ladder never ran, while the chunked
+                        // path (where collectChunkResults rewraps it) fell back normally.
+                        // The type decision now lives in the pure companion
+                        // [isRetryableCleanupFailure], which classifies a JSONException as
+                        // retryable (Rust's twin: an undecodable body becomes the retryable
+                        // LlmError::Request) and keeps every other non-IOException
+                        // non-retryable, as before.
+                        val fallbackProvider = if (isRetryableCleanupFailure(e)) {
                             KlarvoApi.resolveFallbackLlmProvider(config, llmProvider.providerName)
                         } else {
                             null
@@ -2281,29 +2575,36 @@ class KlarvoOverlayService : Service() {
                 }
             }
 
-            // Step 3: Save to history DB
-            val tBeforeHistory = System.currentTimeMillis()
-            KlarvoApi.saveToHistory(
-                context  = this,
-                finalText = finalText,
-                rawText  = transcript,
-                style    = config.cleanupStyle,
-                language = config.language,
-                deviceId = config.deviceId
-            )
-            val tHistory = System.currentTimeMillis()
-            KlarvoLogger.d(TAG, "[pipeline] history save: ${tHistory - tBeforeHistory}ms")
-            KlarvoLogger.d(TAG, "[pipeline] total so far (after history): ${tHistory - t0}ms")
+            // Story 13-2 (B3 / D-H7, second half): the POST-cleanup ghost
+            // strip, in Rust. Cleanup rationalises a recognisable ghost
+            // ("Klinge") into a convincing full stockphrase
+            // ("Kleinschreibung") -- detectable junk becomes fluent junk.
+            // Desktop has always run strip_stockphrase_ghosts once more after
+            // sanitize_llm_output; Android had no post-cleanup strip at all
+            // (`sanitizeLlmOutput` only removes control characters). Same Rust
+            // function over the bridge, never a Kotlin twin (ADR-0017).
+            val deliveredText = GroqSttBridge.nativeStripStockphraseGhosts(finalText)
+            if (deliveredText != finalText) {
+                KlarvoLogger.d(TAG, "[pipeline] post-cleanup ghost strip removed a stockphrase")
+            }
 
-            // Step 3b: Push unsynced entries to Turso (fire-and-forget -- must not block paste)
-            if (config.tursoUrl.isNotBlank() && config.tursoToken.isNotBlank()) {
-                Thread {
-                    try {
-                        KlarvoApi.pushToTurso(this@KlarvoOverlayService, config.tursoUrl, config.tursoToken)
-                    } catch (e: Exception) {
-                        KlarvoLogger.w(TAG, "Turso sync failed (non-blocking)", e)
-                    }
-                }.start()
+            // Story 13-2 (D2 / D-H19): blank text must not be delivered or
+            // stored. The named cleanup failures above already degrade to the
+            // raw transcript, so this is the last line of defence -- an answer
+            // that sanitises away to nothing, or a ghost strip that consumed
+            // the whole text, must end the run silently (Desktop's
+            // `PipelineEvent::idle()`) rather than paste an empty field and
+            // write "" to history.db as the dictation.
+            if (deliveredText.isBlank()) {
+                KlarvoLogger.w(TAG, "[pipeline] nothing left to deliver -- no paste, no history row")
+                handler.post {
+                    autoLoopActive = false
+                    hideListeningPanel()
+                    val prev = currentState
+                    setState(RecordingState.IDLE)
+                    adjustLayoutForState(RecordingState.IDLE, prev)
+                }
+                return
             }
 
             KlarvoLogger.d(TAG, "[pipeline] total before paste: ${System.currentTimeMillis() - t0}ms")
@@ -2317,9 +2618,10 @@ class KlarvoOverlayService : Service() {
             val capturedTStt        = tStt
             val capturedLlmLatency  = llmLatencyMs
             val capturedTranscript  = transcript
-            val capturedFinalText   = finalText
+            val capturedFinalText   = deliveredText
             val capturedDegradeMsg  = degradeStatusMsg
             val capturedLlmFailed   = llmCleanupFailed
+            val capturedConfig      = config
             handler.post {
                 // DIV-04 fix: abort paste if a banking/security app is focused at paste time.
                 // The pipeline may have started before the app-switch; this guard ensures
@@ -2334,23 +2636,74 @@ class KlarvoOverlayService : Service() {
                     return@post
                 }
 
-                copyToClipboard(finalText)
+                // Story 13-2 (B1-Android half / D-H3): the history row and the
+                // Turso push happen HERE, after the guard verdict -- they used
+                // to run as Steps 3 and 3b, before this block, so a dictation
+                // into a banking app was blocked from the paste but had already
+                // been written to history.db and pushed to the cloud. The
+                // verdict is read on the main looper (BankingGuard's KDoc:
+                // `bankingAppActive` is main-looper-owned), so the writes are
+                // posted back to a worker thread from here rather than run on
+                // it. Nothing depended on the old order: `saveToHistory`
+                // returns Unit and `pushToTurso` re-reads the unsynced rows
+                // from history.db itself. The Desktop half of D-H3 (a process
+                // blocklist at all) is story 13-6 and is not touched here.
+                Thread {
+                    val tBeforeHistory = System.currentTimeMillis()
+                    try {
+                        KlarvoApi.saveToHistory(
+                            context   = this@KlarvoOverlayService,
+                            finalText = capturedFinalText,
+                            rawText   = capturedTranscript,
+                            style     = capturedConfig.cleanupStyle,
+                            language  = capturedConfig.language,
+                            deviceId  = capturedConfig.deviceId
+                        )
+                        KlarvoLogger.d(
+                            TAG,
+                            "[pipeline] history save: ${System.currentTimeMillis() - tBeforeHistory}ms"
+                        )
+                    } catch (e: Exception) {
+                        KlarvoLogger.w(TAG, "History save failed (non-blocking)", e)
+                    }
+                    if (capturedConfig.tursoUrl.isNotBlank() && capturedConfig.tursoToken.isNotBlank()) {
+                        try {
+                            KlarvoApi.pushToTurso(
+                                this@KlarvoOverlayService,
+                                capturedConfig.tursoUrl,
+                                capturedConfig.tursoToken
+                            )
+                        } catch (e: Exception) {
+                            KlarvoLogger.w(TAG, "Turso sync failed (non-blocking)", e)
+                        }
+                    }
+                }.start()
+
+                // Story 13-2 (D6 / D-M12): guarded, and its outcome is part of
+                // the delivery decision -- a clipboard that was never written
+                // must not be pasted from and must not be reported as success.
+                val clipboardOk = copyToClipboard(capturedFinalText)
 
                 // Story 7-10 (AC2): on a cleanup failure the text stops at the
-                // clipboard — no accessibility paste. The decision is a pure
-                // function so it can be unit-tested off-device (S3).
-                //
-                // NOTE: `accessibilityConnected` is NOT a paste *result*.
-                // `pasteIntoFocusedField()` returns Unit and silently no-ops when
-                // there is no focused editable node — a pre-existing defect
-                // (7-10 Dev Notes), deliberately not deepened here.
+                // clipboard — no accessibility paste. Story 13-2 (D4 / D-H20):
+                // the paste now REPORTS, and the toast/terminal decision is
+                // taken afterwards from that outcome instead of from
+                // `instance != null`. Both halves are pure companion functions
+                // a JVM test drives (`CleanupFailureDeliveryTest`).
                 val accessibilityConnected = KlarvoAccessibilityService.instance != null
-                val decision = decideDelivery(capturedLlmFailed, accessibilityConnected)
-                if (decision.paste) {
+                val pasteOutcome = if (shouldAttemptPaste(capturedLlmFailed, accessibilityConnected, clipboardOk)) {
                     KlarvoAccessibilityService.instance?.pasteIntoFocusedField()
+                } else {
+                    null
                 }
+                val decision = decideDelivery(
+                    capturedLlmFailed,
+                    accessibilityConnected,
+                    clipboardOk,
+                    pasteOutcome
+                )
 
-                val preview = if (finalText.length > 50) finalText.take(50) + "..." else finalText
+                val preview = if (capturedFinalText.length > 50) capturedFinalText.take(50) + "..." else capturedFinalText
                 // Successful paste is silent (the text simply appears) so it can't
                 // override a same-cycle status/fallback toast (story 12-1). The
                 // clipboard-fallback case IS surfaced: it's real info that the paste
@@ -2386,14 +2739,33 @@ class KlarvoOverlayService : Service() {
                     }
                 }.start()
 
-                // DONE flash: briefly show checkmark before returning to IDLE.
-                // Only the success path gets the DONE state; error paths go straight to IDLE.
+                // Terminal state. "Only the success path gets the DONE state;
+                // error paths go straight to IDLE" is what this block's comment
+                // has always claimed -- story 13-2 (D4/D5/D6) makes it true.
+                // Until now DONE flashed on EVERY non-blocked exit: after a
+                // cleanup failure (D-M24), after a paste that landed nowhere
+                // (D-H20), and -- had the clipboard not crashed the process
+                // first -- after a failed clipboard write (D-M12).
+                //
+                // No new RecordingState: a run that did not deliver ends in the
+                // shipped IDLE, with the existing degrade toast carrying the
+                // cause. The choice itself is the pure [terminalStateFor].
+                val terminal = terminalStateFor(decision)
                 // Cancel any prior pending flash before scheduling a new one (defensive).
-                val prevForDone = currentState
-                setState(RecordingState.DONE)
-                adjustLayoutForState(RecordingState.DONE, prevForDone)
                 handler.removeCallbacks(doneFlashRunnable)
-                handler.postDelayed(doneFlashRunnable, 800L)
+                if (terminal == RecordingState.DONE) {
+                    val prevForDone = currentState
+                    setState(RecordingState.DONE)
+                    adjustLayoutForState(RecordingState.DONE, prevForDone)
+                    handler.postDelayed(doneFlashRunnable, 800L)
+                } else {
+                    // The same teardown `doneFlashRunnable` performs 800 ms
+                    // later on the success path, minus the checkmark.
+                    hideListeningPanel()
+                    val prevForIdle = currentState
+                    setState(RecordingState.IDLE)
+                    adjustLayoutForState(RecordingState.IDLE, prevForIdle)
+                }
 
                 // AUTO mode: restart recording for next segment
                 val activeMode = when (gesture) {
@@ -2639,11 +3011,56 @@ class KlarvoOverlayService : Service() {
         updateNotification()
     }
 
-    private fun copyToClipboard(text: String) {
+    /**
+     * Writes [text] to the system clipboard and says whether it landed.
+     *
+     * **Story 13-2 (D6 / D-M12).** This was unguarded inside `handler.post`,
+     * so a throwing `setPrimaryClip` (an OEM clipboard service refusing or
+     * dying — HyperOS has its own clipboard policy layer) was an uncaught
+     * main-thread exception: the app crashed mid-delivery. `pasteErrorCount`
+     * existed in [KlarvoApi.FeedbackMetrics], was serialised, and was never
+     * incremented by anything.
+     *
+     * A failure here is terminal for the delivery: nothing is on the
+     * clipboard, so nothing may be pasted and no success may be shown
+     * ([decideDelivery] takes `clipboardOk`). Reuses the shipped IDLE ending —
+     * no new toast text, and Android gets no equivalent of Desktop's
+     * "TEXT LOST" card, which would be a new surface.
+     */
+    private fun copyToClipboard(text: String): Boolean = try {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip      = ClipData.newPlainText("Klarvo transcription", text)
+        val clip = ClipData.newPlainText("Klarvo transcription", text)
         clipboard.setPrimaryClip(clip)
+        true
+    } catch (e: Exception) {
+        KlarvoLogger.e(TAG, "[delivery] clipboard write failed -- text not delivered", e)
+        Thread {
+            KlarvoApi.updateFeedbackMetrics(this@KlarvoOverlayService) { m ->
+                m.copy(pasteErrorCount = m.pasteErrorCount + 1)
+            }
+        }.start()
+        false
     }
+
+    /**
+     * The Whisper conditioning hint for [config]'s active language — the value
+     * that crosses the JNI as `customPrompt` (story 13-2, B4 / D-H4).
+     *
+     * `""` means "let the Rust core use its built-in language hint". The
+     * selection itself lives in [KlarvoApi.selectSttHintOverride], the twin of
+     * `stt::select_stt_hint_override`, so the two platforms cannot disagree
+     * about which of the three `advanced.sttPrompt*` values applies.
+     *
+     * This is NOT `config.customPrompt`: that is the LLM cleanup instruction
+     * and it goes to the LLM only.
+     */
+    private fun sttHintFor(config: KlarvoApi.Config): String =
+        KlarvoApi.selectSttHintOverride(
+            config.language,
+            config.sttPromptDe,
+            config.sttPromptEn,
+            config.sttPromptAuto
+        )
 
     private fun showToast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
@@ -2709,27 +3126,29 @@ class KlarvoOverlayService : Service() {
     }
 
     /**
-     * Finding D (story 12-1 code review): classifies an [IOException] thrown by
-     * [KlarvoApi.cleanupChunked] as retryable or not, mirroring Rust's
-     * `is_retryable_llm_error` (429/5xx or a transport failure with no HTTP
-     * response at all -- DNS/timeout/connection-refused -- are retryable;
-     * every other HTTP status is a permanent/config error).
-     */
-    private fun isRetryableCleanupFailure(e: IOException): Boolean {
-        val status = Regex("HTTP (\\d{3})").find(e.message ?: "")?.groupValues?.getOrNull(1)?.toIntOrNull()
-        return status == null || status == 429 || status >= 500
-    }
-
-    /**
-     * Transcribes [wavBytes] via the shared Rust Groq STT path (GroqSttBridge.nativeTranscribe)
-     * with up to 2 retries (delays: 2 s, 5 s) for network errors.
+     * Transcribes [wavBytes] via the shared Rust Groq STT path
+     * (`GroqSttBridge.nativeTranscribe`).
      *
-     * Retry contract preserved from the old KlarvoApi.transcribe path:
-     * - 4xx HTTP errors are NOT retried (bad request / auth failure).
-     * - Network errors (all other failures) are retried up to 2 times.
+     * **Story 13-2 (D9 / D-M5, D-M6) changed two things.**
      *
-     * ADR-0017: KlarvoApi.transcribe + buildMultipartBody deleted; this method
-     * now calls GroqSttBridge.nativeTranscribe which runs the shared Rust WhisperStt path.
+     * 1. **The retry budget is 1** — [retryDelaysMs] is empty, so the loop runs
+     *    exactly once and no backoff is slept. Desktop has always made a single
+     *    STT attempt (30 s timeout) and then reaches for the local net or the
+     *    pending WAV; Android made three, with 2 s + 5 s in between, arriving at
+     *    the *same end state* up to ~70 s later (audit row D-M6, verdict
+     *    "android an desktop anpassen"). The loop shape is kept rather than
+     *    unrolled so restoring a budget is a one-line change and the "failed
+     *    after retries" message — which [isRetryableSttFailure] keys on to gate
+     *    the local-Whisper net — still fires for a retryable exhaustion.
+     * 2. **The sentinel→verdict decision moved to the companion**
+     *    ([classifySttSentinel]), so the whole ladder including the new
+     *    non-retryable `__ERROR_FORMAT:` is JVM-testable. Only the backoff loop
+     *    itself stays on-device.
+     *
+     * [sttHint] is the Whisper CONDITIONING hint (B4) — see [sttHintFor].
+     *
+     * ADR-0017: `KlarvoApi.transcribe` + `buildMultipartBody` are deleted; the
+     * request, its guards and the error mapping are the shared Rust core.
      */
     private fun transcribeWithRetry(
         wavBytes: ByteArray,
@@ -2737,12 +3156,12 @@ class KlarvoOverlayService : Service() {
         language: String,
         sttModel: String,
         dictionaryTerms: String,
-        customPrompt: String,
+        sttHint: String,
         pendingWavFile: File?,
         testProviderStt: String
     ): String {
         val wavBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
-        val retryDelaysMs = listOf(2_000L, 5_000L)
+        val retryDelaysMs = emptyList<Long>()
         var lastErrorMsg: String? = null
 
         for (attempt in 0..retryDelaysMs.size) {
@@ -2751,7 +3170,10 @@ class KlarvoOverlayService : Service() {
                 apiKey = apiKey,
                 language = language,
                 dictionaryTerms = dictionaryTerms,
-                customPrompt = customPrompt,
+                // Story 13-2 (B4): the conditioning hint, NOT the LLM cleanup
+                // instruction. The Rust core rebuilds the guard hint from this
+                // plus `language`, which is why the JNI arity did not change.
+                customPrompt = sttHint,
                 sttModel = sttModel,
                 temperature = 0.0f,
                 // Story 13-1b: ONE value now, carried through UNINSPECTED. The
@@ -2762,59 +3184,29 @@ class KlarvoOverlayService : Service() {
                 testProviderStt = testProviderStt
             )
 
-            when {
-                // Success: non-error, non-empty result.
-                !result.startsWith("__ERROR_") -> return result
+            val sentinel = classifySttSentinel(result)
+            when (sentinel.verdict) {
+                SttVerdict.SUCCESS -> return result
 
-                // Empty audio — not retriable.
-                result == "__ERROR_EMPTY_AUDIO__" -> {
-                    KlarvoLogger.w(TAG, "[stt-retry] empty audio error -- not retrying")
-                    throw IOException("Groq STT: empty audio")
+                SttVerdict.NON_RETRYABLE -> {
+                    KlarvoLogger.w(TAG, "[stt-retry] non-retryable: ${sentinel.message}")
+                    throw IOException(sentinel.message)
                 }
 
-                // API error: only 4xx is non-retriable (bad request / invalid key / quota).
-                // 5xx (server error / overload) falls through to the retry path below.
-                result.startsWith("__ERROR_API:") -> {
-                    val msg = result.removeSurrounding("__ERROR_API:", "__")
-                    // Parse the HTTP status from the embedded "HTTP <status>: ..." message.
-                    val statusCode = Regex("HTTP (\\d{3})").find(msg)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                    val is4xx = statusCode != null && statusCode in 400..499
-                    if (is4xx) {
-                        KlarvoLogger.w(TAG, "[stt-retry] 4xx API error -- not retrying: $msg")
-                        throw IOException("Groq STT failed: $msg")
-                    } else {
-                        // 5xx or unparseable status — treat as retriable (mirror network retry path).
-                        lastErrorMsg = msg
-                        if (attempt < retryDelaysMs.size) {
-                            val delay = retryDelaysMs[attempt]
-                            KlarvoLogger.w(TAG, "[stt-retry] 5xx/server error (attempt $attempt, $msg), retrying in ${delay}ms")
-                            Thread.sleep(delay)
-                        } else {
-                            KlarvoLogger.e(TAG, "[stt-retry] all retries exhausted (5xx), pending WAV kept: ${pendingWavFile?.name}")
-                        }
-                    }
-                }
-
-                // Network error — retriable.
-                result.startsWith("__ERROR_NETWORK:") -> {
-                    val msg = result.removeSurrounding("__ERROR_NETWORK:", "__")
-                    lastErrorMsg = msg
+                SttVerdict.RETRYABLE -> {
+                    lastErrorMsg = sentinel.message
                     if (attempt < retryDelaysMs.size) {
                         val delay = retryDelaysMs[attempt]
-                        KlarvoLogger.w(TAG, "[stt-retry] attempt $attempt failed ($msg), retrying in ${delay}ms")
+                        KlarvoLogger.w(
+                            TAG,
+                            "[stt-retry] attempt $attempt failed (${sentinel.message}), retrying in ${delay}ms"
+                        )
                         Thread.sleep(delay)
                     } else {
-                        KlarvoLogger.e(TAG, "[stt-retry] all retries exhausted, pending WAV kept: ${pendingWavFile?.name}")
-                    }
-                }
-
-                // Unknown error code — treat as network error, retriable.
-                else -> {
-                    lastErrorMsg = result
-                    if (attempt < retryDelaysMs.size) {
-                        val delay = retryDelaysMs[attempt]
-                        KlarvoLogger.w(TAG, "[stt-retry] unknown error ($result), retrying in ${delay}ms")
-                        Thread.sleep(delay)
+                        KlarvoLogger.e(
+                            TAG,
+                            "[stt-retry] retry budget exhausted, pending WAV kept: ${pendingWavFile?.name}"
+                        )
                     }
                 }
             }

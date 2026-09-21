@@ -98,15 +98,11 @@ fn active_stt_provider_id(state: &AppState) -> String {
         .unwrap_or_else(|| "groq".to_string())
 }
 
-/// Returns `true` if the user is in offline mode, i.e. `stt_provider` is `"local"`.
-fn is_offline_mode(state: &AppState) -> bool {
-    state
-        .config
-        .lock()
-        .ok()
-        .map(|c| c.stt_provider == "local")
-        .unwrap_or(false)
-}
+/// Story 13-2 (E2 / D-M20): `is_offline_mode` is gone. It was Rust's **second**
+/// definition of "offline" — `stt_provider == "local"` alone — so the React
+/// in-app record button skipped a cleanup the hotkey performed for the very
+/// same config. There is one rule now, `pipeline::config_skips_cleanup`, and
+/// `cleanup_text` below reads it.
 
 /// Returns the ID of the active LLM cleanup provider based on the priority list and available keys.
 ///
@@ -238,10 +234,18 @@ pub async fn cleanup_text(
 ) -> Result<String, String> {
     let inner = state.inner();
 
-    // Offline mode: if stt_priority[0] == "local", skip the LLM call entirely
-    // and return the raw transcription unchanged.
-    if is_offline_mode(inner) {
-        log::info!("[cleanup] Offline mode: returning raw text without cleanup");
+    // Story 13-2 (E2 / G2a, rows D-H10 / D-M20 / D-M21): THE offline rule, the
+    // same one the hotkey pipeline reads. Local STT ⇒ local cleanup or none;
+    // a local cleanup this platform does not have ⇒ none, never a silent cloud
+    // call.
+    let skips_cleanup = inner
+        .config
+        .lock()
+        .ok()
+        .map(|c| crate::pipeline::config_skips_cleanup(&c))
+        .unwrap_or(false);
+    if skips_cleanup {
+        log::info!("[cleanup] Offline rule: returning raw text without cleanup");
         return Ok(raw_text);
     }
 
@@ -351,7 +355,10 @@ mod tests {
     use super::*;
     use crate::test_helpers::{make_state, temp_dir};
 
-    /// `is_offline_mode` returns `true` when `stt_provider` is "local".
+    /// Story 13-2 (D-M20): `cleanup_text` reads the SHARED rule now. These
+    /// three keep their original inputs but call the one predicate the hotkey
+    /// pipeline calls, which is the whole point of the row — before this story
+    /// the two answers could differ for the identical config.
     #[test]
     fn test_is_offline_mode_local_first() {
         let dir = temp_dir();
@@ -361,10 +368,11 @@ mod tests {
             // Production code reads stt_provider (not the deprecated stt_priority list).
             cfg.stt_provider = "local".to_string();
         }
-        assert!(is_offline_mode(&state));
+        let cfg = state.config.lock().unwrap();
+        assert!(crate::pipeline::config_skips_cleanup(&cfg));
     }
 
-    /// `is_offline_mode` returns `false` when "local" is not the first entry.
+    /// Cloud STT with the default cloud cleanup: the cleanup call still runs.
     #[test]
     fn test_is_offline_mode_cloud_first() {
         let dir = temp_dir();
@@ -374,10 +382,11 @@ mod tests {
             cfg.stt_priority = vec!["groq".to_string(), "local".to_string()];
             cfg.groq_api_key = "test-key".to_string();
         }
-        assert!(!is_offline_mode(&state));
+        let cfg = state.config.lock().unwrap();
+        assert!(!crate::pipeline::config_skips_cleanup(&cfg));
     }
 
-    /// `is_offline_mode` returns `false` when `stt_priority` is empty.
+    /// An empty `stt_priority` is not what the rule reads (`stt_provider` is).
     #[test]
     fn test_is_offline_mode_empty_priority() {
         let dir = temp_dir();
@@ -386,7 +395,32 @@ mod tests {
             let mut cfg = state.config.lock().unwrap();
             cfg.stt_priority = vec![];
         }
-        assert!(!is_offline_mode(&state));
+        let cfg = state.config.lock().unwrap();
+        assert!(!crate::pipeline::config_skips_cleanup(&cfg));
+    }
+
+    /// D-M20's discriminating case, and the reason this row exists: the
+    /// in-app button and the hotkey must agree for the SAME config. Asserted
+    /// against the one predicate both now read — if a second definition is
+    /// ever reintroduced here, this stops being a tautology only because the
+    /// matrix below covers a config where the two used to disagree
+    /// (`stt=groq`, `llm=local` on a build without a local provider: the old
+    /// `is_offline_mode` said "cleanup runs" and sent it to DeepSeek).
+    #[test]
+    fn spec_in_app_button_and_hotkey_share_one_offline_rule() {
+        let dir = temp_dir();
+        let state = make_state(&dir);
+        {
+            let mut cfg = state.config.lock().unwrap();
+            cfg.stt_provider = "groq".to_string();
+            cfg.llm_provider = "local".to_string();
+        }
+        let cfg = state.config.lock().unwrap();
+        assert_eq!(
+            crate::pipeline::config_skips_cleanup(&cfg),
+            !crate::pipeline::local_cleanup_available(),
+            "a selected-but-unavailable local cleanup must skip cleanup, not call DeepSeek"
+        );
     }
 
     /// `active_stt_provider_id` returns `"local"` when `stt_provider` is "local".

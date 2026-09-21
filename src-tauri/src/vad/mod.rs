@@ -72,9 +72,23 @@ pub struct VadConfig {
     /// noise (e.g., bass from music leaking into a headset mic). Default: 85.0.
     pub highpass_cutoff_hz: f32,
 
-    /// Minimum RMS energy required before Silero is called. Frames below this
-    /// level are unconditionally classified as Silence, saving CPU on truly
-    /// silent passages. Default: 0.001.
+    /// Minimum RMS energy for a frame to be allowed to count as speech. Frames
+    /// below this level are unconditionally classified as Silence — see
+    /// [`SileroVad::advance_state`], which ANDs the gate into both thresholds.
+    /// Default: 0.001.
+    ///
+    /// **It does not gate the Silero CALL** (story 13-2, drift row D-L19;
+    /// direction reversed by Andi 2026-09-21, Desktop adapts to Android). It
+    /// used to, and the doc here claimed that saved CPU "on truly silent
+    /// passages" — but Silero is recurrent: `predict(&mut self)` mutates the
+    /// LSTM hidden state, so skipping frames freezes that state and the model
+    /// resumes a quiet passage with a stale window. Android has always called
+    /// `isSpeech` on every frame for exactly this reason
+    /// (`KlarvoAudioRecorder.vadGateDecision`). The verdict is unchanged
+    /// either way; what improves is the probability on the frames AFTER the
+    /// quiet passage. The cost is real and recorded: inference now runs on
+    /// every frame for all three VAD instances (auto-stop, live-preview flush,
+    /// voice-command engine), which share one process-wide ONNX `Session`.
     pub energy_floor: f32,
 }
 
@@ -210,6 +224,39 @@ const SILERO_FRAME_SAMPLES: usize = 512;
 const SAMPLE_RATE_HZ: u32 = 16_000;
 
 // ---------------------------------------------------------------------------
+// The per-frame decision (story 13-2, D-L19)
+// ---------------------------------------------------------------------------
+
+/// Computes one frame's `(probability, energy_ok)` pair.
+///
+/// **The predictor is invoked unconditionally.** The energy floor decides the
+/// *verdict*, never the *call*: [`SileroVad::advance_state`] ANDs `energy_ok`
+/// into both `above_onset` and `above_offset`, so a sub-floor frame is Silence
+/// whatever probability comes back — the per-frame classification is identical
+/// before and after this change. What changes is that Silero's recurrent
+/// hidden state keeps advancing through quiet passages instead of freezing,
+/// so the probabilities on the frames *after* a pause are the ones the model
+/// was trained to produce. **Do not restore an `if energy_ok` around the
+/// call**, and do not remove the AND in `advance_state` — the first is the
+/// defect this closes, the second is what keeps the gate meaningful.
+///
+/// Rust↔Kotlin TWIN, and the direction is Desktop-adapts-to-Android (Andi,
+/// 2026-09-21): this mirrors `KlarvoAudioRecorder.vadGateDecision`, which has
+/// always called `isSpeech` on every frame and takes the verdict function as a
+/// parameter for the same reason it is a parameter here — `engine` is the
+/// concrete `VoiceActivityDetector`, not a trait object, so a closure is the
+/// only seam a test can observe the call through.
+pub(crate) fn frame_decision(
+    frame: &[f32],
+    energy_floor: f32,
+    predict: impl FnOnce(&[f32]) -> f32,
+) -> (f32, bool) {
+    let energy_ok = rms(frame) >= energy_floor;
+    let prob = predict(frame);
+    (prob, energy_ok)
+}
+
+// ---------------------------------------------------------------------------
 // Public struct
 // ---------------------------------------------------------------------------
 
@@ -302,17 +349,10 @@ impl SileroVad {
     /// Runs one 512-sample frame through the energy gate and Silero inference,
     /// then advances the hysteresis state machine.
     fn process_frame(&mut self, frame: &[f32]) {
-        // Energy gate: compute RMS of the frame.
-        let rms = rms(frame);
-        let energy_ok = rms >= self.config.energy_floor;
-
-        // If energy is too low, treat the frame as definitely silent.
-        let prob = if energy_ok {
-            self.engine.predict(frame.to_vec())
-        } else {
-            0.0
-        };
-
+        let energy_floor = self.config.energy_floor;
+        let engine = &mut self.engine;
+        let (prob, energy_ok) =
+            frame_decision(frame, energy_floor, |f| engine.predict(f.to_vec()));
         self.advance_state(prob, energy_ok);
     }
 
@@ -711,5 +751,127 @@ mod tests {
         // the exact outcome depends on Silero's model output.
         let tone = sine_wave(440.0, 0.5, 0.5);
         let _ = vad.feed(&tone); // just ensure no panic
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 13-2 (B6) — the two deltas Andi released, read from
+    // test-fixtures/vad-gate-golden-vectors-7-2.json (repo root).
+    //
+    // That file had a Kotlin reader only until this story. It has a Rust one
+    // now, because both new rows are claims about BOTH platforms: the hangover
+    // edge is Android adopting Rust's timing, and the engine call is Rust
+    // adopting Android's.
+    // -----------------------------------------------------------------------
+
+    fn load_vad_vectors() -> Vec<serde_json::Value> {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let path = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("workspace root")
+            .join("test-fixtures/vad-gate-golden-vectors-7-2.json");
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+        serde_json::from_str(&content)
+            .expect("vad-gate-golden-vectors-7-2.json must be a JSON array")
+    }
+
+    /// Throwing lookup — a missing id must fail loudly, never skip the assertion.
+    fn vad_vector(id: &str) -> serde_json::Value {
+        load_vad_vectors()
+            .into_iter()
+            .find(|v| v["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("vad fixture has no vector with id={id}"))
+    }
+
+    fn vad_u64(v: &serde_json::Value, key: &str) -> u64 {
+        v.get(key)
+            .and_then(|x| x.as_u64())
+            .unwrap_or_else(|| panic!("fixture key {key} missing or not a number"))
+    }
+
+    /// D-L21: the trigger edge. Rust already fires on the (N+1)-th consecutive
+    /// non-speech frame; this pins it against the fixture the Kotlin twin now
+    /// reads too, so the two cannot drift apart again.
+    #[test]
+    fn spec_hangover_fires_on_the_frame_after_the_required_count() {
+        let v = vad_vector("VAD-HANGOVER-EDGE-001");
+        let required = vad_u64(&v, "required_silent_frames") as u32;
+        let not_fired_at = vad_u64(&v, "not_fired_at_frame") as u32;
+        let fires_at = vad_u64(&v, "fires_at_frame") as u32;
+        assert_eq!(
+            fires_at,
+            not_fired_at + 1,
+            "the fixture must describe an off-by-one edge, not two unrelated numbers"
+        );
+
+        // 32 ms per frame at 16 kHz, so hangover_ms = required * 32 gives
+        // exactly `required` hangover frames.
+        let config = VadConfig {
+            hangover_ms: required * 32,
+            ..VadConfig::default()
+        };
+        let min_onset = config.min_onset_frames;
+        let mut vad = SileroVad::with_config(config).expect("VAD must initialise");
+        assert_eq!(vad.hangover_frames, required);
+
+        // Drive the state machine directly: confirm speech first (the onset
+        // candidate needs `min_onset_frames` frames), then feed non-speech.
+        for _ in 0..min_onset {
+            vad.advance_state(0.9, true);
+        }
+        assert_eq!(vad.current_speech_state(), SpeechState::Speaking);
+
+        for frame in 1..=not_fired_at {
+            vad.advance_state(0.0, false);
+            assert_eq!(
+                vad.current_speech_state(),
+                SpeechState::Speaking,
+                "silent frame {frame} of {required} must NOT have ended the hangover yet"
+            );
+        }
+        vad.advance_state(0.0, false);
+        assert_eq!(
+            vad.current_speech_state(),
+            SpeechState::Silence,
+            "the ({fires_at})-th consecutive non-speech frame is the edge"
+        );
+    }
+
+    /// D-L19: the predictor runs on a sub-floor frame, and the frame is still
+    /// Silence. A counting fake is the only observable — `engine` is the
+    /// concrete `VoiceActivityDetector`, not a trait object.
+    ///
+    /// Inversion (run 2026-09-21): restore `if energy_ok { predict } else { 0.0 }`
+    /// around the call in `frame_decision` → this test goes RED on `calls == 1`.
+    #[test]
+    fn spec_predictor_runs_on_a_sub_floor_frame() {
+        let v = vad_vector("VAD-ENGINE-CALL-SUBFLOOR-001");
+        let energy_floor = v["energy_floor"].as_f64().expect("energy_floor") as f32;
+        let expected_calls = vad_u64(&v, "expected_predictor_calls");
+        let expected_gate_open = v["expected_gate_open"]
+            .as_bool()
+            .expect("expected_gate_open");
+        let amplitude = v["amplitude_short"].as_i64().expect("amplitude_short");
+        assert_eq!(amplitude, 0, "this vector is digital silence");
+
+        let frame = vec![0.0f32; SILERO_FRAME_SAMPLES];
+        let mut calls = 0u64;
+        let (_prob, energy_ok) = frame_decision(&frame, energy_floor, |f| {
+            calls += 1;
+            assert_eq!(f.len(), SILERO_FRAME_SAMPLES, "the predictor gets the frame");
+            0.99 // a deliberately "speech" probability: the gate must still win
+        });
+
+        assert_eq!(calls, expected_calls, "the predictor must be consulted");
+        assert_eq!(
+            energy_ok, expected_gate_open,
+            "the energy gate still reports closed on a sub-floor frame"
+        );
+
+        // …and the verdict is unchanged despite the 0.99: `advance_state` ANDs
+        // `energy_ok` into both thresholds. This is the whole safety argument.
+        let mut vad = SileroVad::new().expect("VAD must initialise");
+        vad.advance_state(0.99, false);
+        assert_eq!(vad.current_speech_state(), SpeechState::Silence);
     }
 }

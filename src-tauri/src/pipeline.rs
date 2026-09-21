@@ -319,7 +319,15 @@ pub fn resolve_cleanup_provider(cfg: &AppConfig) -> Arc<dyn CleanupProvider> {
             );
             Arc::new(llm::local::LocalLlmCleanup::new(model_path))
         }
-        // "deepseek" and any unrecognised value
+        // "deepseek" and any unrecognised value.
+        //
+        // Story 13-2 (D-M21): `"local"` on a non-Windows build used to land
+        // HERE and send the transcript to DeepSeek under a setting that
+        // promises on-device. It can no longer reach this arm: every caller
+        // passes through [`config_skips_cleanup`] / [`offline_rule`] first,
+        // which returns "no cleanup" for a local provider this build does not
+        // have ([`local_cleanup_available`]). Do not add a `"local"` fallback
+        // here — the answer is no cleanup, never a cloud call.
         _ => cleanup_provider_for("deepseek", &cfg.deepseek_api_key, &cfg.advanced),
     }
 }
@@ -512,11 +520,12 @@ pub(crate) fn is_prompt_echo(transcription: &str, stt_hint: &str) -> bool {
 /// Whisper can leak fragments of these prompts into the transcription output,
 /// especially for longer recordings. We remove any recognised fragments before
 /// the text reaches the LLM cleanup step or the hallucination guard.
-const DEFAULT_STT_HINTS: &[&str] = &[
-    "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.",
-    "Voice dictation in English. Proper punctuation, capitalization, and spelling.",
-    "Multilingual voice dictation. German and English with proper punctuation.",
-];
+///
+/// Story 13-2: this was a second copy of the same three literals the prompt
+/// builder holds. It is now the one set (`stt::DEFAULT_STT_HINTS`) — the copies
+/// could not be kept byte-identical by hand, and `strip_prompt_fragments` only
+/// works when they are.
+use crate::stt::DEFAULT_STT_HINTS;
 
 /// Removes known STT conditioning-prompt fragments from `text`.
 ///
@@ -637,11 +646,68 @@ pub(crate) fn compute_wav_rms(wav_bytes: &[u8]) -> Option<f32> {
 // `process_audio` (Task 2.2). They take primitives only — no locks, no
 // `AppState`, no `AppHandle` — so they are order-independent at the call site.
 
-/// Whether the pipeline runs fully offline for *dictation*, i.e. skips the LLM
-/// cleanup network call. True only when STT is local AND the LLM is not local;
-/// when the LLM is also local, cleanup runs offline via llama.cpp and is kept.
-pub(crate) fn is_offline(stt_provider: &str, llm_provider: &str) -> bool {
-    stt_provider == "local" && llm_provider != "local"
+/// Is an on-device LLM cleanup provider actually built into this binary?
+///
+/// `resolve_cleanup_provider`'s `"local"` arm is `#[cfg(target_os = "windows")]`
+/// (llama-cpp-2 needs libclang + CMake and is Windows-only, per
+/// project-context). Everywhere else `"local"` fell through to
+/// `_ => cleanup_provider_for("deepseek", …)` — i.e. a setting whose whole
+/// promise is "on-device" quietly sent the transcript to DeepSeek
+/// (drift row D-M21). This predicate is what the offline rule below reads so
+/// that fall-through can never be reached again.
+///
+/// Kotlin twin: `KlarvoOverlayService.LOCAL_CLEANUP_AVAILABLE`, which is
+/// `false` — Android has no local cleanup (G3b).
+pub(crate) const fn local_cleanup_available() -> bool {
+    cfg!(target_os = "windows")
+}
+
+/// **The** offline rule (story 13-2, E2 / G2a). `true` means: this dictation
+/// makes **no** cleanup call at all — the raw transcript is the output.
+///
+/// Two clauses, one predicate:
+/// - a selected local cleanup that does not exist on this platform degrades to
+///   *no cleanup*, never to a silent cloud call (D-M21);
+/// - local STT implies local cleanup or none (G2a / D-H10) — no byte leaves
+///   the device after the user chose "Offline".
+///
+/// This replaced three disagreeing definitions: `is_offline` here,
+/// `commands::recording::is_offline_mode` (STT alone — D-M20) and Kotlin's
+/// `config.llmProvider == "local"` (LLM alone). The Kotlin twin is
+/// `KlarvoOverlayService.skipsCloudCleanup`.
+pub(crate) fn offline_rule(stt_provider: &str, llm_provider: &str) -> bool {
+    offline_rule_with(stt_provider, llm_provider, local_cleanup_available())
+}
+
+/// [`offline_rule`] with platform availability as an argument.
+///
+/// The availability of a local cleanup provider is a compile-time fact
+/// (`cfg!(target_os = "windows")`), which would make half the decision matrix
+/// unreachable from the Linux test gate — and the unreachable half is exactly
+/// where D-M21 lives. Taking it as a parameter is what lets
+/// `test-fixtures/offline-rule-vectors.json` be read on any host, by a Rust
+/// test and by the JVM twin, with the same rows.
+pub(crate) fn offline_rule_with(
+    stt_provider: &str,
+    llm_provider: &str,
+    local_cleanup_available: bool,
+) -> bool {
+    let local_llm = llm_provider == "local";
+    if local_llm && !local_cleanup_available {
+        return true;
+    }
+    stt_provider == "local" && !local_llm
+}
+
+/// [`offline_rule`] applied to a config, using the **effective** LLM provider
+/// so a run with `advanced.testProviderLlm` set still reaches the test
+/// provider instead of being classified offline (story 13-1b).
+///
+/// The `&AppConfig` shape (not `&AppState`) is deliberate: it is what
+/// `commands::recording::cleanup_text` and the pipeline can both hold, and it
+/// keeps the predicate pure.
+pub(crate) fn config_skips_cleanup(cfg: &AppConfig) -> bool {
+    offline_rule(&cfg.stt_provider, &effective_llm_provider_name(cfg))
 }
 
 /// Reason to skip the pipeline *before* transcription, based on recording
@@ -695,6 +761,56 @@ pub(crate) fn post_stt_skip(transcript: &str, stt_hint: &str) -> Option<PostSttS
         return Some(PostSttSkip::Blocklist);
     }
     None
+}
+
+/// What the post-STT guard chain made of a raw transcript.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuardOutcome {
+    /// The transcript after the ghost strip and the fragment strip. Meaningful
+    /// only when `skip` is `None`; on a skip the run produces nothing.
+    pub text: String,
+    /// `Some(..)` when the transcript must be dropped without a paste, a
+    /// history row or a message — the shipped silent skip.
+    pub skip: Option<PostSttSkip>,
+}
+
+/// **The** post-STT guard chain — one function, both platforms (story 13-2,
+/// rows B2 / D-H5, D-H6, D-M9 and B3 / D-H7).
+///
+/// Order, and why each step sits where it does:
+/// 1. `strip_prompt_fragments` — remove leaked conditioning-prompt text before
+///    any verdict is formed, so the echo check and the blocklist see clean
+///    input (D-M9: Android had this AFTER the echo check).
+/// 2. `strip_stockphrase_ghosts` — a raw transcript ending in a recognisable
+///    ghost (`"… Klinge"`, ~1.1 % of long clips) must lose the ghost, not the
+///    whole dictation. Before this story Desktop ran the blocklist on the
+///    unstripped text and dropped the entire transcript (B3 / D-H7).
+/// 3. `post_stt_skip` — prompt-echo, then the blocklist.
+///
+/// **Steps 1 and 2 are in this order because the other one is measurably
+/// wrong**, and the measurement is worth keeping: the German built-in hint
+/// *contains* a `STOCKPHRASE_BLOCKLIST` entry ("Groß- und Kleinschreibung").
+/// Ghost-stripping first mutilates a leaked hint before the fragment strip can
+/// recognise it, so `"<DE hint> Danke"` comes out as
+/// `"Korrekte Satzzeichen und Interpunktion. Danke"` and is then dropped as an
+/// echo — exactly the outcome D-M9 exists to remove. Fragment strip first
+/// yields `"Danke"`, which is the shipped Desktop behaviour the row points at,
+/// and it costs the ghost row nothing (a trailing `"… Klinge"` matches no hint
+/// fragment, so step 1 leaves it for step 2). Pinned both ways by
+/// `GUARD-ORDER-001` in `test-fixtures/guard-chain-vectors.json`.
+///
+/// `stt_hint` is the conditioning hint **alone** (`stt::stt_hint_text`), never
+/// the built prompt: the built prompt carries the user's dictionary, which made
+/// a dictionary-word utterance look like an echo (D-H5) and deleted any
+/// ≥10-byte dictionary term from every transcript (D-H6) on Android.
+///
+/// Reach: shared Rust core. The desktop pipeline calls it below; Android calls
+/// it through `stt::groq_jni::guard_transcript_for_jni`.
+pub(crate) fn guard_transcript(raw: &str, stt_hint: &str) -> GuardOutcome {
+    let stripped = strip_prompt_fragments(raw, stt_hint);
+    let deghosted = strip_stockphrase_ghosts(&stripped);
+    let skip = post_stt_skip(&deghosted, stt_hint);
+    GuardOutcome { text: deghosted, skip }
 }
 
 /// Which cleanup path the transcript takes after the guards pass.
@@ -1420,22 +1536,18 @@ pub async fn process_audio(
 
     log::debug!("[pipeline] raw transcription: {raw_text:?}");
 
-    // --- Strip leaked STT prompt fragments ---
-    // Whisper can embed parts of the conditioning prompt into the transcription
-    // output (e.g. "German and English with proper punctuation." mid-sentence).
-    // Strip these *before* the hallucination guard so the guard sees clean text.
-    let raw_text = {
-        let stripped = strip_prompt_fragments(&raw_text, &stt_hint_text);
-        if stripped != raw_text {
-            log::debug!("[pipeline] stripped prompt fragments from transcription");
-        }
-        stripped
-    };
-
-    // --- Whisper hallucination guards ---
-    // Prompt-echo (Whisper echoes the conditioning prompt) or a known
-    // training-data phrase ("ZDF 2020" / "Thank you for watching"). Both skip.
-    match post_stt_skip(&raw_text, &stt_hint_text) {
+    // --- The post-STT guard chain (story 13-2, B2/B3) ---
+    // One function, shared with Android over the JNI: ghost strip → fragment
+    // strip → echo/blocklist verdict. The pre-guard ghost strip is new on
+    // Desktop (B3 / D-H7): a raw transcript ending in a recognisable ghost
+    // used to be dropped WHOLE by the blocklist; now the ghost goes and the
+    // dictation survives.
+    let guard = guard_transcript(&raw_text, &stt_hint_text);
+    if guard.text != raw_text {
+        log::debug!("[pipeline] guard chain rewrote the transcription (ghost/prompt fragments)");
+    }
+    let raw_text = guard.text;
+    match guard.skip {
         Some(PostSttSkip::PromptEcho) => {
             log::info!(
                 "[pipeline] transcription is prompt echo (hallucination), skipping: {raw_text:?}"
@@ -1792,36 +1904,31 @@ pub async fn stop_and_process_pipeline(handle: AppHandle) {
         };
 
         // Use custom STT hint from advanced settings if set.
-        let stt_hint = match cfg.language.as_str() {
-            "de" if !cfg.advanced.stt_prompt_de.is_empty() => {
-                Some(cfg.advanced.stt_prompt_de.clone())
-            }
-            "en" if !cfg.advanced.stt_prompt_en.is_empty() => {
-                Some(cfg.advanced.stt_prompt_en.clone())
-            }
-            _ if !cfg.advanced.stt_prompt_auto.is_empty() => {
-                Some(cfg.advanced.stt_prompt_auto.clone())
-            }
-            _ => None,
-        };
+        // Story 13-2 (B4): the selection is `stt::select_stt_hint_override` now,
+        // so the Kotlin twin can mirror it exactly instead of approximating it.
+        let stt_hint = stt::select_stt_hint_override(
+            &cfg.language,
+            &cfg.advanced.stt_prompt_de,
+            &cfg.advanced.stt_prompt_en,
+            &cfg.advanced.stt_prompt_auto,
+        )
+        .map(|s| s.to_string());
         let dict_prompt = stt::build_stt_prompt_with_hint(
             dict_terms.as_deref(),
             &cfg.language,
             stt_hint.as_deref(),
         );
 
-        // Keep the hint text (without dictionary terms) for hallucination detection.
-        let stt_hint_text = stt_hint.unwrap_or_else(|| match cfg.language.as_str() {
-            "de" => "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion.".to_string(),
-            "en" => "Voice dictation in English. Proper punctuation, capitalization, and spelling.".to_string(),
-            _ => "Multilingual voice dictation. German and English with proper punctuation.".to_string(),
-        });
+        // Keep the hint text (without dictionary terms) for hallucination
+        // detection. Story 13-2: the three built-in literals used to be spelled
+        // out a third time right here; `stt::stt_hint_text` is the one source
+        // the Android JNI reads too, so the guard input cannot drift.
+        let stt_hint_text = stt::stt_hint_text(&cfg.language, stt_hint.as_deref());
 
-        // Offline mode: if stt_provider is "local" AND the LLM provider is
-        // not "local", skip the cleanup step (no network call, raw text
-        // goes straight to paste). When llm_provider is "local", cleanup
-        // runs offline via llama.cpp — no internet needed.
-        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
+        // Story 13-2 (E2 / G2a): ONE offline rule. `config_skips_cleanup` also
+        // catches a selected-but-unavailable local cleanup, which used to fall
+        // through to a silent DeepSeek call (D-M21).
+        let offline = config_skips_cleanup(&cfg);
 
         // Command Mode: peek the flag and clone the selection WITHOUT resetting.
         // The reset/take is deferred to after process_audio returns, gated on
@@ -2422,17 +2529,26 @@ pub(crate) fn deliver_text(
 /// transcript is, and that write is best-effort (AC8 re-review, item 2). The
 /// outcome is known before the terminal event goes out, so the cause carries it
 /// instead of the card asserting it.
+/// **Story 13-2 (D6 / D-M12), the widening.** Until this story the rewrite was
+/// gated on there already being a cleanup degrade (`Some(_) if paste_failed`),
+/// so on a perfectly successful cleanup whose clipboard write then failed the
+/// cause stayed `None`, `deliver_text` coerced the hard `PasteError` to
+/// `ClipboardOnly`, and the pill told the user "In Clipboard" about text that
+/// was in neither the window nor the clipboard.
+///
+/// `paste_failed` is the discriminator, and it is precise: it is set **only**
+/// when the handler returned `Err`, i.e. the clipboard primitive itself failed.
+/// A *focus* failure returns `Ok(PasteResult::ClipboardOnly)` — the text really
+/// is on the clipboard — and keeps today's "In Clipboard" wording untouched.
 pub(crate) fn terminal_degrade_cause(
     degrade_cause: Option<DegradeCause>,
     paste_failed: bool,
     history_saved: bool,
 ) -> Option<DegradeCause> {
-    match degrade_cause {
-        Some(_) if paste_failed => {
-            Some(DegradeCause::ClipboardWriteFailed { in_history: history_saved })
-        }
-        other => other,
+    if paste_failed {
+        return Some(DegradeCause::ClipboardWriteFailed { in_history: history_saved });
     }
+    degrade_cause
 }
 
 // ---------------------------------------------------------------------------
@@ -3058,7 +3174,7 @@ mod tests {
     /// When `stt_provider` is `"local"` and `llm_provider` is NOT `"local"`,
     /// the offline flag must be `true` so the pipeline skips the LLM cleanup step.
     ///
-    /// Exercises the real `is_offline` decision helper that
+    /// Exercises the real `offline_rule` decision helper that
     /// `stop_and_process_pipeline` now calls (previously these tests replicated
     /// the expression inline, which gave false security).
     #[test]
@@ -3068,21 +3184,65 @@ mod tests {
             llm_provider: "deepseek".to_string(),
             ..AppConfig::default()
         };
-        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
+        let offline = offline_rule(&cfg.stt_provider, &cfg.llm_provider);
         assert!(offline, "offline flag should be true when stt=local but llm!=local");
     }
 
-    /// When both `stt_provider` and `llm_provider` are `"local"`, the offline
-    /// flag must be `false` so the pipeline runs local LLM cleanup.
+    /// When both `stt_provider` and `llm_provider` are `"local"`, cleanup runs
+    /// on-device **where a local provider exists** — and where it does not,
+    /// story 13-2's rule says "no cleanup", not "DeepSeek".
+    ///
+    /// Rewritten by story 13-2 (E2 / D-M21). It used to assert `!offline`
+    /// unconditionally, which pinned the defect: on every non-Windows build
+    /// `resolve_cleanup_provider`'s `"local"` arm does not exist, so the
+    /// transcript went to DeepSeek under a setting whose promise is on-device.
     #[test]
-    fn test_offline_flag_false_when_both_local() {
+    fn test_offline_flag_follows_local_cleanup_availability_when_both_local() {
         let cfg = AppConfig {
             stt_provider: "local".to_string(),
             llm_provider: "local".to_string(),
             ..AppConfig::default()
         };
-        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
-        assert!(!offline, "offline flag should be false when both stt and llm are local");
+        assert_eq!(
+            offline_rule(&cfg.stt_provider, &cfg.llm_provider),
+            !local_cleanup_available(),
+            "both-local must skip cleanup exactly when this build has no local provider"
+        );
+    }
+
+    /// The other half of D-M21: **cloud** STT with a selected local cleanup.
+    /// Where the local provider does not exist the answer is no cleanup — it
+    /// must never silently become a DeepSeek call.
+    #[test]
+    fn spec_unavailable_local_cleanup_never_becomes_a_cloud_call() {
+        let cfg = AppConfig {
+            stt_provider: "groq".to_string(),
+            llm_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            offline_rule(&cfg.stt_provider, &cfg.llm_provider),
+            !local_cleanup_available(),
+            "a local cleanup this build does not have must degrade to NO cleanup"
+        );
+    }
+
+    /// The test provider must stay reachable: it is resolved before
+    /// `llm_provider` is read at all (13-1b), so a config that would otherwise
+    /// be classified offline-by-unavailable-local still runs the canned
+    /// provider.
+    #[test]
+    fn spec_test_provider_is_not_classified_as_offline() {
+        let mut cfg = AppConfig {
+            stt_provider: "groq".to_string(),
+            llm_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+        cfg.advanced.test_provider_llm = "empty".to_string();
+        assert!(
+            !config_skips_cleanup(&cfg),
+            "an active test provider is the effective provider and must be called"
+        );
     }
 
     /// When `stt_provider` is a cloud provider, the offline flag must be `false`.
@@ -3093,7 +3253,7 @@ mod tests {
             groq_api_key: "gsk-test".to_string(),
             ..AppConfig::default()
         };
-        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
+        let offline = offline_rule(&cfg.stt_provider, &cfg.llm_provider);
         assert!(!offline, "offline flag should be false when stt_provider != 'local'");
     }
 
@@ -3105,7 +3265,7 @@ mod tests {
             openai_api_key: "sk-test".to_string(),
             ..AppConfig::default()
         };
-        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
+        let offline = offline_rule(&cfg.stt_provider, &cfg.llm_provider);
         assert!(!offline);
     }
 
@@ -3330,7 +3490,7 @@ mod tests {
     #[test]
     fn test_offline_flag_false_by_default() {
         let cfg = AppConfig::default();
-        let offline = is_offline(&cfg.stt_provider, &cfg.llm_provider);
+        let offline = offline_rule(&cfg.stt_provider, &cfg.llm_provider);
         assert!(!offline, "default config should not be in offline mode");
     }
 
@@ -5764,17 +5924,62 @@ mod tests {
         assert_eq!(original.card().cause.chip.as_deref(), Some("deepseek-typo"));
     }
 
-    /// A non-degraded run carries no cause, and a failed paste must not invent
-    /// one. (`paste_failed` here means the clipboard write itself failed —
-    /// a focus failure returns `Ok(ClipboardOnly)` and never sets it; that
-    /// residual false "In Clipboard" on a normal run is a backlog item, not
-    /// this story's — see docs/backlog.md, 7-10 residuals.)
+    /// A non-degraded run whose delivery *worked* carries no cause.
+    ///
+    /// Rewritten by story 13-2 (D6 / D-M12). It used to assert `None` for
+    /// `paste_failed == true` as well, i.e. it pinned the bug: a successful
+    /// cleanup whose clipboard write then failed produced no cause, the
+    /// terminal event fell back to the static "In Clipboard" label, and the
+    /// pill told the user to press Ctrl+V for text that was nowhere.
     #[test]
     fn spec_non_degraded_run_never_gains_a_cause() {
-        assert_eq!(terminal_degrade_cause(None, true, true), None);
         assert_eq!(terminal_degrade_cause(None, false, true), None);
-        assert_eq!(terminal_degrade_cause(None, true, false), None);
         assert_eq!(terminal_degrade_cause(None, false, false), None);
+    }
+
+    /// D6 / D-M12, Desktop half: a clipboard-write failure on a run with **no**
+    /// cleanup degrade now produces the shipped `ClipboardWriteFailed` cause,
+    /// whose card is the shipped "TEXT LOST" one. No new state, no new
+    /// wording — the cause and the card both existed at `baseline_revision`
+    /// and were simply unreachable on this path.
+    #[test]
+    fn spec_clipboard_failure_on_a_clean_run_names_the_shipped_cause() {
+        for history_saved in [true, false] {
+            let cause = terminal_degrade_cause(None, true, history_saved)
+                .expect("a failed clipboard write must name a cause");
+            assert_eq!(
+                cause,
+                DegradeCause::ClipboardWriteFailed { in_history: history_saved }
+            );
+            assert_eq!(cause.card().header, "TEXT LOST");
+            assert!(
+                !cause.card().cause.before.contains("In Clipboard"),
+                "the card must stop claiming the clipboard"
+            );
+        }
+    }
+
+    /// The discriminator. A *focus* failure is not a clipboard failure: the
+    /// handler returns `Ok(PasteResult::ClipboardOnly)`, so `paste_failed`
+    /// stays `false` and the run keeps today's "In Clipboard" wording. Without
+    /// this the widening above would relabel every clipboard-only run as
+    /// TEXT LOST.
+    #[test]
+    fn spec_focus_failure_is_not_a_clipboard_failure() {
+        struct FocusFailHandler;
+        impl PasteHandler for FocusFailHandler {
+            fn paste(&self, _text: &str) -> Result<PasteResult, PasteError> {
+                Ok(PasteResult::ClipboardOnly)
+            }
+        }
+        let delivery = deliver_text(&FocusFailHandler, "hello", false, false);
+        assert_eq!(delivery.paste_result, PasteResult::ClipboardOnly);
+        assert!(!delivery.paste_failed, "a focus miss must not set paste_failed");
+        assert_eq!(
+            terminal_degrade_cause(None, delivery.paste_failed, true),
+            None,
+            "a clipboard-only run keeps today's wording"
+        );
     }
 
     /// AC8 re-review, item 2: the card's "raw text is in History" is now a
@@ -5855,4 +6060,370 @@ mod tests {
         );
     }
 
+
+    // -----------------------------------------------------------------------
+    // Story 13-2 — the ONE guard chain, read from
+    // test-fixtures/guard-chain-vectors.json (repo root).
+    //
+    // The Kotlin half of this fixture is n/a BY CONSTRUCTION for the guard
+    // vectors: ADR-0017 makes the STT guards shared Rust core, reached from
+    // Android over `GroqSttBridge.nativeTranscribe` ->
+    // `stt::groq_jni::guard_transcript_for_jni`. `GuardChainBridgeTest` asserts
+    // that delegation rather than re-deciding the verdict. The one vector with
+    // a real Kotlin reader is STT-HINT-SELECT-*, which is config plumbing and
+    // therefore a twin.
+    // -----------------------------------------------------------------------
+
+    fn load_guard_vectors() -> Vec<serde_json::Value> {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let path = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("workspace root")
+            .join("test-fixtures/guard-chain-vectors.json");
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+        serde_json::from_str(&content).expect("guard-chain-vectors.json must be a JSON array")
+    }
+
+    /// Throwing lookup — a missing id must fail loudly, never skip the assertion.
+    fn guard_vector(id: &str) -> serde_json::Value {
+        load_guard_vectors()
+            .into_iter()
+            .find(|v| v["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("guard-chain-vectors.json has no vector with id={id}"))
+    }
+
+    /// Throwing string accessor: a typo'd fixture key must fail, not default.
+    fn gstr(v: &serde_json::Value, path: &[&str]) -> String {
+        let mut cur = v;
+        for key in path {
+            cur = cur
+                .get(key)
+                .unwrap_or_else(|| panic!("fixture key {:?} missing in {v}", path));
+        }
+        cur.as_str()
+            .unwrap_or_else(|| panic!("fixture key {path:?} is not a string"))
+            .to_string()
+    }
+
+    fn skip_name(skip: Option<PostSttSkip>) -> Option<&'static str> {
+        skip.map(|s| match s {
+            PostSttSkip::PromptEcho => "PromptEcho",
+            PostSttSkip::Blocklist => "Blocklist",
+        })
+    }
+
+    /// B2 / D-H5: the echo guard is fed the HINT, so an utterance made of the
+    /// user's own dictionary terms survives — and the pre-13-2 input (the full
+    /// built prompt) is asserted to still fail, so "fixed" cannot mean "the
+    /// guard stopped working".
+    #[test]
+    fn spec_guard_echo_uses_the_hint_not_the_dictionary() {
+        let v = guard_vector("GUARD-ECHO-DICTIONARY-001");
+        let transcript = gstr(&v, &["input", "transcript"]);
+        let terms = gstr(&v, &["input", "dictionary_terms"]);
+        let language = gstr(&v, &["input", "language"]);
+
+        let hint = stt::stt_hint_text(&language, None);
+        let outcome = guard_transcript(&transcript, &hint);
+        assert_eq!(skip_name(outcome.skip), v["rust"]["skip"].as_str());
+        assert_eq!(outcome.text, gstr(&v, &["rust", "text"]));
+
+        let full_prompt = stt::build_stt_prompt_with_hint(Some(&terms), &language, None)
+            .expect("the built prompt must exist");
+        let wide = guard_transcript(&transcript, &full_prompt);
+        assert_eq!(
+            skip_name(wide.skip),
+            v["rust_with_full_prompt_as_hint"]["skip"].as_str(),
+            "the dictionary-laden hint must still be the thing that breaks it"
+        );
+    }
+
+    /// B2 / D-H6: the fragment strip is fed the HINT, so a >=10-byte dictionary
+    /// term is not deleted from the sentence.
+    #[test]
+    fn spec_guard_strip_does_not_eat_dictionary_terms() {
+        let v = guard_vector("GUARD-STRIP-DICTIONARY-001");
+        let transcript = gstr(&v, &["input", "transcript"]);
+        let terms = gstr(&v, &["input", "dictionary_terms"]);
+        let language = gstr(&v, &["input", "language"]);
+
+        let hint = stt::stt_hint_text(&language, None);
+        let outcome = guard_transcript(&transcript, &hint);
+        assert_eq!(skip_name(outcome.skip), v["rust"]["skip"].as_str());
+        assert_eq!(outcome.text, gstr(&v, &["rust", "text"]));
+
+        let full_prompt = stt::build_stt_prompt_with_hint(Some(&terms), &language, None)
+            .expect("the built prompt must exist");
+        let wide = guard_transcript(&transcript, &full_prompt);
+        assert_eq!(
+            wide.text,
+            gstr(&v, &["rust_with_full_prompt_as_hint", "text"]),
+            "the pre-13-2 input must still delete the term, or this vector proves nothing"
+        );
+    }
+
+    /// B2 / D-M9: fragments are stripped before the verdict, AND the fragment
+    /// strip runs before the ghost strip. Both orders are asserted, because the
+    /// German hint contains a stockphrase and the wrong inner order silently
+    /// resurrects the drift.
+    #[test]
+    fn spec_guard_order_strips_fragments_before_the_verdict() {
+        let v = guard_vector("GUARD-ORDER-001");
+        let transcript = gstr(&v, &["input", "transcript"]);
+        let hint = stt::stt_hint_text(&gstr(&v, &["input", "language"]), None);
+
+        let outcome = guard_transcript(&transcript, &hint);
+        assert_eq!(skip_name(outcome.skip), v["rust"]["skip"].as_str());
+        assert_eq!(outcome.text, gstr(&v, &["rust", "text"]));
+
+        // The inner order, asserted by re-running the chain the other way round.
+        let ghost_first = {
+            let deghosted = strip_stockphrase_ghosts(&transcript);
+            let stripped = strip_prompt_fragments(&deghosted, &hint);
+            let skip = post_stt_skip(&stripped, &hint);
+            (stripped, skip)
+        };
+        assert_eq!(
+            ghost_first.0,
+            gstr(&v, &["rust_with_ghost_strip_first", "text"]),
+            "the fixture records what ghost-strip-first produces; keep it honest"
+        );
+        assert_eq!(
+            skip_name(ghost_first.1),
+            v["rust_with_ghost_strip_first"]["skip"].as_str(),
+            "ghost-strip-first must still lose the dictation — that is why it is not the order"
+        );
+    }
+
+    /// B3 / D-H7, first half: a trailing raw ghost costs the ghost, not the
+    /// dictation. The pre-13-2 Desktop verdict is asserted too.
+    #[test]
+    fn spec_guard_strips_a_raw_ghost_before_the_blocklist() {
+        let v = guard_vector("GUARD-GHOST-RAW-001");
+        let transcript = gstr(&v, &["input", "transcript"]);
+        let hint = stt::stt_hint_text(&gstr(&v, &["input", "language"]), None);
+
+        let outcome = guard_transcript(&transcript, &hint);
+        assert_eq!(skip_name(outcome.skip), v["rust"]["skip"].as_str());
+        assert_eq!(outcome.text, gstr(&v, &["rust", "text"]));
+
+        let without = post_stt_skip(&strip_prompt_fragments(&transcript, &hint), &hint);
+        assert_eq!(
+            skip_name(without),
+            v["rust_without_pre_guard_ghost_strip"]["skip"].as_str(),
+            "without the pre-guard ghost strip the whole dictation is still dropped"
+        );
+    }
+
+    /// B3 / D-H7, second half: the post-cleanup strip. Same function, called
+    /// from `process_audio` after `sanitize_llm_output` and from Android over
+    /// `nativeStripStockphraseGhosts`.
+    #[test]
+    fn spec_guard_strips_a_rationalised_ghost_after_cleanup() {
+        let v = guard_vector("GUARD-GHOST-POSTCLEANUP-001");
+        let cleaned = gstr(&v, &["input", "cleaned_text"]);
+        assert_eq!(
+            strip_stockphrase_ghosts(&cleaned),
+            gstr(&v, &["rust", "text"])
+        );
+    }
+
+    /// B4: the prompt-builder separator, both the unchanged built-in output and
+    /// the custom-hint case it fixes.
+    #[test]
+    fn spec_stt_prompt_join_is_explicit() {
+        let builtin = guard_vector("STT-PROMPT-JOIN-BUILTIN-001");
+        assert_eq!(
+            stt::build_stt_prompt_with_hint(
+                Some(&gstr(&builtin, &["input", "dictionary_terms"])),
+                &gstr(&builtin, &["input", "language"]),
+                None,
+            ),
+            Some(gstr(&builtin, &["rust", "prompt"])),
+            "the built-in join must stay byte-identical"
+        );
+
+        let custom = guard_vector("STT-PROMPT-JOIN-CUSTOM-001");
+        let override_text = gstr(&custom, &["input", "stt_prompt_override"]);
+        let built = stt::build_stt_prompt_with_hint(
+            Some(&gstr(&custom, &["input", "dictionary_terms"])),
+            &gstr(&custom, &["input", "language"]),
+            Some(&override_text),
+        )
+        .expect("prompt");
+        assert_eq!(built, gstr(&custom, &["rust", "prompt"]));
+        assert_ne!(
+            built,
+            gstr(&custom, &["rust", "pre_13_2_prompt"]),
+            "the glued form is the defect, not the contract"
+        );
+    }
+
+    /// B4 / D-H4: the override selection, including the fall-through a Kotlin
+    /// twin written from the obvious reading would get wrong.
+    #[test]
+    fn spec_stt_hint_override_selection_falls_through_to_auto() {
+        let v = guard_vector("STT-HINT-SELECT-DE-FALLTHROUGH-001");
+        let language = gstr(&v, &["input", "language"]);
+        let de = gstr(&v, &["input", "stt_prompt_de"]);
+        let en = gstr(&v, &["input", "stt_prompt_en"]);
+        let auto = gstr(&v, &["input", "stt_prompt_auto"]);
+        let selected = stt::select_stt_hint_override(&language, &de, &en, &auto);
+        assert_eq!(selected, Some(gstr(&v, &["rust", "selected"]).as_str()));
+        assert_eq!(
+            gstr(&v, &["kotlin", "selected"]),
+            gstr(&v, &["rust", "selected"]),
+            "both twins must be pinned to the same literal"
+        );
+    }
+
+    /// The guards still DROP what they exist for.
+    ///
+    /// Every other guard vector asserts SURVIVAL — that is the direction this
+    /// story widened — so without these two the whole chain could be replaced
+    /// by a passthrough and the suite would stay green. Found by inverting
+    /// `guard_transcript_for_jni` on 2026-09-21: the wrapper test below was
+    /// vacuous on its skip arm until these vectors existed.
+    #[test]
+    fn spec_guard_still_drops_an_echo_and_a_hallucination() {
+        for id in ["GUARD-ECHO-DROP-001", "GUARD-BLOCKLIST-DROP-001"] {
+            let v = guard_vector(id);
+            let transcript = gstr(&v, &["input", "transcript"]);
+            let hint = stt::stt_hint_text(&gstr(&v, &["input", "language"]), None);
+
+            let outcome = guard_transcript(&transcript, &hint);
+            assert_eq!(skip_name(outcome.skip), v["rust"]["skip"].as_str(), "{id}");
+            assert_eq!(outcome.text, gstr(&v, &["rust", "text"]), "{id}");
+            assert_eq!(
+                crate::stt::groq_jni::guard_transcript_for_jni(&transcript, &hint),
+                None,
+                "{id}: a dropped transcript must reach Kotlin as the empty string"
+            );
+            assert_eq!(
+                gstr(&v, &["rust", "jni_returns"]),
+                "",
+                "{id}: the fixture must say what Kotlin sees"
+            );
+        }
+    }
+
+    /// The JNI wrapper Android reaches the chain through must agree with the
+    /// chain itself — otherwise the two platforms are back to two answers.
+    #[test]
+    fn spec_jni_guard_wrapper_agrees_with_the_desktop_chain() {
+        let mut skips = 0;
+        let mut survivals = 0;
+        for v in load_guard_vectors() {
+            let Some(transcript) = v["input"]["transcript"].as_str() else {
+                continue;
+            };
+            let language = v["input"]["language"].as_str().unwrap_or("");
+            let hint = stt::stt_hint_text(language, None);
+            let chain = guard_transcript(transcript, &hint);
+            let jni = crate::stt::groq_jni::guard_transcript_for_jni(transcript, &hint);
+            match chain.skip {
+                Some(_) => {
+                    skips += 1;
+                    assert_eq!(jni, None, "{}: a skip must reach Kotlin as \"\"", v["id"]);
+                }
+                None => {
+                    survivals += 1;
+                    assert_eq!(
+                        jni,
+                        Some(chain.text.clone()),
+                        "{}: the surviving text must be identical",
+                        v["id"]
+                    );
+                }
+            }
+        }
+        // Both arms must really have been taken, or "they agree" is vacuous —
+        // which it was until the two DROP vectors were added.
+        assert!(skips >= 2, "the fixture must exercise the drop arm");
+        assert!(survivals >= 4, "the fixture must exercise the survive arm");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 13-2 (E2 / G2a) — the ONE offline rule, read from
+    // test-fixtures/offline-rule-vectors.json (repo root). JVM twin:
+    // OfflineRuleVectorsTest.
+    // -----------------------------------------------------------------------
+
+    fn load_offline_vectors() -> Vec<serde_json::Value> {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let path = std::path::Path::new(&manifest_dir)
+            .parent()
+            .expect("workspace root")
+            .join("test-fixtures/offline-rule-vectors.json");
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
+        serde_json::from_str(&content).expect("offline-rule-vectors.json must be a JSON array")
+    }
+
+    /// The whole matrix, driven through the production predicate.
+    #[test]
+    fn spec_offline_rule_matches_the_fixture_matrix() {
+        let mut checked = 0;
+        for v in load_offline_vectors() {
+            let Some(expected) = v["expected_skips_cleanup"].as_bool() else {
+                continue; // the platform-constants row
+            };
+            let id = v["id"].as_str().expect("every vector needs an id");
+            let stt = v["stt_provider"].as_str().expect("stt_provider");
+            let llm = v["llm_provider"].as_str().expect("llm_provider");
+            let available = v["local_cleanup_available"]
+                .as_bool()
+                .expect("local_cleanup_available");
+            assert_eq!(
+                offline_rule_with(stt, llm, available),
+                expected,
+                "{id}: stt={stt} llm={llm} local_available={available}"
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 8, "the 2x2x2 matrix must be complete");
+    }
+
+    /// The platform constants the matrix is parameterised on. Without this the
+    /// rows above would be a hypothesis about `local_cleanup_available()`
+    /// rather than a statement about this build.
+    #[test]
+    fn spec_offline_rule_platform_constants_match_the_fixture() {
+        let v = load_offline_vectors()
+            .into_iter()
+            .find(|v| v["id"].as_str() == Some("OFFLINE-PLATFORM-AVAILABILITY-001"))
+            .expect("the platform-constants vector must exist");
+        let expected = if cfg!(target_os = "windows") {
+            v["platform_constants"]["rust_windows"].as_bool()
+        } else {
+            v["platform_constants"]["rust_non_windows"].as_bool()
+        }
+        .expect("the fixture must state this platform's constant");
+        assert_eq!(local_cleanup_available(), expected);
+    }
+
+    /// And the config-shaped entry point agrees with the primitive one, so the
+    /// two callers (hotkey pipeline, in-app button) cannot diverge again.
+    #[test]
+    fn spec_config_skips_cleanup_delegates_to_the_one_rule() {
+        for (stt, llm) in [
+            ("groq", "deepseek"),
+            ("local", "deepseek"),
+            ("local", "local"),
+            ("groq", "local"),
+        ] {
+            let cfg = AppConfig {
+                stt_provider: stt.to_string(),
+                llm_provider: llm.to_string(),
+                ..AppConfig::default()
+            };
+            assert_eq!(
+                config_skips_cleanup(&cfg),
+                offline_rule(stt, llm),
+                "stt={stt} llm={llm}"
+            );
+        }
+    }
 }
+
