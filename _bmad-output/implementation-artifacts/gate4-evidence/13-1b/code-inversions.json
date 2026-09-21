@@ -1,0 +1,124 @@
+{
+  "rust": [
+    {
+      "inversion": "config step (f) drops the LLM value allowlist check",
+      "file": "src-tauri/src/config/mod.rs",
+      "filter": "spec_unknown_test_provider_value_normalizes_to_off",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "\"debug\" is put back on VALID_LLM_PROVIDERS / VALID_STT_PROVIDERS",
+      "file": "src-tauri/src/config/mod.rs",
+      "filter": "spec_old_shape_13_1_config_lands_on_a_real_provider_and_an_off_test_provider",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "testProviderLlm loses its camelCase serde name",
+      "file": "src-tauri/src/config/mod.rs",
+      "filter": "spec_test_provider_keys_survive_a_real_config_file_round_trip",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "truncated is added to the STT value allowlist",
+      "file": "src-tauri/src/config/mod.rs",
+      "filter": "spec_truncated_is_llm_only_and_is_normalized_away_on_the_stt_chain",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "resolve_cleanup_provider loses its early return",
+      "file": "src-tauri/src/pipeline.rs",
+      "filter": "spec_test_provider_llm_key_selects_the_test_provider",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "resolve_stt_provider loses its early return",
+      "file": "src-tauri/src/pipeline.rs",
+      "filter": "spec_test_provider_stt_key_selects_the_test_provider",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.06s"
+      ]
+    },
+    {
+      "inversion": "save_advanced_settings stops rebuilding the STT slot",
+      "file": "src-tauri/src/commands/settings.rs",
+      "filter": "spec_test_provider_stt_change_rebuilds_the_stt_provider",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "select_stt_provider's comparison is flipped",
+      "file": "src-tauri/src/stt/groq_jni.rs",
+      "filter": "spec_android_select_stt_provider",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 745 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "`off` is removed from the React TEST_PROVIDER_LLM_OPTIONS array",
+      "file": "src/components/AdvancedSettingsPanel.tsx",
+      "filter": "spec_react_test_provider_arrays_are_pinned_to_rust",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "inversion": "the feedback FAB is switched back on",
+      "file": "src/App.tsx",
+      "filter": "spec_react_feedback_fab_is_off_and_its_modal_stays_mounted",
+      "RED": true,
+      "evidence": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 747 filtered out; finished in 0.00s"
+      ]
+    }
+  ],
+  "kotlin": [
+    {
+      "inversion": "the license gate stops forcing testProviderLlm off",
+      "file": "KlarvoApi.kt",
+      "expected_red_test": "licenseGate_forcesBothTestKeysOffWhenUnlicensed",
+      "RED": true,
+      "failed_tests": [
+        "licenseGate_forcesBothTestKeysOffWhenUnlicensed"
+      ]
+    },
+    {
+      "inversion": "resolveLlmProvider's early-return condition is flipped",
+      "file": "KlarvoApi.kt",
+      "expected_red_test": "resolveLlmProvider_testProviderWinsWithoutAnyApiKey",
+      "RED": true,
+      "failed_tests": [
+        "resolveLlmProvider_testProviderWinsWithoutAnyApiKey",
+        "resolveLlmProvider_oldShapeDebugNameResolvesToDeepSeekNotADeadProvider"
+      ]
+    },
+    {
+      "inversion": "the test branch moves BELOW val url = URL(provider.url)",
+      "file": "KlarvoApi.kt",
+      "expected_red_test": "testProviderBranchIsTakenBeforeTheProviderUrlIsBuilt",
+      "RED": true,
+      "failed_tests": [
+        "testProviderBranchIsTakenBeforeTheProviderUrlIsBuilt"
+      ]
+    }
+  ]
+}
