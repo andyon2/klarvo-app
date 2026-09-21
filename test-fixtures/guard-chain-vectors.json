@@ -150,7 +150,7 @@
     "id": "GUARD-BLOCKLIST-DROP-001",
     "surface": "stt",
     "scenario": "transcript that is nothing but a known hallucination",
-    "description": "A training-data artefact with no real speech around it ('Untertitelung des ZDF, 2020'). PINS: the blocklist still DROPS after the ghost strip was moved ahead of it (B3) -- the pre-guard strip must not turn the blocklist into a no-op -- and the drop reaches Kotlin as the empty string. DOES NOT PIN: the blocklist's membership, or the >8-word gate that applies to the non-stockphrase family.",
+    "description": "A training-data artefact with no real speech around it ('Untertitelung des ZDF, 2020'). PINS: the blocklist still DROPS, and the drop reaches Kotlin as the empty string. DOES NOT PIN -- corrected by the follow-up review 2026-09-21 -- that the pre-guard ghost strip left the blocklist intact: this entry lives in HALLUCINATION_BLOCKLIST, which `strip_stockphrase_ghosts` never touches, so this vector passes identically with and without the B3 reorder. GUARD-STOCKPHRASE-DROP-001 is the row that can actually witness that interaction. Also does not pin the blocklist's membership, or the >8-word gate that applies to the non-stockphrase family.",
     "input": {
       "transcript": "Untertitelung des ZDF, 2020",
       "dictionary_terms": "",
@@ -161,6 +161,29 @@
       "hint_is": "builtin_de",
       "skip": "Blocklist",
       "text": "Untertitelung des ZDF, 2020",
+      "jni_returns": ""
+    },
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT guards are shared Rust core (ADR-0017); a dropped transcript reaches Kotlin as the empty string and takes the shipped blank-transcript ending, which after D11 is silent."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "GUARD-STOCKPHRASE-DROP-001",
+    "surface": "stt",
+    "scenario": "transcript that is nothing but a stockphrase ghost",
+    "description": "The row GUARD-BLOCKLIST-DROP-001 was written to carry but cannot (follow-up review, 2026-09-21): a capture that is ONLY a STOCKPHRASE_BLOCKLIST entry, the one family the new pre-guard ghost strip can reach. PINS: the pre-guard strip must not turn the blocklist into a no-op -- `strip_stockphrase_ghosts` reduces this input to the empty string and `is_hallucination` treats the empty string as junk, so the drop survives the B3 reorder. Delete the ghost strip from the chain and the blocklist catches it directly; that is the point -- BOTH orders must drop it, and this row fails loudly if a future edit makes the strip produce something the verdict lets through. DOES NOT PIN: what happens to a stockphrase followed by other punctuation -- `\"[Musik]!\"` strips to `\"!\"`, which is NOT empty and is NOT a hallucination, and is an open decision recorded in the spec's Review Findings.",
+    "input": {
+      "transcript": "Groß- und Kleinschreibung",
+      "dictionary_terms": "",
+      "language": "de",
+      "stt_prompt_override": null
+    },
+    "rust": {
+      "hint_is": "builtin_de",
+      "skip": "Blocklist",
+      "text": "",
       "jni_returns": ""
     },
     "kotlin": {

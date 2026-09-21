@@ -144,16 +144,24 @@ pub struct AdvancedSettings {
     pub test_provider_stt: String,
 }
 
+// The three seeded conditioning prompts are DERIVED from `stt::STT_HINT_*`,
+// never re-typed. Story 13-2 collapsed three copies of these literals into one
+// const each and its notes claim "the literals became one const each" -- these
+// were a fourth copy, byte-identical, that the claim had missed (review
+// finding, 2026-09-21). The trailing space is preserved because it is what the
+// shipped `config.json` contains; `stt::stt_hint_text` trims the override
+// anyway, so a seeded default still equals its built-in.
+
 fn default_stt_prompt_de() -> String {
-    "Diktat auf Deutsch mit gelegentlichen englischen Fachbegriffen. Korrekte Groß- und Kleinschreibung, Satzzeichen und Interpunktion. ".to_string()
+    format!("{} ", crate::stt::STT_HINT_DE)
 }
 
 fn default_stt_prompt_en() -> String {
-    "Voice dictation in English. Proper punctuation, capitalization, and spelling. ".to_string()
+    format!("{} ", crate::stt::STT_HINT_EN)
 }
 
 fn default_stt_prompt_auto() -> String {
-    "Multilingual voice dictation. German and English with proper punctuation. ".to_string()
+    format!("{} ", crate::stt::STT_HINT_AUTO)
 }
 
 fn default_silence_threshold() -> f32 {

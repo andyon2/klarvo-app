@@ -505,3 +505,45 @@ Source: review of `spec-webview2-overlay-backgrounding.md` (edge-case-hunter). O
 ## Deferred from: code review round 2 of 7-6-m12-open-product-decision-dictionary-in-chat-style.md (2026-09-16)
 
 - **Stale D1 rationale in the M12 test NOTE** (`src-tauri/src/llm/mod.rs`, `tests::spec_m12_dictionary_scope_current_state_still_holds`). The kept text says "the fixture has exactly one disagreeing style" and speaks of "Story 7.6 flips one vector without editing this test". After 7.6, no style disagrees, and 7.6's review round 1 made a comment-only edit inside the fn. Round 1 was bound to keep the rationale verbatim (7-8 D1). Fix shape: rephrase in the past tense ("had exactly one…"), no assertion change. LOW. Source: Blind Hunter + Edge Case Hunter + Acceptance Auditor.
+
+## Deferred from: code review of spec-13-2-parity-sweep-guards-and-silent-loss-2 (2026-09-21)
+
+Follow-up review pass (`bmad-code-review`, range `4e4bc00..d1b7953`, lenses `blind-hunter`,
+`edge-case-hunter`, `verification-gap`, `intent-alignment`). All six were already in the spec's
+frontmatter `deferred` from the first review pass; this pass re-confirmed each independently and
+they are carried here because `docs/backlog.md`, not a closed story's frontmatter, is where the
+next session looks.
+
+- **Android local-STT and local-Whisper transcripts skip the whole guard chain.** Only
+  `nativeIsHallucination` runs on that path; no fragment strip, no ghost strip, no echo verdict.
+  Pre-existing (the pre-13-2 inline chain was equally Groq-only), but this story cut the retry
+  budget to one attempt, so the local-Whisper net is reached sooner and more often, and
+  `pipeline::guard_transcript`'s doc now calls itself "the one chain, both platforms".
+  `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (local-Whisper net). medium.
+- **A control-character-only LLM answer is judged differently on the two platforms.** Kotlin runs
+  `sanitizeLlmOutput` before the emptiness check, Rust sanitizes downstream of it, so such an answer
+  is a named non-retryable failure on Android and a delivered blank on Desktop. The whitespace half
+  was closed at the first review pass (`content.trim().is_empty()`); the ordering half needs one of
+  the two sanitizers moved, which no audit row asks for.
+  `src-tauri/src/llm/mod.rs::map_chat_http_response`. low.
+- **The blank-delivery guard has no Desktop twin.** Android ends the run silently when
+  `deliveredText.isBlank()`; Desktop's `process_audio` delivers `cleaned_text` whatever its length.
+  The guard is spec-mandated, but satisfying it created a fresh asymmetry in a parity sweep, and its
+  KDoc cites `PipelineEvent::idle()` as a Desktop twin that does not exist.
+  `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (blank-delivery guard). low.
+- **An Android clipboard-write failure ends in a silent IDLE.** The one path where the text is really
+  gone is the one with no observable state, while Desktop emits `ClipboardWriteFailed` -> the
+  "TEXT LOST" card. Deliberate: the D6 matrix row asks only for "caught; no success check;
+  `pasteErrorCount` incremented", and the intent's Never-list forbids new toast text and new bubble
+  drawings. Settle it by deciding whether Android gets a degraded terminal surface at all -- a design
+  question. `android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt::copyToClipboard`. medium.
+- **`KlarvoApi.cleanupLocal` is unreachable from the overlay pipeline.** The offline rule made
+  `LOCAL_CLEANUP_AVAILABLE = false` the answer for every `llmProvider = "local"` config, so the MNN
+  branch that called it is gone. Deleting the function is a decision about the Android local path
+  (G3b) and about the control (13-3). `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::cleanupLocal`. low.
+- **`reprocess_pending_entry` is the third desktop cleanup call site and never consults the offline
+  rule.** With `sttProvider = "local"` the "Erneut verarbeiten" button re-transcribes on device and
+  then sends the transcript to DeepSeek. Pre-existing; the false "every caller is gated" comment was
+  corrected at the first review pass, the gap itself was left. Settle it by deciding whether reprocess
+  is a dictation (gate it) or a repair action (say so).
+  `src-tauri/src/commands/history.rs::reprocess_pending_entry`. medium.

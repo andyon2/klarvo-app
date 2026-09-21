@@ -633,8 +633,14 @@ impl OpenAiCompatibleCleanup {
 /// there is exactly one extraction here and no `(status, &str)` variant beside it.
 ///
 /// This is also the mapping story 13-2 is about: it is where an empty `content`
-/// becomes an error and where `finish_reason == "length"` is detected at all —
-/// the Kotlin twin (`KlarvoApi.cleanup`) does neither.
+/// becomes an error and where `finish_reason == "length"` is detected at all.
+/// The Kotlin twin (`KlarvoApi.mapCleanupResponse`) did neither until this
+/// story; it now raises `CleanupResponseFormatException` and
+/// `CleanupOutputTruncatedException` for the same two shapes. One residual
+/// difference is recorded rather than closed: Kotlin sanitizes BEFORE it asks
+/// the emptiness question and this mapper sanitizes downstream, so an answer
+/// made only of control characters is a named failure there and a delivered
+/// blank here (frontmatter `deferred`).
 pub(crate) async fn map_chat_http_response(
     response: reqwest::Response,
 ) -> Result<CleanupResult, LlmError> {
@@ -3328,6 +3334,22 @@ mod tests {
             .await
             .expect_err("no choice must be an error");
         assert!(!crate::pipeline::is_retryable_llm_error(&no_choice));
+        // A non-2xx prefers the API's own error message …
+        match map_chat_http_response(canned(401, r#"{"error":{"message":"bad key"}}"#)).await {
+            Err(LlmError::ApiError { status, message }) => {
+                assert_eq!(status, 401);
+                assert_eq!(message, "bad key");
+            }
+            other => panic!("expected ApiError, got {other:?}"),
+        }
+        // … and falls back to the raw body when there is none.
+        match map_chat_http_response(canned(500, "upstream exploded")).await {
+            Err(LlmError::ApiError { status, message }) => {
+                assert_eq!(status, 500);
+                assert_eq!(message, "upstream exploded");
+            }
+            other => panic!("expected ApiError, got {other:?}"),
+        }
     }
 
     /// Story 13-2 review: Rust and Kotlin must ask the SAME emptiness question.
@@ -3364,23 +3386,6 @@ mod tests {
         .await
         .expect("a real one-word answer must survive");
         assert_eq!(kept.text, " ja ", "the returned text itself is not trimmed here");
-
-        // A non-2xx prefers the API's own error message …
-        match map_chat_http_response(canned(401, r#"{"error":{"message":"bad key"}}"#)).await {
-            Err(LlmError::ApiError { status, message }) => {
-                assert_eq!(status, 401);
-                assert_eq!(message, "bad key");
-            }
-            other => panic!("expected ApiError, got {other:?}"),
-        }
-        // … and falls back to the raw body when there is none.
-        match map_chat_http_response(canned(500, "upstream exploded")).await {
-            Err(LlmError::ApiError { status, message }) => {
-                assert_eq!(status, 500);
-                assert_eq!(message, "upstream exploded");
-            }
-            other => panic!("expected ApiError, got {other:?}"),
-        }
     }
 
     /// The two test-provider rows in Advanced → System offer exactly the values

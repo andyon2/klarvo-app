@@ -1734,3 +1734,75 @@ Danke") faellt als Echo durch. Die Reihenfolge ist jetzt in `pipeline::guard_tra
 und beidseitig durch `GUARD-ORDER-001` (`test-fixtures/guard-chain-vectors.json`) festgenagelt.
 Offene Frage fuer eine spaetere Zeile: ob der Hinweis-Text selbst ueberhaupt eine Blocklist-Phrase
 enthalten sollte. (low)
+
+### DEFERRED 2026-09-21 (Nachtrag) — die acht Deferrals aus 13-2s Review-Runde
+
+Quelle: `spec-13-2-parity-sweep-guards-and-silent-loss-2.md`, Frontmatter `deferred`, Eintraege 6-13
+(Review-Pass, Commit `cbb3a55`). Der Commit hat nur den Spec angefasst; diese acht sind nie im
+Backlog gelandet, obwohl `docs/backlog.md` die SSOT fuer Zurueckgestelltes ist und die Frontmatter
+einer abgeschlossenen Story nicht der Ort ist, an dem die naechste Sitzung nachsieht. Nachgetragen
+vom Follow-up-Review 2026-09-21, das sechs davon unabhaengig bestaetigt hat.
+
+- **`reprocess_pending_entry` ist die dritte Desktop-Cleanup-Aufrufstelle und liest die eine
+  Offline-Regel nie.** `commands/history.rs` nimmt `inner.cleanup_provider` und ruft
+  `chunked_cleanup` ungated -- kein `config_skips_cleanup`, kein Offline-Flag. Mit
+  `sttProvider = "local"` (G2a) transkribiert „Erneut verarbeiten" auf dem Geraet und schickt das
+  Transkript danach an DeepSeek. Vorbestand; 13-2 hat nur den falschen Kommentar („every caller is
+  gated") korrigiert. Zu entscheiden: ist Reprocess ein Diktat (dann gaten) oder eine
+  Reparatur-Aktion (dann hinschreiben)? (medium)
+- **Android-Transkripte aus dem lokalen Pfad umgehen die Guard-Kette komplett.** Auf dem
+  Local-Whisper-Netz nach einem Groq-Fehler laeuft nur `nativeIsHallucination` -- kein
+  Fragment-Strip, kein Ghost-Strip, kein Echo-Urteil. Vorbestand (die Pre-13-2-Inline-Kette war
+  ebenso Groq-only), aber 13-2 hat das Retry-Budget auf 1 gekuerzt, also wird das Netz frueher und
+  oefter erreicht -- und `pipeline::guard_transcript`s Doc nennt sich selbst „the one chain, both
+  platforms". `KlarvoOverlayService.kt` (Local-Whisper-Netz). (medium)
+- **Ein fehlgeschlagener Clipboard-Write auf Android endet in einem stillen IDLE**, waehrend der
+  Desktop-Zwilling die „TEXT LOST"-Karte zeigt. Genau der eine Pfad, auf dem der Text wirklich weg
+  ist, hat keinen ablesbaren Zustand. Bewusst so gebaut: die D6-Zeile verlangt nur „caught; no
+  success check; `pasteErrorCount` incremented", und die Never-Liste des Intents verbietet neuen
+  Toast-Text und neue Bubble-Zeichnungen. Zu entscheiden: bekommt Android ueberhaupt eine degradierte
+  Terminal-Flaeche? `KlarvoOverlayService.kt::copyToClipboard`. (medium)
+- **Der Blank-Delivery-Guard hat keinen Desktop-Zwilling.** Android beendet den Lauf still, wenn
+  `deliveredText.isBlank()`; Desktops `process_audio` liefert `cleaned_text` in jeder Laenge aus. Der
+  Guard ist spec-gefordert, aber ihn zu erfuellen hat in einem Parity-Sweep eine frische Asymmetrie
+  erzeugt -- und sein KDoc nennt `PipelineEvent::idle()` als Desktop-Zwilling, den es nicht gibt.
+  `KlarvoOverlayService.kt` (Blank-Delivery-Guard). (low)
+- **`KlarvoApi.cleanupLocal` ist aus der Overlay-Pipeline nicht mehr erreichbar.** Die Offline-Regel
+  hat mit `LOCAL_CLEANUP_AVAILABLE = false` den einzigen Aufrufer entfernt. Loeschen ist eine
+  Entscheidung ueber den Android-Lokalpfad (G3b) und ueber das Control (13-3). (low)
+- **Eine Antwort nur aus Steuerzeichen wird auf beiden Plattformen verschieden beurteilt.** Kotlin
+  ruft `sanitizeLlmOutput` VOR der Leer-Pruefung, Rust sanitized danach -- also benannter
+  nicht-retrybarer Fehler auf Android, ausgelieferter Leerstring auf Desktop. Die Whitespace-Haelfte
+  wurde in der Review-Runde geschlossen (`content.trim().is_empty()`); die Reihenfolge-Haelfte
+  braucht einen der beiden Sanitizer verschoben, was keine Audit-Zeile verlangt.
+  `llm/mod.rs::map_chat_http_response`. (low)
+- **Drei weitere Desktop-Einstiegspunkte bauen den STT-Prompt ohne `advanced.sttPrompt*` und laufen
+  durch keinen Teil der Guard-Kette.** `commands::history::reprocess_pending_entry` und die
+  React-Commands `transcribe_audio` / `transcribe_audio_bytes` rufen `build_stt_prompt(terms,
+  language)` ohne Hint-Override und erreichen `guard_transcript` nie -- waehrend dessen Doc sich
+  „**The** post-STT guard chain -- one function, both platforms" nennt. Alle drei aelter als 13-2 und
+  von keiner Audit-Zeile benannt. (low)
+- **Sechs Test-Dateien tragen je ihren eigenen `stripComments` / Fixture-Pfad-Resolver, keiner
+  behandelt Kotlin-Raw-Strings.** `GuardChainBridgeTest`, `OfflineRuleVectorsTest`,
+  `OverlayServiceSourceContractTest`, `SttSentinelClassificationTest` plus die Vorbestands-Kopien in
+  `Adr0017BoundaryGuardTest` und `TestProviderScenarioTest`. Eine einzige kuenftige
+  Produktions-Aenderung koennte still veraendern, was jeder Tripwire im Netz sieht. Die Klasse ist
+  Vorbestand, 13-2 hat sie verbreitert. Fix ist ein geteilter Test-Helper ueber sechs Dateien.
+  `android/kotlin-test/com/klarvo/voice/`. (low)
+
+### FOUND 2026-09-21 — Follow-up-Review zu 13-2: offene Entscheidung + acht Tripwires
+
+`bmad-code-review` ueber `4e4bc00..d1b7953` (vier Lenses). Eine Entscheidung liegt bei Andi, im Spec
+unter `### Review Findings` als unchecked:
+
+- **Der Pre-Guard-Ghost-Strip laesst einen Rest aus reiner Interpunktion stehen, der keine
+  Halluzination mehr ist.** Gemessen: `strip_stockphrase_ghosts("[Musik]!") == "!"` und
+  `is_hallucination("!") == false`, waehrend `is_hallucination("[Musik]!") == true`. Eine Aufnahme,
+  die nur aus einer Stockphrase plus einem anderen Satzzeichen besteht, wird seit 13-2 auf beiden
+  Plattformen als `"!"` eingefuegt und in `history.db` geschrieben -- vorher fiel sie ganz weg.
+  Androids `deliveredText.isBlank()` faengt das nicht: `"!"` ist nicht blank. Beide Fix-Kandidaten
+  aendern ein Guard-URTEIL, was 13-2 ausdruecklich nicht durfte, und der Trim zu weiten ist NICHT
+  sicher (frisst das legitime `?` aus `"Wie geht es dir? [Musik]"`). Sicherer Ort waere die Kette:
+  ein Rest ohne alphanumerisches Zeichen = `PostSttSkip`. Das ist eine neue Regel darueber, was
+  „nichts erkannt" heisst (D11 sagt *blank*, das hier ist *nur Interpunktion*) -- deshalb Andis Ruf.
+  `stt/hallucination.rs::strip_stockphrase_ghosts`, `pipeline.rs::guard_transcript`. (medium)

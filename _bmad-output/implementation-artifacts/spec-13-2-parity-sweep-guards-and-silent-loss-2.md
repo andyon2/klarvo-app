@@ -2,15 +2,15 @@
 title: '13-2 Parity sweep: guards and silent loss'
 type: 'feature'
 created: '2026-09-21'
-status: 'done'
+status: 'in-progress'
 baseline_revision: '4e4bc00b4ef28a75370acdb44e905e5699ec9388'
 route: 'full'
 route_source: 'auto'
 review: 'thorough'
 review_source: 'auto'
 lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-alignment']
-review_loop_iteration: 0
-followup_review_recommended: true
+review_loop_iteration: 1
+followup_review_recommended: false  # the follow-up ran 2026-09-21; its own residual is the one unchecked decision
 context:
   - '{project-root}/_bmad-output/project-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
@@ -698,6 +698,143 @@ whole group is Weg 2 -- agent-verified, golden vector only. Do not promise a dev
   goes RED, and the evidence is recorded in `gate4-evidence/13-2/` in the 13-1b shape.
 - Given the whole change, when `Adr0017BoundaryGuardTest` runs, then it is green and no Kotlin twin of
   an STT guard exists.
+
+### Review Findings
+
+Follow-up review pass, 2026-09-21 (`bmad-code-review`, range `4e4bc00..d1b7953`, thorough set:
+`blind-hunter`, `edge-case-hunter`, `verification-gap`, `intent-alignment`). This is the review the
+first pass recommended (`followup_review_recommended: true`), pointed at the residual it named:
+`processAudio`'s `handler.post` body, and the review patches in `9efda74`, which no reviewer had
+re-read. Both produced findings. Verdicts: 35 entries -- high 2, medium 9, low 13, already-deferred 6
+(re-confirmed), rejected 11.
+
+- [ ] [Review][Decision] The pre-guard ghost strip leaves a punctuation-only residue that is no
+      longer a hallucination, so a pure-ghost capture is now DELIVERED instead of dropped --
+      **measured, not read** (throwaway probe over the shipped functions, 2026-09-21):
+      `strip_stockphrase_ghosts("[Musik]!") == "!"` and `is_hallucination("!") == false`, while
+      `is_hallucination("[Musik]!") == true`. Same for `"Gross- und Kleinschreibung!"`.
+      `strip_stockphrase_ghosts` trims only `.`, `,` and space, while `is_hallucination` treats only
+      the EMPTY string as junk. So on both platforms -- Desktop through `guard_transcript`'s new
+      pre-guard strip, Android through the same chain over the JNI -- a capture that is nothing but a
+      stockphrase plus one other punctuation mark now pastes `"!"` into the user's field and writes it
+      to history, where before this story the whole thing was dropped silently. Android's
+      `deliveredText.isBlank()` guard does not catch it: `"!"` is not blank. **Why this is a decision
+      and not a patch:** both candidate fixes change a guard VERDICT, and the intent fences this story
+      off from re-opening verdicts. Widening the strip's trim to all punctuation is NOT safe -- it
+      would also eat the legitimate `?` from `"Wie geht es dir? [Musik]"`. The safe site is the chain:
+      treat a post-strip residue with no alphanumeric character as a `PostSttSkip`. That is a new rule
+      about what "nothing recognized" means (D11 says *blank*; this is *punctuation-only*), so the call
+      is the human's: (a) chain-level residue check, (b) leave it and record it, (c) widen the trim and
+      accept the `?` loss. [`src-tauri/src/stt/hallucination.rs::strip_stockphrase_ghosts`,
+      `src-tauri/src/pipeline.rs::guard_transcript`]
+
+- [x] [Review][Patch] `high` -- Step 4's D4/D5/D6 wiring can be reverted with the JVM gate fully green;
+      measured twice [`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt::processAudio`]
+- [x] [Review][Patch] `high` -- the composition inside `nativeTranscribe` is compiled by neither gate
+      and has no source tripwire; measured [`src-tauri/src/stt/groq_jni.rs`]
+- [x] [Review][Patch] `medium` -- Desktop's adoption of `guard_transcript` has no test, so B3's Desktop
+      half can be reverted at 774 green [`src-tauri/src/pipeline.rs::process_audio`]
+- [x] [Review][Patch] `medium` -- B4's last Android hop is unpinned: `readConfig`'s positional
+      `Config(...)` tail and `sttHintFor`'s argument order
+      [`android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::readConfig`, `KlarvoOverlayService.kt::sttHintFor`]
+- [x] [Review][Patch] `medium` -- the blank-delivery guard, an acceptance criterion stated verbatim, has
+      no reader at all [`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (blank-delivery guard)]
+- [x] [Review][Patch] `medium` -- the Kotlin offline composition `effectiveLlmProviderName` ->
+      `skipsCloudCleanup` is unpinned [`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt::processAudio`]
+- [x] [Review][Patch] `medium` -- `docs/backlog.md` carries 5 of the spec's 13 deferrals; the 8 the review
+      round added (3 of them `medium`) never reached the SSOT [`docs/backlog.md`]
+- [x] [Review][Patch] `medium` -- `verdict.md` sends the E1 human check to Windows while the E1 fix is
+      Kotlin-only [`_bmad-output/implementation-artifacts/gate4-evidence/13-2/verdict.md`]
+- [x] [Review][Patch] `medium` -- `GUARD-BLOCKLIST-DROP-001` cannot exercise the interaction it says it
+      pins [`test-fixtures/guard-chain-vectors.json`]
+- [x] [Review][Patch] `medium` -- `accessibility?.pasteIntoFocusedField()` is unguarded on the main
+      looper, the crash class `guardedClipboardWrite` exists to remove
+      [`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (Step 4 paste)]
+- [x] [Review][Patch] `low` -- two stale twin claims survived the review round's eleven comment fixes
+      [`src-tauri/src/llm/mod.rs::map_chat_http_response`, `android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::mapCleanupResponse`]
+- [x] [Review][Patch] `low` -- the new whitespace test absorbed the non-2xx assertions of the test above
+      it [`src-tauri/src/llm/mod.rs::tests`]
+- [x] [Review][Patch] `low` -- `code-inversion-report.md` R10's evidence is from an older tree under a
+      "re-run against the current tree" header
+      [`_bmad-output/implementation-artifacts/gate4-evidence/13-2/code-inversion-report.md`]
+- [x] [Review][Patch] `low` -- three `recording.rs` tests are named after the function this story deleted,
+      one asserts nothing about its stated input, and the test named for the in-app button never touches
+      the in-app-button path [`src-tauri/src/commands/recording.rs::tests`]
+- [x] [Review][Patch] `low` -- a cross-reference points the reader the wrong way ("below" for a note that
+      is above) [`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (D11 TooShort branch)]
+- [x] [Review][Patch] `low` -- a fourth copy of the three built-in hint literals survives under the claim
+      "the literals became one const each" [`src-tauri/src/config/mod.rs::default_stt_prompt_de/en/auto`]
+- [x] [Review][Patch] `low` -- `parseSttPrompt` is a byte-identical clone of `parseLlmModelOverride`, added
+      by the review round [`android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::parseSttPrompt`]
+
+- [x] [Review][Defer] Android local-STT and local-Whisper transcripts skip the whole guard chain
+      [`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (local-Whisper net)] -- deferred:
+      pre-existing, already in frontmatter `deferred`; re-confirmed independently by two lenses this pass,
+      which also name the overstated doc ("one function, both platforms").
+- [x] [Review][Defer] A control-character-only LLM answer is still judged differently on the two platforms
+      [`src-tauri/src/llm/mod.rs::map_chat_http_response`] -- deferred: pre-existing entry, re-confirmed;
+      the whitespace half was closed at the last review, the sanitizer-ordering half remains.
+- [x] [Review][Defer] The blank-delivery guard has no Desktop twin, and its KDoc cites a Desktop behaviour
+      that does not exist [`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt` (blank-delivery
+      guard)] -- deferred: pre-existing entry, re-confirmed by two lenses.
+- [x] [Review][Defer] An Android clipboard-write failure ends in a silent IDLE while its Desktop twin shows
+      the "TEXT LOST" card [`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt::copyToClipboard`]
+      -- deferred: pre-existing entry, re-confirmed; a design decision the story is excluded from making.
+- [x] [Review][Defer] `KlarvoApi.cleanupLocal` is unreachable from the overlay pipeline
+      [`android/kotlin-src/com/klarvo/voice/KlarvoApi.kt::cleanupLocal`] -- deferred: pre-existing entry,
+      re-confirmed; deleting it is 13-3's / G3b's decision.
+- [x] [Review][Defer] `reprocess_pending_entry` never consults the one offline rule
+      [`src-tauri/src/commands/history.rs::reprocess_pending_entry`] -- deferred: pre-existing entry,
+      re-confirmed.
+
+#### Rejected
+
+- `low` -- a 200 with an empty `choices` array burns the provider ladder on Android while Rust returns a
+  non-retryable `ResponseFormat`. Verified as real and unchanged since the last pass. Not worth fixing: a
+  well-formed 200 carrying no choice is not something a user meets in everyday use, and the fix adds a
+  branch and a third exception type to a mapper this story just simplified.
+- `low` -- a banking-blocked dictation is lost entirely: no clipboard, no history row, no recovery path.
+  Verified. Rejected: that is exactly what the B1-Android matrix row demands ("a blocked dictation writes
+  neither"), and the loss is not silent -- the shipped `"Paste blocked -- banking app active."` toast fires.
+  Adding a local row would contradict the binding verdict.
+- `low` -- the pre-guard ghost strip deletes the real word "Klinge" from genuine Desktop speech
+  (`"Die Klinge ist scharf."` -> `"Die ist scharf"`, measured). Verified. Rejected: before this story
+  `is_hallucination` returned `true` for that same sentence and the WHOLE dictation was dropped, so the
+  change is strictly an improvement; blocklist membership is explicitly outside this story
+  (`GUARD-GHOST-RAW-001`: "DOES NOT PIN: the blocklist's membership").
+- `low` -- AUTO mode can overlap the detached history/Turso worker threads, since the writes moved behind
+  the guard and now run concurrently with the AUTO restart. Verified as a real widening of the window. Not
+  worth fixing: it needs AUTO mode AND a configured Turso AND a push slow enough to overlap the next
+  delivery, both writes are already caught and logged, and the fix is a single-thread executor with a
+  Service lifecycle -- more than a direct correction.
+- `low` -- with `sttProvider = "local"` and an active `advanced.testProviderLlm` the LLM test provider is
+  unreachable and no vector covers it. Verified. Rejected: that is G2a working as specified -- local STT
+  means no cloud cleanup -- and exempting the test provider would punch a hole in the guard. The H+
+  reproductions for D2/D3/D10 run on cloud STT.
+- `low` -- a blank delivered text discards a `degradeStatusMsg` the cleanup ladder had recorded, so the user
+  sees nothing at all. Verified as reachable in principle. Not worth fixing: a degrade sets `finalText` to
+  the raw transcript, which the upstream hallucination guard already proved non-blank, so the combination is
+  near-unreachable, and the fix adds a branch to the guard.
+- `low` -- the retry-budget cut to one attempt also removed the live-preview flush's retry, so a transient
+  error now drops a preview chunk. Verified. Not worth fixing: the final transcription runs over the whole
+  WAV, so only the preview text degrades briefly, and a separate preview budget means a new parameter on
+  `transcribeWithRetry`.
+- `low` -- `transcribeWithRetry` keeps a retry loop that cannot retry (`retryDelaysMs = emptyList()` makes
+  the backoff branch statically unreachable) and still throws `"Groq STT failed after retries"`. Verified.
+  Not worth fixing: the KDoc defends the shape deliberately, that exact message prefix is load-bearing for
+  `isRetryableSttFailure`'s gate on the local-Whisper net, and `retryBudgetIsOneAttempt` pins the current
+  text -- the fix is a rename plus a message change plus three test updates.
+- `low` -- `build_stt_prompt_with_hint` now trims the dictionary terms, which the other two callers
+  (`commands/history.rs`, `commands/recording.rs`) inherit without a vector. Verified. Rejected: the
+  function's own doc states the trim explicitly and `STT-PROMPT-JOIN-*` pins the join; losing a double space
+  in a conditioning prompt is a strict improvement, not a defect.
+- `low` -- the spec's own Verification section also sends the E1 human check to Windows. Verified. Rejected
+  on the rule that a finding whose fix is to edit the spec under review is not actionable here; the same
+  error in `verdict.md`, the artifact the human gate actually follows, is patched instead.
+- `low` -- the instrument shifts from behaviour to source text on roughly a third of the I/O matrix
+  (`intent-alignment`, descriptive). Verified as an accurate characterisation. Rejected as a standalone
+  entry: it has no fix of its own, and each of its actionable instances is filed above as its own patch.
+
 
 ## Implementation Notes
 

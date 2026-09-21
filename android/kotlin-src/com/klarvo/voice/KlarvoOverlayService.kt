@@ -2259,7 +2259,7 @@ class KlarvoOverlayService : Service() {
                     handler.post {
                         // Story 13-2 (D11 / D-M14): silent, like Desktop's
                         // message-less `PipelineEvent::idle()`. See the note at
-                        // "No audio recorded" below for why that one stays.
+                        // "No audio recorded" above for why that one stays.
                         autoLoopActive = false
                         hideListeningPanel()
                         val prev = currentState
@@ -2770,8 +2770,25 @@ class KlarvoOverlayService : Service() {
                 // no cause, the one ending D4 exists to remove.
                 val accessibility = KlarvoAccessibilityService.instance
                 val accessibilityConnected = accessibility != null
+                // Guarded for the same reason `guardedClipboardWrite` is, and
+                // against the same promise ("never an uncaught main-thread
+                // exception", D6): this runs on the looper, and every call
+                // inside `pasteIntoFocusedField` is an `AccessibilityNodeInfo`
+                // operation, which throws `IllegalStateException` on a node
+                // that was sealed or recycled under it -- reachable when the
+                // service is torn down mid-delivery. Unguarded, the app would
+                // crash AFTER the paid STT and LLM calls and after the
+                // clipboard write. A throw degrades to ACTION_REFUSED, the
+                // outcome that already means "attempted, did not land": the
+                // user gets the shipped "Copied: ..." toast and no checkmark,
+                // which is exactly what D4 asks for. Review finding 2026-09-21.
                 val pasteOutcome = if (shouldAttemptPaste(capturedLlmFailed, accessibilityConnected, clipboardOk)) {
-                    accessibility?.pasteIntoFocusedField()
+                    try {
+                        accessibility?.pasteIntoFocusedField()
+                    } catch (t: Throwable) {
+                        KlarvoLogger.e(TAG, "[delivery] accessibility paste threw -- treating as refused", t)
+                        KlarvoAccessibilityService.PasteOutcome.ACTION_REFUSED
+                    }
                 } else {
                     null
                 }

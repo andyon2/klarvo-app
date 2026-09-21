@@ -788,3 +788,130 @@ mod tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// The composition tripwire (story 13-2, follow-up review 2026-09-21)
+// ---------------------------------------------------------------------------
+
+/// Source-text contract over `nativeTranscribe`'s body, because no gate compiles it.
+///
+/// ## Why this exists
+/// The review round lifted every DECISION out of the `extern "system"` function
+/// into [`guard_hint_for_jni`], [`stt_error_sentinel`] and
+/// [`guard_transcript_for_jni`], each with its own executing test. What it did
+/// not lift — because it cannot be — is the **composition**: which value is fed
+/// to which helper, inside a `#[cfg(target_os = "android")]` function that
+/// `cargo test --lib` never compiles and the JVM gate never builds.
+///
+/// Measured at this review: replacing `guard_hint_for_jni(&lang, &custom)` with
+/// the pre-13-2 `prompt.as_deref().unwrap_or("")` — the exact feed that made a
+/// dictionary-word utterance look like a prompt echo (B2 / D-H5, D-H6) — leaves
+/// `cargo test --lib` at **774 passed**. The helpers stay green because they are
+/// still called by their own tests. That is this story's own defect class, one
+/// level up, on the side that got tripwires last: the Kotlin half has
+/// `OverlayServiceSourceContractTest` and `GuardChainBridgeTest`, the Rust half
+/// had nothing.
+///
+/// ## The instrument, and its honest weight
+/// This reads the file as text, the sanctioned instrument in this repo for a
+/// claim no gate can execute (`Adr0017BoundaryGuardTest` is the precedent). It
+/// proves the code SAYS the right thing, never that the device does it. The
+/// device half stays on the H+ list in `gate4-evidence/13-2/verdict.md`.
+///
+/// Every assertion is order-anchored or two-sided, never a bare `contains` —
+/// four of this story's first tripwires came back GREEN under inversion because
+/// an unrelated second occurrence satisfied them.
+#[cfg(test)]
+mod composition_contract {
+    /// `nativeTranscribe`'s body, by brace matching from its parameter list.
+    fn native_transcribe_body() -> String {
+        let src = include_str!("groq_jni.rs");
+        let decl = src
+            .find("pub extern \"system\" fn Java_com_klarvo_voice_GroqSttBridge_nativeTranscribe(")
+            .expect("nativeTranscribe must exist");
+        let brace = src[decl..]
+            .find(") -> jstring {")
+            .map(|i| decl + i + ") -> jstring ".len())
+            .expect("nativeTranscribe must have a body");
+        let bytes = src.as_bytes();
+        let mut depth = 0usize;
+        for (i, _) in src[brace..].char_indices() {
+            match bytes[brace + i] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return src[brace..=brace + i].to_string();
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unbalanced braces in nativeTranscribe");
+    }
+
+    /// B2 / D-H5, D-H6: the guards are fed the conditioning HINT, and the wire
+    /// prompt is fed to the provider — never the other way round.
+    ///
+    /// Two-sided on purpose. An assertion that only demanded the
+    /// `guard_hint_for_jni` call would pass against a body that computed the
+    /// hint and then handed `prompt` to the chain anyway.
+    #[test]
+    fn spec_jni_feeds_the_guards_the_hint_and_the_provider_the_prompt() {
+        let body = native_transcribe_body();
+
+        let hint = body
+            .find("let hint = guard_hint_for_jni(&lang, &custom);")
+            .expect("the guard hint must be rebuilt by guard_hint_for_jni, not inlined");
+        let wire = body
+            .find("let prompt = build_stt_prompt_with_hint(dict_opt, &lang, custom_opt);")
+            .expect("the wire prompt must still be the full built prompt");
+        let transcribe = body
+            .find("client.transcribe(&wav_bytes, &lang, prompt.as_deref())")
+            .expect("the provider must receive the built prompt");
+        let chain = body
+            .find("guard_transcript_for_jni(&text, &hint)")
+            .expect("the guard chain must be fed `hint`, the value guard_hint_for_jni produced");
+
+        assert!(
+            wire < hint && hint < transcribe && transcribe < chain,
+            "order: build the wire prompt, rebuild the hint, transcribe, then guard \
+             (wire@{wire}, hint@{hint}, transcribe@{transcribe}, chain@{chain})"
+        );
+        assert!(
+            !body.contains("guard_transcript_for_jni(&text, prompt"),
+            "the pre-13-2 feed is back: the guards must never see the built prompt"
+        );
+    }
+
+    /// D9 / D-M5: the error→sentinel mapping is the helper's, not re-inlined.
+    ///
+    /// [`super::stt_error_sentinel`] owns the ordering claim (`ResponseFormat`
+    /// before the catch-all) and a Linux test drives it — but only while the
+    /// `extern` actually calls it. Re-inlining the four arms here would restore
+    /// the three-Groq-call burn with every gate green.
+    #[test]
+    fn spec_jni_maps_errors_through_the_sentinel_helper() {
+        let body = native_transcribe_body();
+        assert!(
+            body.contains("let msg = stt_error_sentinel(&e);"),
+            "the sentinel mapping must go through stt_error_sentinel"
+        );
+        // NOT `__ERROR_EMPTY_AUDIO__`: that literal has a second, legitimate
+        // site in this body -- the pre-request early return for a WAV that
+        // decoded to zero bytes, which is not an error MAPPING. Asserting it
+        // here would have been exactly the unrelated-second-occurrence trap
+        // that turned four of this story's first tripwires green.
+        for inlined in [
+            "__ERROR_API:HTTP",
+            "__ERROR_FORMAT:{message}",
+            "__ERROR_NETWORK:{e}",
+        ] {
+            assert!(
+                !body.contains(inlined),
+                "an arm was re-inlined into nativeTranscribe ({inlined}); the ORDER would \
+                 stop being a property of a function cargo test --lib can call"
+            );
+        }
+    }
+}

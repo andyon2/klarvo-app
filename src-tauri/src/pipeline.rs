@@ -3933,6 +3933,54 @@ mod tests {
         assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: false, audio_path: None });
     }
 
+    /// B3 / D-H7's Desktop half, driven through `process_audio` itself.
+    ///
+    /// Added by the follow-up review (2026-09-21). Every `spec_guard_*` test
+    /// calls `guard_transcript` directly, and of the `process_audio` tests that
+    /// run, none feeds a ghosted transcript: `test_process_audio_normal_cleanup`
+    /// uses `REAL_SPEECH` (no ghost) and
+    /// `test_process_audio_blocklist_hallucination_skips` feeds a whole-transcript
+    /// blocklist match that is dropped under BOTH the old and the new chain. So
+    /// reverting `process_audio` to the pre-13-2 two-step (`strip_prompt_fragments`
+    /// then `post_stt_skip`, no pre-guard ghost strip) left `cargo test --lib`
+    /// green while the one Desktop behaviour change this story makes was gone --
+    /// the ghosted dictation silently dropped whole again.
+    ///
+    /// The input and both expectations are `GUARD-GHOST-RAW-001`'s. The German
+    /// hint has to be passed explicitly: `make_input` pins `TEST_STT_HINT`.
+    ///
+    /// Inversion (run 2026-09-21): drop the ghost strip from `guard_transcript`
+    /// -> `Stopped`, this goes RED.
+    #[tokio::test]
+    async fn spec_process_audio_delivers_a_ghosted_transcript_minus_the_ghost() {
+        let vector = guard_vector("GUARD-GHOST-RAW-001");
+        let transcript = vector["input"]["transcript"].as_str().unwrap().to_string();
+        let expected = vector["rust"]["text"].as_str().unwrap();
+
+        let mut input = make_input(
+            FakeStt(Ok(transcript)),
+            FakeCleanup {
+                cleanup: CleanupBehavior::Ok("unused -- the raw text is what this pins".to_string()),
+                rewrite: Err(()),
+            },
+        );
+        input.language = "de".to_string();
+        input.stt_prompt.stt_hint_text = crate::stt::STT_HINT_DE.to_string();
+
+        let (outcome, _events) = run(input).await;
+        match outcome {
+            ProcessOutcome::Produced { raw_text, .. } => assert_eq!(
+                raw_text, expected,
+                "the ghost goes, the dictation survives -- before this story the \
+                 whole transcript was dropped by the blocklist"
+            ),
+            other => panic!(
+                "a ghosted transcript must still be delivered, got {other:?} -- \
+                 this is the pre-13-2 Desktop behaviour returning"
+            ),
+        }
+    }
+
     #[tokio::test]
     async fn test_process_audio_nonretryable_degrades_to_raw() {
         let input = make_input(
@@ -6302,7 +6350,11 @@ mod tests {
     /// vacuous on its skip arm until these vectors existed.
     #[test]
     fn spec_guard_still_drops_an_echo_and_a_hallucination() {
-        for id in ["GUARD-ECHO-DROP-001", "GUARD-BLOCKLIST-DROP-001"] {
+        for id in [
+            "GUARD-ECHO-DROP-001",
+            "GUARD-BLOCKLIST-DROP-001",
+            "GUARD-STOCKPHRASE-DROP-001",
+        ] {
             let v = guard_vector(id);
             let transcript = gstr(&v, &["input", "transcript"]);
             let hint = stt::stt_hint_text(&gstr(&v, &["input", "language"]), None);

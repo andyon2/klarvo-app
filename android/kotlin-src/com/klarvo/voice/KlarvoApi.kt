@@ -208,8 +208,18 @@ object KlarvoApi {
      * branch can feed it a canned `(status, body)` pair).
      *
      * **Story 13-2 closed the three divergences this KDoc used to document as
-     * intended.** The mapping is now the twin of `llm::parse_chat_completion`,
-     * in the same order:
+     * intended.** The mapping is now the twin of `llm::parse_chat_completion`
+     * for the three shapes below. It is **not** byte-for-byte the same order,
+     * and the follow-up review (2026-09-21) corrected that overstatement: two
+     * shapes still resolve differently and are recorded, not closed. (a) This
+     * mapper sanitizes BEFORE it asks the emptiness question and Rust sanitizes
+     * downstream of it, so an answer made only of control characters is a named
+     * non-retryable failure here and a delivered blank on Desktop
+     * (frontmatter `deferred`). (b) A 200 carrying an empty `choices` array
+     * throws [org.json.JSONException] here -- retryable, so the ladder burns --
+     * where Rust returns a non-retryable `ResponseFormat`; reviewed twice and
+     * rejected both times as not worth a third exception type. The three that
+     * DO match, in this order:
      * - `finish_reason == "length"` raises [CleanupOutputTruncatedException] —
      *   Rust's `OutputTruncated`, drift row D3 / D-M16. The half sentence used
      *   to be pasted and stored as the dictation.
@@ -787,10 +797,16 @@ object KlarvoApi {
      * [parseLlmModelOverride]'s review-round-1 finding: `optString` would
      * stringify `42` into a conditioning prompt.
      */
-    internal fun parseSttPrompt(json: JSONObject, key: String): String {
-        val advanced = json.optJSONObject("advanced") ?: return ""
-        return advanced.opt(key) as? String ?: ""
-    }
+    internal fun parseSttPrompt(json: JSONObject, key: String): String =
+        // Delegates rather than repeating the body: the review round added this
+        // as a byte-identical clone of [parseLlmModelOverride], which is two
+        // places to fix the next time the non-string rule changes. Same
+        // question ("an optional camelCase string under `advanced`"), so one
+        // answer. Kept as its own name because the CALLERS differ in meaning --
+        // an empty model override means "use the default model", an empty STT
+        // prompt means "use the Rust core's built-in language hint" -- and
+        // because the B4 tripwire greps for it. Review finding, 2026-09-21.
+        parseLlmModelOverride(json, key)
 
     /**
      * Pure `advanced.testProviderLlm` / `advanced.testProviderStt` parse

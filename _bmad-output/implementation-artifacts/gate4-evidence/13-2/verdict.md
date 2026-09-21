@@ -132,7 +132,14 @@ Named, not implied:
 Unchanged from the spec's Verification section. The test provider drives D2, D3, D9 and
 D10 from Settings → Advanced → Expert mode → System, no computer attached; B2 is the
 `Klarvo, Kubernetes` dictionary on the Xiaomi; B3 a known ghost phrase on both devices;
-B4 the "Technical" preset with identical audio; D4/D5/D11 the Xiaomi; E1/E2 Windows;
+B4 the "Technical" preset with identical audio; D4/D5/D11 the Xiaomi; **E1 the Xiaomi and E2
+Windows** -- corrected by the follow-up review (2026-09-21). The pre-build spec and this list both
+said "E1/E2 Windows", but everything story 13-2 built for E1 is in `KlarvoOverlayService`
+(`shouldInstallPreviewFlush` taking the stored `sttProvider`, plus the flush-time re-check); the
+desktop half (`pipeline::preview_flush_should_install`) already shipped and this story did not touch
+it. A Windows E1 check would verify code that was never changed. The run ledger
+(`RUN-2026-09-21-13-2.md`) recorded the correction at the spec gate and it was not carried into the
+artifacts until now;
 B1-Android a dictation into a blocklisted app followed by a look at History.
 
 **Android install: `scripts/android-install-debug.sh <ip:port> --full` is mandatory.**

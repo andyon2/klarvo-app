@@ -53,6 +53,58 @@ class GuardChainBridgeTest {
             ?: error("kotlin-src not found from ${base.absolutePath}; tried $candidates")
     }
 
+    /**
+     * B4's LAST hop: the three parsed values must actually arrive, in order.
+     *
+     * The review round closed the hop below this one (`parseSttPrompt`, driven
+     * against real `config.json` text) and the hop above it
+     * (`selectSttHintOverride`, driven against the fixture). The two wiring hops
+     * between them had no reader: `readConfig` hands the three values to a
+     * ~45-argument POSITIONAL `Config(...)` constructor, and `sttHintFor` hands
+     * them to the selector in a fixed order.
+     *
+     * Both failure modes are silent. Dropping the three arguments from
+     * `Config(...)` still compiles — the fields carry `""` defaults — and B4 goes
+     * inert: `sttHintFor` returns `""` and Whisper falls back to its built-in
+     * hint, which is the exact defect state row D-H4 exists to leave. Swapping
+     * `sttPromptDe` and `sttPromptEn` is equally invisible and conditions German
+     * dictations with the English prompt. Neither moves a single gate.
+     *
+     * Filed by the follow-up review's verification-gap lens, 2026-09-21.
+     */
+    @Test
+    fun theThreeSttPromptValuesReachTheSelectorInOrder() {
+        val api = stripComments(source("KlarvoApi.kt"))
+        val ctor = api.indexOf("sttPromptDe, sttPromptEn, sttPromptAuto")
+        assertTrue(
+            "readConfig's positional Config(...) must pass the three parsed values, in the " +
+                "order the constructor declares them — dropping them still compiles and makes " +
+                "B4 inert on Android",
+            ctor >= 0,
+        )
+        for (key in listOf("sttPromptDe", "sttPromptEn", "sttPromptAuto")) {
+            assertTrue(
+                "$key must be parsed through the seam a JVM test drives",
+                api.contains("parseSttPrompt(json, \"$key\")"),
+            )
+        }
+
+        val kos = stripComments(source("KlarvoOverlayService.kt"))
+        val fn = kos.indexOf("private fun sttHintFor(config: KlarvoApi.Config): String =")
+        assertTrue("sttHintFor must exist", fn >= 0)
+        val body = kos.substring(fn, kos.indexOf(")", kos.indexOf("config.sttPromptAuto", fn)) + 1)
+        val de = body.indexOf("config.sttPromptDe")
+        val en = body.indexOf("config.sttPromptEn")
+        val auto = body.indexOf("config.sttPromptAuto")
+        val lang = body.indexOf("config.language")
+        assertTrue("the language must be the selector's first argument", lang in 0 until de)
+        assertTrue(
+            "de, en, auto in that order — a swap conditions German dictations with the " +
+                "English prompt and no gate can see it (de@$de, en@$en, auto@$auto)",
+            de < en && en < auto,
+        )
+    }
+
     private fun source(name: String): String =
         File(srcDir, name).also { assertTrue("$name must exist", it.exists()) }.readText()
 
@@ -98,7 +150,12 @@ class GuardChainBridgeTest {
             )
             checked++
         }
-        assertEquals("the fixture must carry nine shared-core guard vectors", 9, checked)
+        // Ten since the follow-up review (2026-09-21) added
+        // GUARD-STOCKPHRASE-DROP-001, the row GUARD-BLOCKLIST-DROP-001 was
+        // written to carry but could not: its input lives in
+        // HALLUCINATION_BLOCKLIST, which the pre-guard ghost strip never
+        // touches, so it passed identically with and without the B3 reorder.
+        assertEquals("the fixture must carry ten shared-core guard vectors", 10, checked)
     }
 
     // -----------------------------------------------------------------------

@@ -379,7 +379,7 @@ mod tests {
     /// pipeline calls, which is the whole point of the row — before this story
     /// the two answers could differ for the identical config.
     #[test]
-    fn test_is_offline_mode_local_first() {
+    fn test_offline_rule_local_stt_skips_cleanup() {
         let dir = temp_dir();
         let state = make_state(&dir);
         {
@@ -393,7 +393,7 @@ mod tests {
 
     /// Cloud STT with the default cloud cleanup: the cleanup call still runs.
     #[test]
-    fn test_is_offline_mode_cloud_first() {
+    fn test_offline_rule_cloud_stt_still_cleans() {
         let dir = temp_dir();
         let state = make_state(&dir);
         {
@@ -405,9 +405,13 @@ mod tests {
         assert!(!crate::pipeline::config_skips_cleanup(&cfg));
     }
 
-    /// An empty `stt_priority` is not what the rule reads (`stt_provider` is).
+    /// The deprecated `stt_priority` list is NOT an input of the offline rule:
+    /// emptying it changes nothing, because the rule reads `stt_provider`. Named
+    /// for what it asserts -- it used to be called `test_is_offline_mode_empty_priority`,
+    /// after a function story 13-2 deleted, and after an input the rule never
+    /// reads (review finding, 2026-09-21).
     #[test]
-    fn test_is_offline_mode_empty_priority() {
+    fn test_offline_rule_ignores_the_deprecated_stt_priority_list() {
         let dir = temp_dir();
         let state = make_state(&dir);
         {
@@ -480,11 +484,22 @@ mod tests {
             cfg.stt_provider = "groq".to_string();
             cfg.llm_provider = "local".to_string();
         }
-        let cfg = state.config.lock().unwrap();
+        let skips = {
+            let cfg = state.config.lock().unwrap();
+            crate::pipeline::config_skips_cleanup(&cfg)
+        };
         assert_eq!(
-            crate::pipeline::config_skips_cleanup(&cfg),
+            skips,
             !crate::pipeline::local_cleanup_available(),
             "a selected-but-unavailable local cleanup must skip cleanup, not call DeepSeek"
+        );
+        // …and the in-app button's OWN branch must reach the same answer. Until
+        // this was added the test named for that button never touched it: it
+        // asserted the shared predicate twice over (review finding, 2026-09-21).
+        assert_eq!(
+            offline_passthrough(&state, "raw").is_some(),
+            skips,
+            "the in-app button must not re-decide what the shared rule already decided"
         );
     }
 
