@@ -521,6 +521,67 @@
           "compile_error": false
         }
       ]
+    },
+    {
+      "name": "group_10_punctuation_residue",
+      "measured_at": "current tree (cargo test --lib: 779 passed; JVM 29 suites / 275 tests) - 2026-09-22, the follow-up review's [Decision] finding built as Group 10",
+      "inversions": [
+        {
+          "inversion": "guard_transcript's residue predicate is inverted (alphanumeric text is dropped, a punctuation-only residue survives)",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_guard_drops_a_punctuation_only_residue",
+          "RED": true,
+          "evidence": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 778 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "the residue check is moved ABOVE post_stt_skip - the ordering constraint the decision names as load-bearing",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_guard_still_drops_an_echo_and_a_hallucination",
+          "RED": true,
+          "evidence": [
+            "assertion `left == right` failed: GUARD-STOCKPHRASE-DROP-001 / left: Some(\"NothingRecognized\") / right: Some(\"Blocklist\")",
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 778 filtered out; finished in 0.00s",
+            "Exactly the predicted flip: the pure-ghost vector loses the Blocklist verdict it is pinned as, and with it the proof that the B3 reorder did not defuse the blocklist."
+          ]
+        },
+        {
+          "inversion": "process_audio's new PostSttSkip::NothingRecognized arm only logs and falls through to cleanup (the arm is compiled but not load-bearing)",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_process_audio_drops_a_punctuation_only_residue",
+          "RED": true,
+          "evidence": [
+            "assertion `left == right` failed: the residue ends in the shipped silent terminal / left: [Transcribing, Cleaning] / right: [Transcribing, Idle]",
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 778 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "GUARD-PUNCTUATION-RESIDUE-001's kotlin note stops saying that Kotlin sees the empty string",
+          "file": "test-fixtures/guard-chain-vectors.json",
+          "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.thePunctuationResidueDropIsDeclaredAsInheritedByAndroid",
+          "RED": true,
+          "failed_tests": [
+            "GuardChainBridgeTest > thePunctuationResidueDropIsDeclaredAsInheritedByAndroid FAILED",
+            "9 tests completed, 1 failed",
+            "BUILD FAILED in 8s"
+          ],
+          "compile_error": false
+        },
+        {
+          "inversion": "GUARD-PUNCTUATION-RESIDUE-001 is removed from the fixture (a shared-core vector added without a Kotlin declaration)",
+          "file": "test-fixtures/guard-chain-vectors.json",
+          "expected_red_test": "com.klarvo.voice.GuardChainBridgeTest.guardVectorsDeclareThemselvesNotApplicableOnAndroid",
+          "RED": true,
+          "failed_tests": [
+            "GuardChainBridgeTest > guardVectorsDeclareThemselvesNotApplicableOnAndroid FAILED",
+            "GuardChainBridgeTest > thePunctuationResidueDropIsDeclaredAsInheritedByAndroid FAILED",
+            "9 tests completed, 2 failed",
+            "BUILD FAILED in 7s"
+          ],
+          "compile_error": false
+        }
+      ]
     }
   ]
 }

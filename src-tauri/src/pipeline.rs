@@ -763,6 +763,25 @@ pub enum PostSttSkip {
     PromptEcho,
     /// Transcript matches the known-hallucination blocklist.
     Blocklist,
+    /// Nothing was recognised: what the strips left behind carries no
+    /// alphanumeric character at all, so there is no word in it to deliver.
+    ///
+    /// This is the chain's third reason to drop and it is NOT a blocklist hit —
+    /// calling it one would be a lie in the log. It exists because the pre-guard
+    /// ghost strip (B3 / D-H7) can leave a residue that is no longer a
+    /// hallucination: `strip_stockphrase_ghosts` trims only `.`, `,` and space,
+    /// so `"[Musik]!"` becomes `"!"`, and `is_hallucination("!")` is `false`
+    /// because only the EMPTY string counts as junk there. Without this variant
+    /// a capture that is nothing but a stockphrase plus one other punctuation
+    /// mark is pasted into the user's field and written to history, where before
+    /// story 13-2 the whole thing was dropped silently.
+    ///
+    /// Decided by Andi 2026-09-22 (follow-up review, option (a)): the residue is
+    /// settled here in the chain and **not** by widening
+    /// `strip_stockphrase_ghosts`' trim, which runs on every transcript carrying
+    /// a stockphrase and would also eat the legitimate `?` from
+    /// `"Wie geht es dir? [Musik]"`.
+    NothingRecognized,
 }
 
 /// Detects post-STT hallucinations. Order matches the original pipeline:
@@ -800,6 +819,14 @@ pub struct GuardOutcome {
 ///    whole dictation. Before this story Desktop ran the blocklist on the
 ///    unstripped text and dropped the entire transcript (B3 / D-H7).
 /// 3. `post_stt_skip` — prompt-echo, then the blocklist.
+/// 4. The punctuation-only residue check — a survivor with no alphanumeric
+///    character is [`PostSttSkip::NothingRecognized`] (Andi, 2026-09-22).
+///
+/// **Step 4 runs after step 3, never before it.** The pure-ghost vector
+/// `GUARD-STOCKPHRASE-DROP-001` strips to the empty string and is pinned as a
+/// `Blocklist` drop precisely to prove the B3 reorder did not defuse the
+/// blocklist; checking the residue first would re-label it and throw that proof
+/// away.
 ///
 /// **Steps 1 and 2 are in this order because the other one is measurably
 /// wrong**, and the measurement is worth keeping: the German built-in hint
@@ -823,7 +850,17 @@ pub struct GuardOutcome {
 pub(crate) fn guard_transcript(raw: &str, stt_hint: &str) -> GuardOutcome {
     let stripped = strip_prompt_fragments(raw, stt_hint);
     let deghosted = strip_stockphrase_ghosts(&stripped);
-    let skip = post_stt_skip(&deghosted, stt_hint);
+    let skip = post_stt_skip(&deghosted, stt_hint).or_else(|| {
+        // Only when no earlier guard already spoke — see the ordering note
+        // above. `strip_prompt_fragments` drops whole punctuation-only *tokens*
+        // in its own cleanup pass, but the ghost strip runs after it and has no
+        // such pass, so this is the residue nothing else can see.
+        if deghosted.chars().any(char::is_alphanumeric) {
+            None
+        } else {
+            Some(PostSttSkip::NothingRecognized)
+        }
+    });
     GuardOutcome { text: deghosted, skip }
 }
 
@@ -1572,6 +1609,17 @@ pub async fn process_audio(
         }
         Some(PostSttSkip::Blocklist) => {
             log::info!("[pipeline] Blocked Whisper hallucination: {:?}", raw_text);
+            emit(PipelineEvent::idle());
+            return ProcessOutcome::Stopped { stt_error: false, audio_path: None };
+        }
+        Some(PostSttSkip::NothingRecognized) => {
+            // The guards left a residue with no alphanumeric character in it —
+            // typically a stockphrase ghost plus one further punctuation mark
+            // ("[Musik]!" -> "!"). Its own arm, not the blocklist's, so the log
+            // says which of the three reasons fired.
+            log::info!(
+                "[pipeline] nothing recognized — only punctuation survived the guards, skipping: {raw_text:?}"
+            );
             emit(PipelineEvent::idle());
             return ProcessOutcome::Stopped { stt_error: false, audio_path: None };
         }
@@ -3933,6 +3981,49 @@ mod tests {
         assert_eq!(outcome, ProcessOutcome::Stopped { stt_error: false, audio_path: None });
     }
 
+    /// The punctuation-only residue, driven through `process_audio` itself
+    /// (Andi, 2026-09-22 — option (a)).
+    ///
+    /// The acceptance criterion says "nothing is pasted, nothing reaches
+    /// history", which is a `process_audio` claim, not a `guard_transcript`
+    /// one. Without this the new `PostSttSkip` arm would only be *compiled*
+    /// (the `match` is exhaustive, so its body could be replaced by a
+    /// fall-through) and the residue would be delivered with the whole suite
+    /// green — the exact defect class this story was written about, one level
+    /// up. The `Stopped { stt_error: false, audio_path: None }` terminal is the
+    /// shipped silent ending `PromptEcho` and `Blocklist` already take; no new
+    /// state, no new event.
+    ///
+    /// Input and expectation are `GUARD-PUNCTUATION-RESIDUE-001`'s. The German
+    /// hint has to be passed explicitly: `make_input` pins `TEST_STT_HINT`.
+    #[tokio::test]
+    async fn spec_process_audio_drops_a_punctuation_only_residue() {
+        let vector = guard_vector("GUARD-PUNCTUATION-RESIDUE-001");
+        let transcript = vector["input"]["transcript"].as_str().unwrap().to_string();
+
+        let mut input = make_input(
+            FakeStt(Ok(transcript.clone())),
+            FakeCleanup {
+                cleanup: CleanupBehavior::Ok("must never be reached".to_string()),
+                rewrite: Err(()),
+            },
+        );
+        input.language = "de".to_string();
+        input.stt_prompt.stt_hint_text = crate::stt::STT_HINT_DE.to_string();
+
+        let (outcome, events) = run(input).await;
+        assert_eq!(
+            events,
+            vec![PipelineState::Transcribing, PipelineState::Idle],
+            "the residue ends in the shipped silent terminal — no Cleaning, no message"
+        );
+        assert_eq!(
+            outcome,
+            ProcessOutcome::Stopped { stt_error: false, audio_path: None },
+            "{transcript:?} must be dropped: nothing pasted, nothing to store"
+        );
+    }
+
     /// B3 / D-H7's Desktop half, driven through `process_audio` itself.
     ///
     /// Added by the follow-up review (2026-09-21). Every `spec_guard_*` test
@@ -6173,6 +6264,7 @@ mod tests {
         skip.map(|s| match s {
             PostSttSkip::PromptEcho => "PromptEcho",
             PostSttSkip::Blocklist => "Blocklist",
+            PostSttSkip::NothingRecognized => "NothingRecognized",
         })
     }
 
@@ -6373,6 +6465,88 @@ mod tests {
                 "{id}: the fixture must say what Kotlin sees"
             );
         }
+    }
+
+    /// The punctuation-only residue (Andi, 2026-09-22 — option (a)).
+    ///
+    /// Drives `guard_transcript` **and** `guard_transcript_for_jni` from the
+    /// fixture, and asserts the recorded PRE-decision outcome the other way
+    /// round: before this rule the residue survived as `"!"` and was delivered.
+    /// Without that half, "fixed" could silently become "the guard stopped
+    /// working" — the lesson the two DROP vectors above were added for.
+    #[test]
+    fn spec_guard_drops_a_punctuation_only_residue() {
+        let v = guard_vector("GUARD-PUNCTUATION-RESIDUE-001");
+        let hint = stt::stt_hint_text(&gstr(&v, &["input", "language"]), None);
+        let transcript = gstr(&v, &["input", "transcript"]);
+
+        // The decided outcome, through the shared chain …
+        let outcome = guard_transcript(&transcript, &hint);
+        assert_eq!(skip_name(outcome.skip), v["rust"]["skip"].as_str());
+        assert_eq!(outcome.text, gstr(&v, &["rust", "text"]));
+        // … and the one thing this rule must NOT be: a blocklist hit. The log
+        // line is the only place a future reader can tell the three drop
+        // reasons apart.
+        assert_eq!(outcome.skip, Some(PostSttSkip::NothingRecognized));
+
+        // … and through the wrapper Android reaches it by: the empty string.
+        assert_eq!(
+            crate::stt::groq_jni::guard_transcript_for_jni(&transcript, &hint),
+            None,
+            "the drop must reach Kotlin as the empty string"
+        );
+        assert_eq!(gstr(&v, &["rust", "jni_returns"]), "");
+
+        // The pre-decision outcome, asserted to still be what it was — the
+        // residue used to survive the WHOLE chain and get delivered.
+        let before = {
+            let stripped = strip_prompt_fragments(&transcript, &hint);
+            let deghosted = strip_stockphrase_ghosts(&stripped);
+            (deghosted.clone(), post_stt_skip(&deghosted, &hint))
+        };
+        assert_eq!(
+            before.0,
+            gstr(&v, &["rust_before_the_residue_check", "text"]),
+            "the fixture records what the chain produced before the decision"
+        );
+        assert_eq!(
+            skip_name(before.1),
+            v["rust_before_the_residue_check"]["skip"].as_str(),
+            "no shipped guard catches the residue — that is why a fourth step exists"
+        );
+        assert!(
+            before.1.is_none(),
+            "if an earlier guard started catching it, this vector is measuring the wrong thing"
+        );
+
+        // The second measured case, and the case the decision protects.
+        let cases = v["additional_cases"]
+            .as_array()
+            .expect("additional_cases must be an array");
+        assert_eq!(cases.len(), 2, "both recorded cases must be driven");
+        for case in cases {
+            let text = case["transcript"].as_str().expect("transcript");
+            let got = guard_transcript(text, &hint);
+            assert_eq!(skip_name(got.skip), case["skip"].as_str(), "{text:?}");
+            assert_eq!(got.text, gstr(case, &["text"]), "{text:?}");
+
+            let stripped = strip_prompt_fragments(text, &hint);
+            let deghosted = strip_stockphrase_ghosts(&stripped);
+            assert_eq!(
+                skip_name(post_stt_skip(&deghosted, &hint)),
+                case["skip_before_the_residue_check"].as_str(),
+                "{text:?}: the pre-decision verdict is recorded and must stay true"
+            );
+        }
+        // Stated as its own assertion because it is the whole reason option (c)
+        // was rejected: widening strip_stockphrase_ghosts' trim to all
+        // punctuation would have eaten this question mark.
+        assert!(
+            guard_transcript("Wie geht es dir? [Musik]", &hint)
+                .text
+                .ends_with('?'),
+            "the legitimate question mark must survive the ghost strip"
+        );
     }
 
     /// The JNI wrapper Android reaches the chain through must agree with the

@@ -2,7 +2,7 @@
 title: '13-2 Parity sweep: guards and silent loss'
 type: 'feature'
 created: '2026-09-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '4e4bc00b4ef28a75370acdb44e905e5699ec9388'
 route: 'full'
 route_source: 'auto'
@@ -10,7 +10,7 @@ review: 'thorough'
 review_source: 'auto'
 lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-alignment']
 review_loop_iteration: 1
-followup_review_recommended: false  # the follow-up ran 2026-09-21; its own residual is the one unchecked decision
+followup_review_recommended: true  # Group 10 (2026-09-22) added production code AFTER the last review ran: the third PostSttSkip, its process_audio arm and two new tests. No lens has read it.
 context:
   - '{project-root}/_bmad-output/project-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
@@ -639,6 +639,58 @@ whole group is Weg 2 -- agent-verified, golden vector only. Do not promise a dev
       ("DECIDED 2026-09-21 -- Android-VAD: Doppelschwelle 0,5/0,35 ist eine eigene Story, Groesse L")
       and ADR-0016 Amendment 4 row B6. **Do not add the ONNX dependency and do not touch `Mode`.**
 
+*Group 10 -- the punctuation-only residue (follow-up-review decision, Andi 2026-09-22)*
+
+The follow-up review's one `[Decision]` finding, answered at the gate. Andi chose **option (a)**: in
+the shared guard chain, a post-strip residue that carries **no alphanumeric character** counts as
+"nothing recognized" and is dropped, on both platforms through the same chain. Options (b) "leave it
+and record it" and (c) "widen the trim and accept the `?` loss" were rejected. **Do not widen
+`strip_stockphrase_ghosts`' trim** -- it still trims only `.`, `,` and space, because widening it to
+all punctuation would eat the legitimate `?` from `"Wie geht es dir? [Musik]"`. See Design Notes.
+
+- [x] `src-tauri/src/pipeline.rs::guard_transcript` -- after the existing chain (fragment strip ->
+      ghost strip -> `post_stt_skip`), and **only when `post_stt_skip` returned `None`**, drop a
+      residue that contains no `char::is_alphanumeric` character. Add the third `PostSttSkip` variant
+      for it (name it for what it means -- "nothing was recognized" -- not for the mechanism) and give
+      it its own `log::info!` arm in `process_audio` beside `PromptEcho` and `Blocklist`, ending in
+      the same shipped silent terminal (`PipelineEvent::idle()`, `ProcessOutcome::Stopped { stt_error:
+      false, audio_path: None }`). **No new terminal state, no new wording, no new event.**
+      Ordering is load-bearing: the residue check must run **after** `post_stt_skip`, or
+      `GUARD-STOCKPHRASE-DROP-001` (whose residue is the empty string) flips its pinned verdict from
+      `Blocklist` to the new variant and the fixture's B3-reorder claim is lost.
+      Reach: **shared Rust core** -- Android inherits it unchanged through
+      `stt::groq_jni::guard_transcript_for_jni`, which already maps *every* skip to `None` -> the
+      empty string -> Kotlin's shipped blank-transcript ending (silent after D11). No Kotlin change,
+      and writing one would violate ADR-0017.
+- [x] `src-tauri/src/stt/groq_jni.rs::guard_transcript_for_jni` -- no behaviour change, but its doc
+      still says a transcript is dropped "by the echo or blocklist guard". Name the third reason, so
+      the Android reader is not told a half-truth about what `""` can mean.
+- [x] `test-fixtures/guard-chain-vectors.json` -- add the vector the review measured
+      (`"[Musik]!"` -> `"!"`, and the second measured case `"Gross- und Kleinschreibung!"`), recording
+      the **pre-decision** outcome alongside the decided one, as `GUARD-GHOST-RAW-001` records
+      `rust_without_pre_guard_ghost_strip`. PINS: the residue is dropped, and the drop reaches Kotlin
+      as the empty string. DOES NOT PIN: the blocklist's membership, or what the trim itself removes.
+      Also **correct `GUARD-STOCKPHRASE-DROP-001`'s "DOES NOT PIN" sentence**, which currently calls
+      this an "open decision recorded in the spec's Review Findings" -- it is decided, and the new
+      vector is where it lives. Ledger row in `test-fixtures/README.md` if the row's wording changes.
+- [x] `src-tauri/src/pipeline.rs::tests` -- the Rust reader for the new vector: drive
+      `guard_transcript` **and** `guard_transcript_for_jni` from the fixture, and assert the recorded
+      pre-decision outcome the other way round (the residue used to survive as `"!"`), so "fixed"
+      cannot silently become "the guard stopped working". The existing
+      `spec_jni_guard_wrapper_agrees_with_the_desktop_chain` sweeps the whole fixture and must stay
+      green with the new row.
+- [x] `android/kotlin-test/com/klarvo/voice/GuardChainBridgeTest.kt` -- the Kotlin side of the same
+      vector, in the shape this fixture's Kotlin column already has (ADR-0017 makes the verdict
+      shared Rust core, so the Kotlin half reads the vector's *declaration*, not a Kotlin verdict):
+      the new row must declare itself `n/a` with an ADR-0017 reason and must say that Kotlin sees the
+      empty string, and the `guardVectorsDeclareThemselvesNotApplicableOnAndroid` count moves from 10
+      to 11 -- that count is what turns "no Kotlin reader" into "deliberately none".
+- [x] **Inversion at writing time** -- break the residue check (e.g. invert the `is_alphanumeric`
+      predicate, or move the check above `post_stt_skip`), run, show RED, revert. Append the entries
+      to `_bmad-output/implementation-artifacts/gate4-evidence/13-2/code-inversions.json` and
+      `code-inversion-report.md` in the existing 13-1b schema, under a dated heading for this pass,
+      and re-confirm the tree green after the last revert.
+
 **Acceptance Criteria:**
 
 - Given a dictionary containing `Klarvo, Kubernetes` and the utterance "Klarvo und Kubernetes.", when
@@ -698,6 +750,14 @@ whole group is Weg 2 -- agent-verified, golden vector only. Do not promise a dev
   goes RED, and the evidence is recorded in `gate4-evidence/13-2/` in the 13-1b shape.
 - Given the whole change, when `Adr0017BoundaryGuardTest` runs, then it is green and no Kotlin twin of
   an STT guard exists.
+- Given a capture that is nothing but a stockphrase ghost plus one further punctuation mark
+  (`"[Musik]!"`, `"Gross- und Kleinschreibung!"`), when it passes the guard chain, then the chain
+  reports the same silent "nothing recognized" drop it reports for the pure ghost -- nothing is
+  pasted, nothing reaches history, and Android sees the empty string through the same chain -- while
+  a transcript carrying any alphanumeric character is unaffected, `"Wie geht es dir? [Musik]"` keeps
+  its `?`, and `strip_stockphrase_ghosts`' own trim is unchanged. Asserted from a fixture vector read
+  on both sides, with the pre-decision outcome recorded in the same vector and asserted to be the
+  thing that changed, and with the check inverted to RED at writing time.
 
 ### Review Findings
 
@@ -708,7 +768,7 @@ first pass recommended (`followup_review_recommended: true`), pointed at the res
 re-read. Both produced findings. Verdicts: 35 entries -- high 2, medium 9, low 13, already-deferred 6
 (re-confirmed), rejected 11.
 
-- [ ] [Review][Decision] The pre-guard ghost strip leaves a punctuation-only residue that is no
+- [x] [Review][Decision] The pre-guard ghost strip leaves a punctuation-only residue that is no
       longer a hallucination, so a pure-ghost capture is now DELIVERED instead of dropped --
       **measured, not read** (throwaway probe over the shipped functions, 2026-09-21):
       `strip_stockphrase_ghosts("[Musik]!") == "!"` and `is_hallucination("!") == false`, while
@@ -727,6 +787,11 @@ re-read. Both produced findings. Verdicts: 35 entries -- high 2, medium 9, low 1
       is the human's: (a) chain-level residue check, (b) leave it and record it, (c) widen the trim and
       accept the `?` loss. [`src-tauri/src/stt/hallucination.rs::strip_stockphrase_ghosts`,
       `src-tauri/src/pipeline.rs::guard_transcript`]
+      **DECIDED by Andi, 2026-09-22: option (a)** -- in `pipeline::guard_transcript`, a post-strip
+      residue with no alphanumeric character counts as "nothing recognized" (a third `PostSttSkip`),
+      on both platforms through the same chain; `strip_stockphrase_ghosts`' trim is explicitly NOT
+      widened. Built as **Group 10** in Tasks & Acceptance; rationale, cost and ordering constraint in
+      Design Notes -> "Why the punctuation-only residue is settled in the chain and not in the trim".
 
 - [x] [Review][Patch] `high` -- Step 4's D4/D5/D6 wiring can be reverted with the JVM gate fully green;
       measured twice [`android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt::processAudio`]
@@ -914,8 +979,44 @@ story's.
 they are byte-identical, and nothing enforced that. The separator moved into the builder
 (B4) and the literals became one const each.
 
+**Group 10 (2026-09-22): the residue check is an `or_else` on `post_stt_skip`, and one
+task the list did not name was added.** The ordering constraint the decision states is
+expressed as code rather than as a comment — `post_stt_skip(..).or_else(|| ..)` cannot
+be reordered without rewriting the expression, and inversion **G2** shows what happens
+if it is (`GUARD-STOCKPHRASE-DROP-001` flips from `Blocklist` to `NothingRecognized`).
+The unnamed task is a **`process_audio` test**,
+`spec_process_audio_drops_a_punctuation_only_residue`. Adding a `PostSttSkip` variant
+*forces* a `match` arm to exist, so the arm is compiled — but an arm whose body is only
+a `log::info!` compiles just as well, and every `spec_guard_*` test calls
+`guard_transcript` directly. Without the new test the acceptance criterion's "nothing is
+pasted, nothing reaches history" would have been established by reading the diff, which
+is the defect class this story was written about and which was found three times inside
+it already. Inversion **G3** is that arm.
+
+**Group 10 measurement that narrows the spec's own cost statement.** Design Notes say a
+transcript of only non-alphanumeric characters is "now dropped even when no stockphrase
+was involved", naming `"!"`, `"???"` and `"🙂"`. Measured against the tree: **all three
+already fell out before this change**, as `Blocklist` — `strip_prompt_fragments` drops
+every whitespace token with no alphanumeric character in its own cleanup pass, the
+result is the empty string, and `is_hallucination("")` is `true`. The new rule therefore
+reaches exactly one thing: a residue produced *after* the fragment strip, i.e. by the
+ghost strip, which has no such pass (`"[Musik]!"` is ONE token containing "Musik", so it
+survives the fragment strip whole and only then becomes `"!"`). That is precisely the
+hole the decision closes; the additional side effect the notes brace for does not exist.
+The prose is cautious, not wrong — recorded in `docs/backlog.md` as a FOUND note so it
+does not travel on as a measured fact.
+
 ## Spec Change Log
 
+- **Group 10 added 2026-09-22 — the follow-up review's one `[Decision]` finding, answered.**
+  The human chose option (a): the punctuation-only residue is settled in
+  `pipeline::guard_transcript` as a third `PostSttSkip`, not by widening
+  `strip_stockphrase_ghosts`' trim. The decision, its two rejected alternatives, its cost
+  and the ordering constraint (`post_stt_skip` first, or `GUARD-STOCKPHRASE-DROP-001`
+  flips) are recorded in Design Notes; the task list, one acceptance criterion and the
+  Review Findings entry were amended to match. The intent contract was not touched: the
+  I/O matrix's D11 row says *blank*, and this rule is about *punctuation-only*, which is a
+  case the matrix does not carry.
 - **Group 1, task 1 — the chain's inner order was reversed against the task text**
   (fragment strip before ghost strip). The task named ghost-strip-first; that order
   measurably breaks the I/O matrix's own D-M9 row on the German hint. Evidence and
@@ -1125,6 +1226,45 @@ construct. The `_ => deepseek` fall-through must stop swallowing an unavailable 
 correct degrade is **no cleanup**, the shipped `OfflineRaw` outcome, so no new user-facing wording is
 needed.
 
+### Why the punctuation-only residue is settled in the chain and not in the trim (Andi, 2026-09-22)
+
+The follow-up review measured a hole this story opened: the new pre-guard ghost strip turns
+`"[Musik]!"` into `"!"`, and `is_hallucination("!")` is `false` because only the EMPTY string counts
+as junk there. So a capture that is nothing but a ghost plus one other punctuation mark went from
+"dropped silently" (pre-13-2) to "pasted into the user's field and written to history". Android's
+`deliveredText.isBlank()` guard does not catch it either -- `"!"` is not blank.
+
+Three fixes were possible and Andi picked the third-party-free one:
+
+- **(c) widen `strip_stockphrase_ghosts`' trim to all punctuation** -- rejected. The trim runs on
+  *every* transcript that contains a stockphrase, not only on pure-ghost ones, so it would also eat
+  the legitimate `?` from `"Wie geht es dir? [Musik]"`. It fixes the residue by damaging real speech.
+- **(b) leave it and record it** -- rejected. The defect is not pre-existing: this story created it,
+  and it delivers text the user never said.
+- **(a) a residue check in the chain** -- chosen. `guard_transcript` already owns the question "does
+  anything survive?"; a residue with no alphanumeric character is the answer "no". It changes no
+  existing guard's verdict, it needs no new blocklist entry, and because the chain is shared Rust
+  core both platforms inherit it from one edit -- Android through
+  `guard_transcript_for_jni`, which already collapses every skip to the empty string and thence to
+  the shipped blank-transcript ending (silent after D11).
+
+**Why it is a new rule and not an extension of D11.** The D11 matrix row says *blank*; this is
+*punctuation-only*. The chain now has a third reason to drop, so it gets a third `PostSttSkip`
+variant rather than being folded into `Blocklist` -- the log line is the only place a future reader
+can tell the two apart, and calling a punctuation residue a blocklist hit would be a lie in the log.
+
+**What it costs.** A transcript consisting only of non-alphanumeric characters is now dropped even
+when no stockphrase was involved -- `"!"`, `"???"`, or an emoji-only transcript such as `"🙂"`
+(`char::is_alphanumeric` is `false` for emoji). For a dictation product that is the right answer:
+none of those is a thing a user dictated. It is **not** a language regression: `is_alphanumeric` is
+`true` for Han, Hiragana, Katakana, Hangul, Cyrillic, Greek, Arabic and Devanagari, so no script
+Klarvo supports can produce an all-"punctuation" transcript.
+
+**Order inside the chain.** The residue check runs **after** `post_stt_skip`, not before. The
+pure-ghost vector `GUARD-STOCKPHRASE-DROP-001` strips to the empty string and is pinned as a
+`Blocklist` drop precisely to prove the B3 reorder did not defuse the blocklist; checking the residue
+first would re-label it and throw that proof away.
+
 ## Verification
 
 **Commands:**
@@ -1146,6 +1286,9 @@ needed.
   ```
   `--rerun-tasks` is **mandatory** after any fixture edit or gradle reports a stale green. Expected:
   all suites green including `Adr0017BoundaryGuardTest`. 13-1b measured **25 suites / 217 tests**.
+- **Group 10 (2026-09-22) moves both counts**: the residue pass adds Rust tests in `pipeline::tests`
+  and edits the fixture the JVM gate reads, so the numbers above are the *story-start* baselines, not
+  the expected end state. Report the counts this pass measures and what moved them.
 - `npm run build` -- TS strict, only if a `src/` file is touched (no task above requires one).
 - Inversion evidence -- every new guard, vector, sentinel and predicate is broken deliberately, run,
   shown RED, and reverted. Output to
@@ -1406,3 +1549,83 @@ unchanged from the pre-build spec.
 - **`test_silence_stays_silence` is green but now model-dependent** — it moved from a deterministic
   `prob = 0.0` path to real ONNX output on digital-silence frames.
 - **`conductor/13-2` is unpushed** (6 commits ahead of `v1-ship`, no upstream). Not pushed by this run.
+
+### 2026-09-22 — Group 10 build (the punctuation-only residue)
+
+**Implemented change.** `pipeline::guard_transcript` gained a fourth step: after
+`post_stt_skip` returns `None`, a residue carrying no `char::is_alphanumeric`
+character is dropped as a **third** `PostSttSkip` variant, `NothingRecognized`,
+with its own `log::info!` arm in `process_audio` ending in the shipped silent
+terminal (`PipelineEvent::idle()`, `ProcessOutcome::Stopped { stt_error: false,
+audio_path: None }`). No new state, no new wording, no new event.
+`strip_stockphrase_ghosts`' trim is unchanged. Reach is **shared Rust core**:
+Android inherits the drop through `stt::groq_jni::guard_transcript_for_jni`,
+whose doc now names all three reasons the empty string can mean — **no Kotlin
+production change**, and writing one would violate ADR-0017.
+
+**Files changed.**
+
+- `src-tauri/src/pipeline.rs` — `PostSttSkip::NothingRecognized`; the residue
+  check as an `or_else` on `post_stt_skip` (the ordering is the expression, not a
+  comment); the `process_audio` arm; `skip_name`; two tests
+  (`spec_guard_drops_a_punctuation_only_residue`,
+  `spec_process_audio_drops_a_punctuation_only_residue`).
+- `src-tauri/src/stt/groq_jni.rs` — `guard_transcript_for_jni`'s doc names the
+  third reason.
+- `test-fixtures/guard-chain-vectors.json` — new vector
+  `GUARD-PUNCTUATION-RESIDUE-001` (primary case `"[Musik]!"`, the pre-decision
+  outcome as `rust_before_the_residue_check`, and two `additional_cases`:
+  `"Gross- und Kleinschreibung!"` and the protected
+  `"Wie geht es dir? [Musik]"`); `GUARD-STOCKPHRASE-DROP-001`'s "DOES NOT PIN"
+  sentence corrected — the case is decided, not open, and its own `Blocklist`
+  verdict is now stated as load-bearing for the ordering.
+- `android/kotlin-test/.../GuardChainBridgeTest.kt` — the declaration count
+  10 → 11, plus `thePunctuationResidueDropIsDeclaredAsInheritedByAndroid`.
+- `test-fixtures/README.md` — the `guard-chain-vectors.json` ledger row names the
+  two `process_audio` readers and the Kotlin declaration assertion.
+- `docs/backlog.md` — the decision recorded as DECIDED, plus the FOUND note that
+  narrows the spec's cost statement.
+- `gate4-evidence/13-2/{code-inversions.json,code-inversion-report.md,verdict.md}`
+  — a fifth batch, the gate counts, and a Group 10 section.
+
+**Verification performed** (all by this session):
+
+- Baseline `cd src-tauri && cargo test --lib` at `d69a276` (this pass's start):
+  **777 passed, 0 failed**. (The spec records 774 at `9efda74`; the two later
+  review-patch commits added three.)
+- `cd src-tauri && cargo test --lib`: **779 passed, 0 failed** (+2 — the two new
+  tests).
+- Device-free JVM gate (`:app:testUniversalDebugUnitTest --rerun-tasks` after
+  syncing `android/kotlin-src` and `android/kotlin-test` into `gen/android`):
+  **29 suites / 275 tests, 0 failures, 0 errors, 0 skipped** (274 before, +1 —
+  the one new test). Counted from `app/build/test-results/testUniversalDebugUnitTest/*.xml`,
+  not from the banner. `Adr0017BoundaryGuardTest` green.
+- Inversions: **5/5 RED**, appended as the fifth batch. G1 the predicate, G2 the
+  ordering constraint (the predicted `Blocklist` → `NothingRecognized` flip),
+  G3 the `process_audio` terminal, G4 and G5 the fixture's Kotlin declaration and
+  the 11-row count. Both gates re-confirmed green after the last revert and
+  `git status` carries no inversion edit.
+- `npm run build`: not run — no `src/` file is touched.
+
+**What no number here claims.** Both gates decide logic, wiring and structure on
+Linux only. Group 10 is **Weg 2, agent-verified only** and this is a downgrade
+written down rather than implied: Whisper cannot be made to emit `"[Musik]!"` on
+demand, and the test provider injects LLM and STT *failures*, not transcript
+*content*, so there is no device step for Andi on this row. Nothing else in the
+story was re-verified on a device by this pass either; no APK and no Windows build
+was made.
+
+**Residual risks.**
+
+- **Group 10's production code has not been reviewed.** The follow-up review ran
+  at `d1b7953`; the third `PostSttSkip`, its `process_audio` arm and the two new
+  tests came after it. `followup_review_recommended` is set back to `true` for
+  that reason, and the residual the last review named —
+  `processAudio`'s `handler.post` body, still source-read rather than executed —
+  is untouched by this pass and still stands.
+- **Two of the five inversions (G4, G5) break a fixture, not production code.**
+  That is deliberate: the Android half of this row has no code to break, because
+  the drop is inherited through the JNI wrapper. What they pin is the *record* —
+  that the vector declares its own Android coverage — which is the strongest
+  instrument available on that side and is weaker than an executing one.
+- **`conductor/13-2` is unpushed.** Not pushed by this run.

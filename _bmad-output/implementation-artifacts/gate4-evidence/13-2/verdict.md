@@ -13,9 +13,9 @@ structure on Linux only.
 | Gate | Command | Result |
 |---|---|---|
 | baseline | `cd src-tauri && cargo test --lib` at `4e4bc00` | **749 passed, 0 failed** — the number the spec predicted |
-| Rust | `cd src-tauri && cargo test --lib` | **774 passed, 0 failed** (+25) |
-| JVM (device-free) | `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` in `src-tauri/gen/android`, after syncing `android/kotlin-src` + `android/kotlin-test` | **29 suites / 268 tests, 0 failures, 0 errors** (baseline 25 / 217) |
-| inversions | 10 Rust + 18 Kotlin + 8 matrix-audit + 12 review-round | **48/48 RED**, in four batches each naming the tree it was measured at — see `code-inversion-report.md` |
+| Rust | `cd src-tauri && cargo test --lib` | **779 passed, 0 failed** (+30 over baseline; 777 before the 2026-09-22 Group 10 pass, +2 from it) |
+| JVM (device-free) | `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` in `src-tauri/gen/android`, after syncing `android/kotlin-src` + `android/kotlin-test` | **29 suites / 275 tests, 0 failures, 0 errors, 0 skipped** (baseline 25 / 217; 274 before the Group 10 pass, +1 from it) |
+| inversions | 10 Rust + 18 Kotlin + 8 matrix-audit + 12 review-round + 5 Group 10 | **53/53 RED**, in five batches each naming the tree it was measured at — see `code-inversion-report.md` |
 | `npm run build` | not run | no `src/` file is touched by this story |
 
 `git status` after the last revert carries only this story's intended changes; no
@@ -56,6 +56,35 @@ inversion edit survived.
 - **B6 / D-L19, D-L21** — the desktop VAD calls Silero on every frame (verdict provably
   unchanged: `advance_state` ANDs `energy_ok` into both thresholds, asserted); the
   Android auto-stop hangover fires on the (N+1)-th frame.
+
+## Group 10 — the punctuation-only residue (2026-09-22)
+
+The follow-up review's one `[Decision]` finding, answered by Andi as **option (a)**.
+This story's own pre-guard ghost strip (B3) turns `"[Musik]!"` into `"!"`, and
+`is_hallucination("!")` is `false` — so a capture that is nothing but a stockphrase plus
+one other punctuation mark went from "dropped silently" (pre-13-2) to "pasted into the
+user's field and written to history". Android's `deliveredText.isBlank()` guard does not
+catch it either: `"!"` is not blank.
+
+`pipeline::guard_transcript` now drops a post-strip residue carrying no
+`char::is_alphanumeric` character, as a **third** `PostSttSkip`
+(`NothingRecognized`) with its own `log::info!` arm — not as a blocklist hit, because
+calling a punctuation residue a blocklist hit would be a lie in the log. The check runs
+**after** `post_stt_skip`; running it first re-labels `GUARD-STOCKPHRASE-DROP-001` and
+throws away that vector's proof that the B3 reorder did not defuse the blocklist
+(measured as inversion G2). `strip_stockphrase_ghosts`' trim is **not** widened — it runs
+on every transcript containing a stockphrase and would eat the legitimate `?` from
+`"Wie geht es dir? [Musik]"`, which is pinned as its own case in the vector.
+
+Reach is **shared Rust core**: Android inherits the drop through
+`guard_transcript_for_jni`, which already collapses every skip to the empty string and
+thence to the shipped blank-transcript ending (silent after D11). **No Kotlin production
+change**, and writing one would violate ADR-0017.
+
+Terminal behaviour is executed, not read: `spec_process_audio_drops_a_punctuation_only_residue`
+drives `process_audio` itself, because the acceptance criterion's "nothing is pasted,
+nothing reaches history" is a `process_audio` claim and the new `match` arm compiles
+just as well with its body replaced by a log line (inversion G3).
 
 ## Matrix Test Audit follow-up (2026-09-21)
 
@@ -126,6 +155,13 @@ Named, not implied:
 - **`test_silence_stays_silence`** moved from a deterministic `prob = 0.0` path to real
   ONNX output on digital-silence frames. It is **green** (measured, not assumed), but it
   is now model-dependent.
+- **The punctuation-only residue on a real device (Group 10).** Whisper cannot be made to
+  emit `"[Musik]!"` on demand, and the test provider injects LLM and STT *failures*, not
+  transcript *content*. So this row is **Weg 2, agent-verified only**: the rule is decided
+  by the fixture read on both sides and by `process_audio` itself, and there is no device
+  step for Andi. What he would notice if it were wrong is the opposite case — a real
+  dictation disappearing — and that is pinned by every surviving vector in
+  `guard-chain-vectors.json` plus the `"Wie geht es dir? [Musik]"` case.
 
 ## H+ reproduction, as the spec named it before the build
 

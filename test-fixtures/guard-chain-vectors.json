@@ -173,7 +173,7 @@
     "id": "GUARD-STOCKPHRASE-DROP-001",
     "surface": "stt",
     "scenario": "transcript that is nothing but a stockphrase ghost",
-    "description": "The row GUARD-BLOCKLIST-DROP-001 was written to carry but cannot (follow-up review, 2026-09-21): a capture that is ONLY a STOCKPHRASE_BLOCKLIST entry, the one family the new pre-guard ghost strip can reach. PINS: the pre-guard strip must not turn the blocklist into a no-op -- `strip_stockphrase_ghosts` reduces this input to the empty string and `is_hallucination` treats the empty string as junk, so the drop survives the B3 reorder. Delete the ghost strip from the chain and the blocklist catches it directly; that is the point -- BOTH orders must drop it, and this row fails loudly if a future edit makes the strip produce something the verdict lets through. DOES NOT PIN: what happens to a stockphrase followed by other punctuation -- `\"[Musik]!\"` strips to `\"!\"`, which is NOT empty and is NOT a hallucination, and is an open decision recorded in the spec's Review Findings.",
+    "description": "The row GUARD-BLOCKLIST-DROP-001 was written to carry but cannot (follow-up review, 2026-09-21): a capture that is ONLY a STOCKPHRASE_BLOCKLIST entry, the one family the new pre-guard ghost strip can reach. PINS: the pre-guard strip must not turn the blocklist into a no-op -- `strip_stockphrase_ghosts` reduces this input to the empty string and `is_hallucination` treats the empty string as junk, so the drop survives the B3 reorder. Delete the ghost strip from the chain and the blocklist catches it directly; that is the point -- BOTH orders must drop it, and this row fails loudly if a future edit makes the strip produce something the verdict lets through. The skip recorded here is `Blocklist` and that is load-bearing: the residue check added on 2026-09-22 runs AFTER post_stt_skip precisely so this row keeps its blocklist verdict and goes on proving the B3 reorder. DOES NOT PIN: what happens to a stockphrase followed by other punctuation -- `\"[Musik]!\"` strips to `\"!\"`, which is NOT empty and is NOT a hallucination. That case is decided (Andi, 2026-09-22, option (a): a chain-level residue check) and lives in GUARD-PUNCTUATION-RESIDUE-001, not here.",
     "input": {
       "transcript": "Groß- und Kleinschreibung",
       "dictionary_terms": "",
@@ -189,6 +189,50 @@
     "kotlin": {
       "outcome": "n/a",
       "note": "STT guards are shared Rust core (ADR-0017); a dropped transcript reaches Kotlin as the empty string and takes the shipped blank-transcript ending, which after D11 is silent."
+    },
+    "expected_divergence": null
+  },
+  {
+    "id": "GUARD-PUNCTUATION-RESIDUE-001",
+    "surface": "stt",
+    "scenario": "a stockphrase ghost plus one further punctuation mark",
+    "description": "The hole story 13-2 opened and Andi closed on 2026-09-22. The new pre-guard ghost strip (B3 / D-H7) turns `\"[Musik]!\"` into `\"!\"`, because strip_stockphrase_ghosts trims only `.`, `,` and space; is_hallucination(\"!\") is false, because only the EMPTY string counts as junk there. So a capture that is nothing but a ghost plus one other punctuation mark went from 'dropped silently' (pre-13-2) to 'pasted into the user's field and written to history' -- and Android's deliveredText.isBlank() guard does not catch it either, because `\"!\"` is not blank. Measured by the follow-up review over the shipped functions, recorded here as `rust_before_the_residue_check`. PINS: the residue is dropped by the shared chain (the third PostSttSkip, NothingRecognized -- not the blocklist, because calling a punctuation residue a blocklist hit would be a lie in the log), and the drop reaches Kotlin as the empty string. Also pins the case the decision protects: `\"Wie geht es dir? [Musik]\"` keeps its `?`, which is why option (c) -- widening the trim to all punctuation -- was rejected. DOES NOT PIN: the blocklist's membership, or what strip_stockphrase_ghosts' own trim removes (unchanged by this decision).",
+    "input": {
+      "transcript": "[Musik]!",
+      "dictionary_terms": "",
+      "language": "de",
+      "stt_prompt_override": null
+    },
+    "rust": {
+      "hint_is": "builtin_de",
+      "skip": "NothingRecognized",
+      "text": "!",
+      "jni_returns": ""
+    },
+    "rust_before_the_residue_check": {
+      "skip": null,
+      "text": "!",
+      "note": "measured 2026-09-21 by the follow-up review: the residue survived the whole chain and was delivered"
+    },
+    "additional_cases": [
+      {
+        "transcript": "Gross- und Kleinschreibung!",
+        "skip": "NothingRecognized",
+        "text": "!",
+        "skip_before_the_residue_check": null,
+        "note": "the review's second measured case; the ASCII 'ss' spelling is its own STOCKPHRASE_BLOCKLIST entry"
+      },
+      {
+        "transcript": "Wie geht es dir? [Musik]",
+        "skip": null,
+        "text": "Wie geht es dir?",
+        "skip_before_the_residue_check": null,
+        "note": "unchanged by the decision, and the reason the trim was NOT widened: a widened trim would eat this legitimate question mark"
+      }
+    ],
+    "kotlin": {
+      "outcome": "n/a",
+      "note": "STT guards are shared Rust core (ADR-0017); Android inherits this third drop reason unchanged through stt::groq_jni::guard_transcript_for_jni, which collapses every skip to the empty string. Kotlin sees \"\" and takes the shipped blank-transcript ending, which after D11 is silent. No Kotlin change was made and writing one would violate ADR-0017."
     },
     "expected_divergence": null
   },

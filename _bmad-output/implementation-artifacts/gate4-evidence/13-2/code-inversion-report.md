@@ -1,15 +1,19 @@
 # Story 13-2 — inversion evidence (code)
 
-**48 inversions, all RED**, in four batches. Each batch names the tree it was
+**53 inversions, all RED**, in five batches. Each batch names the tree it was
 measured at: the first pass presented one total over "the shipped tree", but R1-R8
 had been measured mid-build, before the last two Rust tests existed (their evidence
 lines say `767 filtered out` where the later ones say `768`). That framing was a
 review finding; the Rust batch below is a **re-run against the current tree**, so no
 row here is older than the code it claims to pin.
 
-Every row is a real edit to production source followed by a real test run, then a
-revert. Both gates are green after the last revert (`cargo test --lib` **774 passed**;
-JVM gate **29 suites / 268 tests**, 0 failures) and `git status` carries no stray edit.
+Every row is a real edit to production source or to the fixture a test reads, followed
+by a real test run, then a revert. Both gates are green after the last revert
+(`cargo test --lib` **779 passed**; JVM gate **29 suites / 275 tests**, 0 failures) and
+`git status` carries no stray edit.
+
+The counts in the first four batch headers are the ones measured *when that batch ran*
+and are deliberately not restated — the 2026-09-22 pass (batch five) moved both gates.
 
 ## Rust — the shared core (`cd src-tauri && cargo test --lib <filter>`)
 
@@ -95,6 +99,33 @@ seam and assert it, never to add prose.
 | V10 | mapCleanupResponse stops trimming (whitespace-only answers are delivered again) | `KlarvoApi.kt` | `whitespaceOnlyAnswerIsRejectedLikeAnEmptyOne` | **RED** |
 | V11 | the ghost-strip bridge call loses its guard (a stale .so kills the worker thread) | `KlarvoOverlayService.kt` | `theGhostStripBridgeCallDegradesInsteadOfKillingTheRun` | **RED** |
 | V12 | the delivery block reads KlarvoAccessibilityService.instance twice again | `KlarvoOverlayService.kt` | `theLiveAccessibilityReferenceIsReadOnce` | **RED** |
+
+## Group 10 (2026-09-22) — the punctuation-only residue
+
+*Measured at: current tree (cargo test --lib: 779 passed; JVM 29 suites / 275 tests)*
+
+The follow-up review's one `[Decision]` finding, answered by Andi as option (a): in
+`pipeline::guard_transcript` a post-strip residue with no alphanumeric character is a
+third `PostSttSkip` (`NothingRecognized`), on both platforms through the same chain;
+`strip_stockphrase_ghosts`' trim is explicitly **not** widened. Reach is shared Rust
+core, so the last two rows are the only place the Android half can be broken at all —
+Kotlin inherits the drop as the empty string and has no code of its own to invert.
+
+| # | Deliberate break | File | Expected-red test | RED | Evidence |
+|---|---|---|---|---|---|
+| G1 | the residue predicate is inverted (alphanumeric text is dropped, a punctuation residue survives) | `src-tauri/src/pipeline.rs` | `spec_guard_drops_a_punctuation_only_residue` | **RED** | `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 778 filtered out; finished in 0.00s` |
+| G2 | the residue check is moved **above** `post_stt_skip` | `src-tauri/src/pipeline.rs` | `spec_guard_still_drops_an_echo_and_a_hallucination` | **RED** | `assertion left == right failed: GUARD-STOCKPHRASE-DROP-001 / left: Some("NothingRecognized") / right: Some("Blocklist")` — exactly the flip the decision names as the ordering constraint: the pure-ghost vector loses the `Blocklist` verdict it is pinned as, and with it the proof that the B3 reorder did not defuse the blocklist |
+| G3 | `process_audio`'s new arm only logs and falls through to cleanup | `src-tauri/src/pipeline.rs` | `spec_process_audio_drops_a_punctuation_only_residue` | **RED** | `left: [Transcribing, Cleaning] / right: [Transcribing, Idle]` — the residue would have been cleaned, pasted and stored |
+| G4 | the vector's `kotlin` note stops saying Kotlin sees the empty string | `test-fixtures/guard-chain-vectors.json` | `GuardChainBridgeTest.thePunctuationResidueDropIsDeclaredAsInheritedByAndroid` | **RED** | `9 tests completed, 1 failed` |
+| G5 | the whole vector is removed (a shared-core vector added with no Kotlin declaration) | `test-fixtures/guard-chain-vectors.json` | `GuardChainBridgeTest.guardVectorsDeclareThemselvesNotApplicableOnAndroid` | **RED** | `9 tests completed, 2 failed` — the 10→11 count is what turns "no Kotlin reader" into "deliberately none" |
+
+**G3 is the row that was nearly not written.** The `match` on `guard.skip` is exhaustive,
+so adding the variant *forces* an arm to exist — but an arm whose body is a log line and
+nothing else compiles just as well, and every `spec_guard_*` test calls `guard_transcript`
+directly. Without `spec_process_audio_drops_a_punctuation_only_residue` the acceptance
+criterion's "nothing is pasted, nothing reaches history" would have been established by
+reading the diff: the same defect class this whole story is about, found for the fourth
+time.
 
 ## Four inversions came back GREEN first — that is what they are for
 

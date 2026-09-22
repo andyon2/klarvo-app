@@ -122,9 +122,20 @@ pub fn stt_error_sentinel(err: &crate::stt::SttError) -> String {
 /// Runs the ONE post-STT guard chain for the Android JNI and maps its verdict
 /// to what `nativeTranscribe` hands back to Kotlin.
 ///
-/// `Some(text)` — the transcript survived; `None` — it was dropped by the echo
-/// or blocklist guard, which Kotlin sees as the empty string (the shipped
-/// "nothing recognised" ending, silent on both platforms after D11).
+/// `Some(text)` — the transcript survived; `None` — it was dropped, which Kotlin
+/// sees as the empty string (the shipped "nothing recognised" ending, silent on
+/// both platforms after D11).
+///
+/// The chain has **three** reasons to drop, and Kotlin cannot tell them apart —
+/// all three arrive as `""`. Naming them here so the Android reader is not told
+/// a half-truth about what the empty string can mean:
+/// [`crate::pipeline::PostSttSkip::PromptEcho`],
+/// [`crate::pipeline::PostSttSkip::Blocklist`], and — since 2026-09-22 —
+/// [`crate::pipeline::PostSttSkip::NothingRecognized`], a residue with no
+/// alphanumeric character left over by the pre-guard ghost strip. The third one
+/// is inherited from the shared core with **no Kotlin change**: writing one
+/// would violate ADR-0017, and there is nothing to write — the drop already
+/// collapses to `""` here.
 ///
 /// Story 13-2 (B2 / D-H5, D-H6, D-M9 and B3 / D-H7). Until this story
 /// `nativeTranscribe` re-implemented the chain inline, in the wrong order, fed

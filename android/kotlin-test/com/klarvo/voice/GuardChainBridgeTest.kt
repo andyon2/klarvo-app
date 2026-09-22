@@ -155,7 +155,40 @@ class GuardChainBridgeTest {
         // written to carry but could not: its input lives in
         // HALLUCINATION_BLOCKLIST, which the pre-guard ghost strip never
         // touches, so it passed identically with and without the B3 reorder.
-        assertEquals("the fixture must carry ten shared-core guard vectors", 10, checked)
+        //
+        // Eleven since 2026-09-22: GUARD-PUNCTUATION-RESIDUE-001, the third
+        // drop reason. This count is what turns "no Kotlin reader" into
+        // "deliberately none" — add a shared-core vector without a declaration
+        // and this fails rather than silently leaving Android unexamined.
+        assertEquals("the fixture must carry eleven shared-core guard vectors", 11, checked)
+    }
+
+    /**
+     * The 2026-09-22 decision, from the Android side: the third drop reason is
+     * inherited, not implemented.
+     *
+     * `pipeline::guard_transcript` now drops a post-strip residue with no
+     * alphanumeric character (`"[Musik]!"` -> `"!"`). Android gets that for free
+     * through `guard_transcript_for_jni`, which collapses every skip to the
+     * empty string — there is no Kotlin edit, and writing one would violate
+     * ADR-0017. What CAN go wrong here is the record: a vector that does not say
+     * Kotlin sees `""` leaves the next reader guessing whether Android was
+     * forgotten or covered.
+     */
+    @Test
+    fun thePunctuationResidueDropIsDeclaredAsInheritedByAndroid() {
+        val kotlin = vector("GUARD-PUNCTUATION-RESIDUE-001").getJSONObject("kotlin")
+        assertEquals("the verdict is shared Rust core", "n/a", kotlin.getString("outcome"))
+        val note = kotlin.getString("note")
+        assertTrue("$note must name ADR-0017 as the reason", note.contains("ADR-0017"))
+        assertTrue(
+            "the note must say what Kotlin actually sees: the empty string",
+            note.contains("empty string"),
+        )
+        assertTrue(
+            "the note must name the wrapper the drop travels through",
+            note.contains("guard_transcript_for_jni"),
+        )
     }
 
     // -----------------------------------------------------------------------

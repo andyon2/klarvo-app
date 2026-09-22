@@ -1806,3 +1806,42 @@ unter `### Review Findings` als unchecked:
   ein Rest ohne alphanumerisches Zeichen = `PostSttSkip`. Das ist eine neue Regel darueber, was
   „nichts erkannt" heisst (D11 sagt *blank*, das hier ist *nur Interpunktion*) -- deshalb Andis Ruf.
   `stt/hallucination.rs::strip_stockphrase_ghosts`, `pipeline.rs::guard_transcript`. (medium)
+
+### DECIDED 2026-09-22 — der Interpunktions-Rest wird in der Kette entschieden, nicht im Trim (Andi, Gruppe 10 von 13-2)
+
+Antwort auf die offene Entscheidung direkt darueber. Quelle:
+`spec-13-2-parity-sweep-guards-and-silent-loss-2.md`, `### Review Findings` (jetzt abgehakt) und
+`## Design Notes` → „Why the punctuation-only residue is settled in the chain and not in the trim".
+
+Andi waehlt **Option (a)**: in `pipeline::guard_transcript` zaehlt ein Rest ohne
+`char::is_alphanumeric`-Zeichen als „nichts erkannt" und faellt weg — als **dritte**
+`PostSttSkip`-Variante (`NothingRecognized`) mit eigener `log::info!`-Zeile, nicht als Blocklist-Treffer.
+Abgelehnt: (b) stehenlassen und nur notieren (der Defekt ist kein Vorbestand, 13-2 hat ihn erzeugt);
+(c) den Trim von `strip_stockphrase_ghosts` auf alle Satzzeichen weiten (frisst das legitime `?` aus
+`"Wie geht es dir? [Musik]"` — der Trim bleibt ausdruecklich unveraendert).
+
+**Reichweite: geteilter Rust-Kern.** Android erbt den Drop ueber `guard_transcript_for_jni`, das jeden
+Skip ohnehin auf den leeren String abbildet — **keine Kotlin-Aenderung**, eine waere ADR-0017-widrig.
+Reihenfolge ist tragend: die Rest-Pruefung laeuft **nach** `post_stt_skip`, sonst kippt
+`GUARD-STOCKPHRASE-DROP-001` von `Blocklist` auf `NothingRecognized` und verliert den Beweis, dass die
+B3-Umsortierung die Blocklist nicht entschaerft hat (als Inversion G2 gemessen).
+
+Gebaut 2026-09-22: `pipeline.rs`, Vektor `GUARD-PUNCTUATION-RESIDUE-001` in
+`test-fixtures/guard-chain-vectors.json`, Leser in `pipeline::tests` und `GuardChainBridgeTest`,
+5 Inversionen (alle RED). Gates danach: `cargo test --lib` **779**, JVM **29 Suiten / 275 Tests**.
+
+### FOUND 2026-09-22 — die dokumentierten „Kosten" der Rest-Regel sind enger als im Spec beschrieben (nur notiert)
+
+Beim Bau von Gruppe 10 gemessen, nicht behoben, kein Defekt: die Design Notes des Specs schreiben, ein
+Transkript aus lauter nicht-alphanumerischen Zeichen werde „jetzt auch ohne Stockphrase" verworfen und
+nennen `"!"`, `"???"` und `"🙂"` als Beispiele. Gemessen gegen den Baum: **diese drei fielen schon
+vorher weg**, und zwar als `Blocklist` — `strip_prompt_fragments` wirft in seinem eigenen Aufraeum-Pass
+jeden Whitespace-Token ohne alphanumerisches Zeichen weg (`pipeline.rs`, „Remove punctuation tokens
+that are now orphaned"), das Ergebnis ist der leere String, und `is_hallucination("")` ist `true`.
+
+Die neue Regel greift also ausschliesslich dort, wo der Rest **nach** dem Fragment-Strip entsteht —
+also durch den Ghost-Strip, der keinen solchen Pass hat (`"[Musik]!"` ist EIN Token und enthaelt
+„Musik", ueberlebt den Fragment-Strip daher vollstaendig und wird erst danach zu `"!"`). Das ist genau
+das Loch, das die Entscheidung schliesst; die zusaetzlich befuerchtete Nebenwirkung existiert nicht.
+Der Spec-Text ist damit vorsichtig, nicht falsch — notiert, damit die Kosten-Aussage nicht als
+gemessene Tatsache weiterwandert. `pipeline.rs::strip_prompt_fragments`, `::guard_transcript`. (low)
