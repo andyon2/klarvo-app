@@ -1,23 +1,26 @@
 # Story 13-2 — inversion evidence (code)
 
-**53 inversions, all RED**, in five batches. Each batch names the tree it was
-measured at: the first pass presented one total over "the shipped tree", but R1-R8
-had been measured mid-build, before the last two Rust tests existed (their evidence
-lines say `767 filtered out` where the later ones say `768`). That framing was a
-review finding; the Rust batch below is a **re-run against the current tree**, so no
-row here is older than the code it claims to pin.
+**56 rows, 55 distinct inversions, all RED**, in six batches. R10 re-measures R3's
+break against the same test (kept as the provenance record the follow-up review wrote),
+so it is not counted as a second inversion. Each batch names the COMMIT it was measured
+at: the first pass presented one total over "the shipped tree", but R1-R8 had been
+measured mid-build, before the last two Rust tests existed (their evidence lines said
+`767 filtered out` where the later ones say `768`). That framing was a review finding;
+the Rust batch below is a re-run at `9efda74`, so no row here is older than the code it
+claims to pin. "Current tree" headers were replaced by commits in the 2026-09-22 review
+pass — the phrase stopped being true the moment the next pass moved the gates.
 
 Every row is a real edit to production source or to the fixture a test reads, followed
 by a real test run, then a revert. Both gates are green after the last revert
-(`cargo test --lib` **779 passed**; JVM gate **29 suites / 275 tests**, 0 failures) and
+(`cargo test --lib` **780 passed**; JVM gate **29 suites / 275 tests**, 0 failures) and
 `git status` carries no stray edit.
 
-The counts in the first four batch headers are the ones measured *when that batch ran*
-and are deliberately not restated — the 2026-09-22 pass (batch five) moved both gates.
+The counts in each batch header are the ones measured *when that batch ran* and are
+deliberately not restated — batches five and six moved the gates.
 
 ## Rust — the shared core (`cd src-tauri && cargo test --lib <filter>`)
 
-*Measured at: current tree (cargo test --lib: 774 passed) — re-run 2026-09-21 after the review round*
+*Measured at: commit `9efda74` (cargo test --lib: 774 passed) — re-run 2026-09-21 after the review round; R10 re-run 2026-09-21 by the follow-up review on the 777-test tree*
 
 | # | Deliberate break | File | Filter | RED | Evidence |
 |---|---|---|---|---|---|
@@ -30,7 +33,7 @@ and are deliberately not restated — the 2026-09-22 pass (batch five) moved bot
 | R7 | offline_rule_with drops the platform-availability clause (D-M21 returns) | `src-tauri/src/pipeline.rs` | `spec_offline_rule_matches_the_fixture_matrix` | **RED** | `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s` |
 | R8 | offline_rule_with drops the local-STT clause (G2a returns) | `src-tauri/src/pipeline.rs` | `spec_offline_rule_matches_the_fixture_matrix` | **RED** | `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s` |
 | R9 | frame_decision restores the `if energy_ok` guard around the predictor call | `src-tauri/src/vad/mod.rs` | `spec_predictor_runs_on_a_sub_floor_frame` | **RED** | `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 773 filtered out; finished in 0.00s` |
-| R10 | `guard_transcript_for_jni` hands a DROPPED transcript back as text instead of `None` | `src-tauri/src/stt/groq_jni.rs` | `spec_jni_guard_wrapper_agrees_with_the_desktop_chain` | **RED** | `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 776 filtered out; finished in 0.00s` — **re-run 2026-09-21 by the follow-up review.** The row previously read "the same break [as R9], measured against the wrapper-agreement test" and carried `767 filtered out`, i.e. a 768-test tree, under a batch header claiming every row had been re-measured against the shipped tree. Two defects in one row: the description named a VAD break that cannot make this test fail, and the evidence was older than the code. Both corrected by actually performing the break the test can witness and recording what came out. |
+| R10 | `guard_transcript_for_jni` hands a DROPPED transcript back as text instead of `None` — **the same break as R3, re-measured; not a distinct inversion** | `src-tauri/src/stt/groq_jni.rs` | `spec_jni_guard_wrapper_agrees_with_the_desktop_chain` | **RED** | `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 776 filtered out; finished in 0.00s` (a 777-test tree, i.e. after `9efda74`) — **re-run 2026-09-21 by the follow-up review.** The row previously read "the same break [as R9], measured against the wrapper-agreement test" and carried `767 filtered out`, i.e. a 768-test tree, under a batch header claiming every row had been re-measured against the shipped tree. Two defects in one row: the description named a VAD break that cannot make this test fail, and the evidence was older than the code. Both corrected by actually performing the break the test can witness and recording what came out. |
 
 ## Kotlin — the Android twins (device-free JVM gate, `--rerun-tasks --tests <t>`)
 
@@ -78,7 +81,7 @@ diff". `OverlayServiceSourceContractTest` covers them.
 
 ## Review round — the decisions that were revertible with every gate green
 
-*Measured at: current tree (cargo test --lib: 774 passed; JVM 29 suites / 268 tests)*
+*Measured at: commit `9efda74` (cargo test --lib: 774 passed; JVM 29 suites / 268 tests)*
 
 A review found decisions that no gate compiled or no test read, so reverting them left
 every gate green — the same class of defect this story is about, one level up. The
@@ -102,7 +105,7 @@ seam and assert it, never to add prose.
 
 ## Group 10 (2026-09-22) — the punctuation-only residue
 
-*Measured at: current tree (cargo test --lib: 779 passed; JVM 29 suites / 275 tests)*
+*Measured at: commit `ce97725` (cargo test --lib: 779 passed; JVM 29 suites / 275 tests)*
 
 The follow-up review's one `[Decision]` finding, answered by Andi as option (a): in
 `pipeline::guard_transcript` a post-strip residue with no alphanumeric character is a
@@ -126,6 +129,19 @@ directly. Without `spec_process_audio_drops_a_punctuation_only_residue` the acce
 criterion's "nothing is pasted, nothing reaches history" would have been established by
 reading the diff: the same defect class this whole story is about, found for the fourth
 time.
+
+## Review pass (2026-09-22) — two locks Group 10 was missing
+
+*Measured at: review-pass tree on top of commit `ce97725` (cargo test --lib: 780 passed; JVM 29 suites / 275 tests)*
+
+The build-auto review pass over Group 10 found breaks every gate let through. Each
+got its lock and was then broken for real. Both break production code.
+
+| # | Deliberate break | File | Expected-red test | RED | Evidence |
+|---|---|---|---|---|---|
+| G6 | the residue predicate is narrowed to its ASCII form (`c.is_ascii_alphanumeric()`): every Cyrillic, Greek or CJK dictation would be dropped as `NothingRecognized` | `src-tauri/src/pipeline.rs` | `spec_guard_drops_a_punctuation_only_residue` | **RED** | `left: Some("NothingRecognized") / right: None` on `"Привет, как дела?"`; `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 779 filtered out` — G1 only ever *inverted* the predicate. Until the two surviving cases (Cyrillic, digits-only `"42"`) were added to `GUARD-PUNCTUATION-RESIDUE-001`, this narrowing left every test green |
+| G8 | the residue predicate is narrowed to `char::is_alphabetic`: a digits-only dictation (`"42"`, `"14:30"`) would be dropped as `NothingRecognized` | `src-tauri/src/pipeline.rs` | `spec_guard_drops_a_punctuation_only_residue` | **RED** | `left: Some("NothingRecognized") / right: None` on `"42"`; `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 779 filtered out` — the digits case is the one that catches this narrowing; the Cyrillic case does not |
+| G7 | `nativeTranscribe`'s `None` arm hands the raw transcript back (`to_jstring(&mut env, &text)`), so every echo, blocklist hit and punctuation residue would be delivered on Android | `src-tauri/src/stt/groq_jni.rs` | `spec_jni_hands_a_dropped_transcript_back_as_the_empty_string` | **RED** | `a dropped transcript must reach Kotlin as the empty string`; `test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 779 filtered out` — the arm is android-gated and neither gate compiles it. Before this order-scoped source tripwire, the break was green everywhere |
 
 ## Four inversions came back GREEN first — that is what they are for
 

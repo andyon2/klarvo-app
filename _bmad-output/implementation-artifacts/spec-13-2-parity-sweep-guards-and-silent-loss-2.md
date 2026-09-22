@@ -10,7 +10,7 @@ review: 'thorough'
 review_source: 'auto'
 lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-alignment']
 review_loop_iteration: 1
-followup_review_recommended: true  # Group 10 (2026-09-22) added production code AFTER the last review ran: the third PostSttSkip, its process_audio arm and two new tests. No lens has read it.
+followup_review_recommended: false  # 2026-09-22 review pass read Group 10; patched 0 high / 2 medium / 10 low entries, both mediums were test locks (a fixture case and a source tripwire), each inverted RED -- no unverified risk left to name
 context:
   - '{project-root}/_bmad-output/project-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
@@ -141,6 +141,60 @@ deferred:
       pre-existing and this story widened it while consolidating the same class in production
       (`stt::STT_HINT_*`). Fix is a shared test helper across six files, not a direct correction.
     location: 'android/kotlin-test/com/klarvo/voice/'
+    severity: low
+  - summary: >-
+      A Groq STT 429 is non-retryable on Android but retryable on Desktop, so Android never
+      reaches its local-Whisper net on a rate limit
+    evidence: |-
+      Review pass 2026-09-22 (edge-case). `KlarvoOverlayService.classifySttSentinel` treats every
+      `__ERROR_API:` 4xx as NON_RETRYABLE, 429 included, while `pipeline::is_retryable_stt_error`
+      matches `status == 429 || status >= 500`. On Android the resulting "Groq STT failed: ..."
+      message does not carry the "failed after retries" prefix `isRetryableSttFailure` gates the
+      local-Whisper net on, so a rate-limited free-tier user gets an error where Desktop falls
+      back to a downloaded local model. Pre-existing: the baseline inline `when` had the same 4xx
+      rule and 13-2 only extracted it; no audit row names it. pre-existing.
+    location: >-
+      android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt::classifySttSentinel
+    severity: low
+  - summary: >-
+      A blank result from Android's local STT still shows "Transcription failed", while D11 made
+      every other nothing-recognised ending silent
+    evidence: |-
+      Review pass 2026-09-22 (edge-case). The `sttProvider = "local"` branch of `processAudio`
+      toasts "Transcription failed" when `LocalWhisperInference.transcribeAudio` returns blank.
+      D-M14 listed five toast sites and Andi's four-of-five reading removed four; this one was
+      not among them. Whether a blank from the local engine is "nothing recognised" (silent, D11)
+      or an engine failure (keep the toast) is a wording/product call, not a build one.
+      pre-existing.
+    location: >-
+      android/kotlin-src/com/klarvo/voice/KlarvoOverlayService.kt (local-STT branch, blank result)
+    severity: low
+  - summary: >-
+      The in-app record button's offline path delivers the transcript unsanitised and
+      un-ghost-stripped, while the hotkey and Android paths do both
+    evidence: |-
+      Review pass 2026-09-22 (edge-case, intent-alignment). `commands::recording::offline_passthrough`
+      returns `raw_text` verbatim; `process_audio`'s `OfflineRaw` outcome still runs
+      `sanitize_llm_output` + `strip_stockphrase_ghosts`, and Android runs `sanitizeLlmOutput` +
+      `nativeStripStockphraseGhosts`. So E2's one offline DECISION holds on all three paths, but a
+      control character or a trailing stockphrase survives only on the in-app button. Pre-existing:
+      `is_offline_mode` returned the text verbatim at baseline; same family as the deferred
+      "three desktop entry points run no part of the guard chain". pre-existing.
+    location: >-
+      src-tauri/src/commands/recording.rs::offline_passthrough
+    severity: low
+  - summary: >-
+      `strip_prompt_fragments` deletes every standalone punctuation token from real speech, so
+      "3 + 4 = 7" is delivered as "3 4 7"
+    evidence: |-
+      Measured by the 2026-09-22 review pass (throwaway probe, reverted): `guard_transcript("3 + 4 = 7",
+      <any built-in hint>)` yields `"3 4 7"`. The cleanup pass "Remove punctuation tokens that are now
+      orphaned" drops every whitespace token without an alphanumeric character, whether or not a
+      fragment was stripped next to it, so standalone `+`, `=`, `&`, `-` and `/` vanish from
+      dictations on both platforms. Present at baseline (`pipeline.rs` :585-592) on Desktop and in the
+      pre-13-2 Android JNI chain alike; not named by any audit row. pre-existing.
+    location: >-
+      src-tauri/src/pipeline.rs::strip_prompt_fragments
     severity: low
 ---
 
@@ -1118,6 +1172,66 @@ the groups are named inline.
   - `[low]` `[defer]` intent-alignment: the blank-delivery guard creates a divergence in the opposite direction. Grouped with blind-hunter's row; same deferral.
   - `[medium]` `[patch]` intent-alignment: the production changes sit at the surface the intent names but the tests sit one or two levels below it — four seams carried no executing coverage (`nativeTranscribe`, `processAudio`'s `handler.post` block, `recording.rs`, the paste/retry/flush bodies). Verified. Fixed for three of the four: the `nativeTranscribe` decisions were lifted into testable helpers, `recording.rs` got an executing seam, and the D10 gate got a tripwire. The `handler.post` wiring of D4 and D5 remains source-read — recorded in the residual risks.
 
+### 2026-09-22 — Review pass
+
+Lenses: `blind-hunter`, `edge-case-hunter`, `verification-gap`, `intent-alignment` (thorough set,
+route `full`), over the whole story diff `4e4bc00..` working tree, with Group 10 (`ce97725`) the
+part no lens had read. Rows are in the order the lenses reported: intent-alignment,
+blind-hunter, verification-gap, edge-case-hunter. Patches were applied by this session: the
+step-03 implementation subagent belonged to the interrupted session and could not be
+re-engaged.
+
+- verdicts: 47 findings — high 0, medium 7, low 34, false 6, maybe-false 0
+
+- findings:
+  - `[medium]` `[patch]` intent-alignment: the intent's expectations live at the user/device surface, the tests mostly one or two levels below, the wiring checked by source tripwires — carried: the 2026-09-21 row of the same claim; its fixes are in and the `handler.post` residual stays recorded.
+  - `[low]` `[reject]` intent-alignment: the Group 10 AC says the residue gets "the same … drop it reports for the pure ghost", but the labels differ (`NothingRecognized` vs `Blocklist`) — verified; the terminal is identical and the label split is what the Group 10 task mandates. Rejected: the fix is to edit this build's spec (the AC wording).
+  - `[medium]` `[defer]` intent-alignment: the residue rule does not reach the React in-app button, `reprocess_pending_entry`, Android local STT or the Android local-Whisper net — carried: the 2026-09-21 rows "local-STT and local-Whisper transcripts skip the guard chain" and "three desktop entry points run no part of `guard_transcript`"; same root cause, code unchanged.
+  - `[low]` `[patch]` intent-alignment: the "before 13-2 it was dropped silently" story is true for Desktop only; on Android the residue was already delivered — grouped with blind-hunter's row of the same claim; same fix.
+  - `[medium]` `[patch]` intent-alignment: Group 10's Android half is pinned only as fixture prose, and the links between the chain and the silent ending are tested separately, never together — verified for the one link no test reads: `nativeTranscribe`'s `None => to_jstring(&mut env, "")` arm (the Desktop half is the pre-existing shell `Stopped` arm shared with the two shipped skips, `pipeline.rs` outcome match). Grouped with verification-gap's second gap; same fix.
+  - `[false]` `[reject]` intent-alignment: D2's "no history row" read literally is not implemented — refuted as a defect: the intent names ADR-0016 Amendment 4's row table as the binding verdict, and its D2 row reads `kein „"-History-Eintrag` (no row carrying the empty answer), which both platforms satisfy; the reading is recorded in the Spec Change Log.
+  - `[medium]` `[defer]` intent-alignment: an Android clipboard failure ends in a silent IDLE while Desktop shows "TEXT LOST" — carried: the 2026-09-21 row; code unchanged, still a design question.
+  - `[medium]` `[defer]` intent-alignment: the Android blank-delivery guard has no Desktop twin — carried: the 2026-09-21 row; code unchanged.
+  - `[low]` `[defer]` intent-alignment: a control-character-only answer and an empty `choices` array still resolve differently on the two platforms — carried: the control-character half is the 2026-09-21 deferral, the empty-`choices` half keeps its 2026-09-21 rejection; code unchanged.
+  - `[false]` `[reject]` intent-alignment: four of the 14 test-provider vectors were edited outside their wire fields, against "all 14 scenario vectors stay byte-identical" — refuted: every `wire` payload and scenario body is byte-identical (the lens confirms it), and the four vectors whose `expected_divergence` named this story (`TEST-STT-EMPTY-001` among them, listed in the Code Map) must change their `kotlin` column when the divergence closes, or their readers fail; the literal reading contradicts the intent's own closure rows.
+  - `[low]` `[patch]` intent-alignment: the E1 flush-time re-check's comment claims it catches a config change between recording start and the first pause, which a `cachedConfig` snapshot cannot see — verified (`cachedConfig` is assigned only at recording start). Fixed: the comment now says it re-reads the install-time snapshot, is defence in depth, and why a live read was not built.
+  - `[low]` `[defer]` intent-alignment: E2's "identical raw-text outcome" differs by path in the delivered text — the in-app button returns the transcript verbatim, the hotkey and Android sanitise and ghost-strip it — verified; pre-existing (`is_offline_mode` returned it verbatim at baseline). Grouped with edge-case's row; deferred.
+  - `[low]` `[reject]` intent-alignment: the chain's inner order is reversed against the task text — carried: the 2026-09-21 rejection (its fix is to edit this build's spec).
+  - `[low]` `[reject]` intent-alignment: B4 is pinned at the config parse and override selection; the real Whisper request on Android is never exercised — verified. Rejected: no off-device instrument can execute the android-gated request; the call-site composition is tripwired and the real conditioning result is the recorded H+ step (Xiaomi, preset "Technical").
+  - `[low]` `[reject]` intent-alignment: `offline-rule-vectors.json` does not follow the house schema (no `surface`/`rust`/`kotlin`/`expected_divergence` columns, 5 of 9 descriptions without `DOES NOT PIN`, a looping reader instead of a throwing lookup) — verified. Not worth fixing: a developer does not meet it in everyday use, the row is a twin-identical config matrix read by both sides with a count, and reshaping the fixture plus both readers is more than a direct correction.
+  - `[low]` `[patch]` blind-hunter: the Android-facing docs still give two reasons for an empty transcript — verified at `GroqSttBridge.kt` (header), `KlarvoOverlayService.kt` (blank-transcript branch) and `nativeTranscribe`'s doc ("an empty string on any error"). Fixed: all three name the third reason.
+  - `[low]` `[patch]` blind-hunter: "13-2 opened the `!` hole on both platforms" is false on Android — measured with a throwaway probe: the pre-13-2 JNI chain (`is_prompt_echo` on the raw text with the full prompt, then fragment strip, then ghost strip) returns `"!"` for `"[Musik]!"`, and `is_hallucination("!")` is false. Fixed where it is not this build's spec: `PostSttSkip::NothingRecognized`'s doc, the `GUARD-PUNCTUATION-RESIDUE-001` description, `verdict.md` and both backlog entries now say Desktop regression, older Android hole. The spec's Review Findings and Design Notes sentences are left as written (spec edit).
+  - `[low]` `[reject]` blind-hunter: the post-cleanup ghost strip can still leave a punctuation-only residue that is delivered (Desktop `strip_stockphrase_ghosts(&sanitized)`, Android `nativeStripStockphraseGhosts` + `isBlank()`) — verified reachable in principle. Not worth fixing: it needs a transcript that survived the pre-cleanup chain with real words and an LLM answer made of nothing but a stockphrase plus punctuation, and closing it means a second guard on both platforms (Android's in Rust over the JNI) — more than a direct correction, and outside the chain Andi's decision scoped. Recorded in `verdict.md` and the fixture's DOES NOT PIN. Grouped with verification-gap's other finding and edge-case's row.
+  - `[low]` `[patch]` blind-hunter: the two extra fixture cases never go through the JNI wrapper — verified (`spec_jni_guard_wrapper_agrees_with_the_desktop_chain` reads `input.transcript` only). Fixed: the case loop now asserts `guard_transcript_for_jni` per case.
+  - `[low]` `[patch]` blind-hunter: the skip-arm logs hide what was dropped — verified: `let raw_text = guard.text;` shadowed the transcript before the arms, the production log level is Info, so a pure ghost now logs `Blocked Whisper hallucination: ""` and the residue logs `"!"`. Fixed: the binding moved below the match; the arms log the transcript as Whisper returned it, the residue arm also the residue.
+  - `[low]` `[patch]` blind-hunter: the third variant's rationale contradicts itself, `post_stt_skip` can never return it, and the enum and `Blocklist` docs no longer describe what they carry — verified for the docs: a pure ghost is labelled `Blocklist` by `is_hallucination("")`, not by a blocklist match. Fixed: both docs. The label split itself is what the Group 10 task mandates and was not changed.
+  - `[low]` `[reject]` blind-hunter: the Group 10 AC's "same drop" contradicts the design — grouped with intent-alignment's row; rejected for the same reason (spec edit).
+  - `[low]` `[reject]` blind-hunter: Design Notes keep a refuted cost claim and the phrase "third-party-free" — verified. Rejected: the fix is to edit this build's spec; the measurement is recorded in Implementation Notes and `docs/backlog.md`.
+  - `[low]` `[patch]` blind-hunter: the inversion evidence contradicts itself — verified: R10 said "776 filtered out" under a "774 passed" header, the JSON R10 row still carried the old description and "767 filtered out", R3 and R10 are one break counted twice, and every header said "current tree". Fixed: the JSON row matches the report and is marked `duplicate_of: R3`, the headers name commits, the totals read 55 rows / 54 distinct.
+  - `[false]` `[reject]` blind-hunter: the spec, the sprint file and the run report disagree on the story's status — refuted as a defect: `in-review` is this step's own transient state, finalization writes `done`, and `sprint-status.yaml` is the conductor's to book after this run halts.
+  - `[low]` `[patch]` blind-hunter: the backlog still reads as if the decision were open, and one heading does not match its body — verified. Fixed: the FOUND heading is marked decided, "unchecked" says it is now ticked, the Wortstrom heading now names the guard order its body is about. The run ledger (`RUN-2026-09-21-13-2.md`) is the conductor's file, booked after this run, and was not touched.
+  - `[false]` `[reject]` blind-hunter: the Kotlin Group 10 test checks wording, not the structured `jni_returns` field — refuted: `jni_returns` is asserted by the Rust reader, a Kotlin re-assertion of the same literal would add no lock, and the task asked Kotlin for exactly the declaration; the "eleven" count includes the two `STT-PROMPT-JOIN-*` vectors because they are shared-core `surface: "stt"` vectors, which is what the count is for.
+  - `[low]` `[patch]` blind-hunter: the Story 7-10 `decideDelivery` KDoc sat orphaned above `shouldAttemptPaste`'s — verified (two consecutive `/** */` blocks). Fixed: merged into `decideDelivery`'s KDoc.
+  - `[low]` `[patch]` blind-hunter: `verdict.md`'s E1 correction was inserted mid-list, leaving the B1-Android item dangling — verified. Fixed: the list is whole and the correction is its own paragraph, which also says the spec's own Verification line is stale. The spec half is left as written (spec edit).
+  - `[low]` `[reject]` blind-hunter: the Review Findings header's counts add up to 41, not 35, and "the two later review-patch commits added three" names one commit — verified. Rejected: both are this build's spec text; the numbers of this pass are stated correctly in its own Auto Run Result.
+  - `[medium]` `[patch]` verification-gap: the residue predicate is only ever tested with ASCII Latin text; narrowing `char::is_alphanumeric` to its ASCII form or to `is_alphabetic` stays green — pre-verified by the lens; measured that Cyrillic, CJK, Greek, Hangul, Kana and digits-only transcripts all survive today. Fixed: `"Привет, как дела?"` and `"42"` added to `GUARD-PUNCTUATION-RESIDUE-001.additional_cases`, count raised to 4; inversions G6 (ASCII narrowing, caught by the Cyrillic case) and G8 (`is_alphabetic` narrowing, caught by `"42"`) RED.
+  - `[medium]` `[patch]` verification-gap: `nativeTranscribe`'s `None → ""` arm, on which every guard drop reaching Kotlin rests, is read by no test; handing `&text` back stays green everywhere — pre-verified; the arm is android-gated. Fixed: `composition_contract::spec_jni_hands_a_dropped_transcript_back_as_the_empty_string`, scoped to the chain's match up to the next outer `Err(` arm; inversion G7 RED. Grouped with intent-alignment's test-surface row.
+  - `[low]` `[reject]` verification-gap (other): the residue rule covers only the pre-cleanup chain — grouped with blind-hunter's post-cleanup row; rejected for the same reason.
+  - `[low]` `[reject]` edge-case-hunter: a JSON `null` `content` becomes the literal `"null"` on Android (`getString` coerces) — verified; pre-existing (`getString("content")` at baseline). Not worth fixing: a cleanup request without tools does not meet a null-content answer in everyday use, and the fix adds a branch to the mapper.
+  - `[low]` `[defer]` edge-case-hunter: a Groq STT 429 is non-retryable on Android (`classifySttSentinel`: any 4xx) while Desktop's `is_retryable_stt_error` treats 429 as retryable, so Android never reaches its local-Whisper net on a rate limit — verified; pre-existing (the baseline inline `when` had the same 4xx rule) and named by no audit row. Deferred.
+  - `[low]` `[reject]` edge-case-hunter: `nativeStripStockphraseGhosts` returns `""` when it cannot read its argument, which the blank guard turns into a silent drop — verified in code. Not worth fixing: `get_string` fails only on a null or invalid reference and Kotlin passes a non-null `String` it just built; the fix is android-gated code no gate compiles.
+  - `[low]` `[reject]` edge-case-hunter: `nativeTranscribe`'s early returns (argument read, base64 decode, runtime build) hand back `""`, which Kotlin classifies as SUCCESS and, since D11, ends silently — verified; the early returns are pre-existing. Not worth fixing: none of those failures is reachable in everyday use (Kotlin builds the base64 itself), and the fix is a new sentinel plus its Kotlin classification.
+  - `[low]` `[reject]` edge-case-hunter: a cleanup failure plus a clipboard throw in the same run shows the degrade toast ("raw text in clipboard") over an empty clipboard — verified. Not worth fixing: it needs two simultaneous failures, one of which (a `setPrimaryClip` throw) is not producible on Andi's devices (D6 is Weg 2), and the fix adds a condition to the toast.
+  - `[low]` `[reject]` edge-case-hunter: the clipboard-failure metrics thread races the delivery metrics thread, so a `pasteErrorCount` increment can be lost — verified (unsynchronized read-modify-write). Not worth fixing: only on a clipboard throw, the loss is one counter increment, and the fix is synchronization across the metrics writer.
+  - `[low]` `[reject]` edge-case-hunter: the post-cleanup ghost strip can leave `"!"`, which is pasted and stored — grouped with blind-hunter's post-cleanup row; rejected for the same reason.
+  - `[false]` `[reject]` edge-case-hunter: AUTO mode keeps restarting after a non-success IDLE ending — refuted as a change: the restart condition is unchanged from baseline, where every non-blocked exit restarted AUTO (DONE flash or not); the one ending where a restart compounds a loss is the clipboard throw, whose silent ending is already deferred.
+  - `[low]` `[defer]` edge-case-hunter: the test-side `stripComments` does not handle Kotlin raw strings, and `KlarvoApi.kt`'s odd-quote `"malformed"` canned body flips it — carried: the 2026-09-21 deferral of the six hand-written strippers; measured that the B4 tripwire strings still occur once, in code only, so no tripwire is defeated today.
+  - `[low]` `[reject]` edge-case-hunter: `flushPreviewDelta` re-reads `cachedConfig`, not the live config — carried: the 2026-09-21 rejection. The comment that overstated it was patched (intent-alignment row above).
+  - `[false]` `[reject]` edge-case-hunter: the "no history row" AC is not met because a raw-transcript row is written — grouped with intent-alignment's D2 row; refuted by the binding ADR-0016 D2 wording.
+  - `[low]` `[reject]` edge-case-hunter: `guard_transcript` runs the fragment strip before the ghost strip, against the task text — carried: the 2026-09-21 rejection.
+  - `[low]` `[defer]` edge-case-hunter: a blank result from Android's local STT (`sttProvider = "local"`) still shows the "Transcription failed" toast, against D11's silent ending — verified; pre-existing and not one of the five D-M14 sites Andi's four-of-five reading named. Whether a blank from the local engine is "nothing recognised" or an engine failure is a wording/product call. Deferred.
+  - `[low]` `[defer]` edge-case-hunter: `offline_passthrough` returns the transcript verbatim, while the hotkey and Android paths sanitise and ghost-strip it — verified; pre-existing. Deferred, grouped with intent-alignment's E2 row.
+
 ## Design Notes
 
 ### Delivery-state contract (which state each terminal path enters, and its source)
@@ -1629,3 +1743,148 @@ was made.
   that the vector declares its own Android coverage — which is the strongest
   instrument available on that side and is weaker than an executing one.
 - **`conductor/13-2` is unpushed.** Not pushed by this run.
+
+### 2026-09-22 — review pass over Group 10 (final)
+
+Resumed from `status: in-review` after the session that built Group 10 (`ce97725`) was
+interrupted. Step-04 ran in full over the whole story diff (`4e4bc00` → working tree), not over
+Group 10 alone, with the thorough lens set. Group 10 was the part no lens had read before.
+
+**Implemented change (this pass).** Group 10 stands as built: a post-strip residue with no
+`char::is_alphanumeric` character is `PostSttSkip::NothingRecognized`. The review added two
+locks it was missing:
+- `GUARD-PUNCTUATION-RESIDUE-001` now carries a Cyrillic case and a digits-only case that must
+  survive. Before, an ASCII or `is_alphabetic` narrowing of the predicate stayed green.
+- A scoped source tripwire pins `nativeTranscribe`'s `None → ""` arm. Every guard drop reaching
+  Kotlin rests on that arm, and until now no test read it.
+
+The skip arms in `process_audio` now log the transcript as Whisper returned it. The claim that
+13-2 opened the `"!"` hole "on both platforms" was corrected: it is a Desktop regression, and a
+hole Android had before the story. Doc, evidence and backlog drift was fixed.
+
+**Files changed (this pass).**
+- `src-tauri/src/pipeline.rs` — `PostSttSkip` and `Blocklist` docs; `NothingRecognized`'s Android
+  history corrected; skip arms log the pre-guard transcript; the residue test drives four cases
+  and the JNI wrapper per case.
+- `src-tauri/src/stt/groq_jni.rs` — `nativeTranscribe` doc names guard drops; new
+  `composition_contract::spec_jni_hands_a_dropped_transcript_back_as_the_empty_string`.
+- `android/kotlin-src/.../GroqSttBridge.kt`, `KlarvoOverlayService.kt` — the three drop reasons
+  named at both Android sites; the orphaned 7-10 KDoc merged into `decideDelivery`'s; the E1
+  flush comment no longer claims a live re-read.
+- `test-fixtures/guard-chain-vectors.json` — two surviving cases; description corrected
+  (Desktop/Android history, the post-cleanup limit under DOES NOT PIN).
+- `gate4-evidence/13-2/{code-inversions.json,code-inversion-report.md,verdict.md}` — R10 marked
+  as R3's re-measurement, batch headers name commits, a sixth batch (G6, G7, G8), the E1 list
+  repaired, the Group 10 limits stated.
+- `docs/backlog.md` — the 13-2 FOUND heading marked decided, the guard-order heading renamed to
+  its content, the Android history corrected in both entries.
+
+**Review findings breakdown.** 47 findings from 4 lenses: high 0, medium 7, low 34, false 6,
+maybe-false 0. No `intent_gap`, no `bad_spec`, so no loopback (`review_loop_iteration` stays 1).
+- *Patched*: 12 entries over 15 rows. Two are **medium**: the residue predicate's missing
+  non-ASCII and digit cases, and the unread `None → ""` arm (with intent-alignment's
+  test-surface row). Ten are **low**: the Android-facing docs, the "both platforms" history
+  claim, the extra cases skipping the JNI wrapper, the skip-arm logs, the enum and `Blocklist`
+  docs, the inversion evidence, the backlog, the orphaned KDoc, `verdict.md`'s E1 list, and the
+  E1 flush comment.
+- *Deferred*: 4 new items in frontmatter `deferred`, all `pre-existing`, all low:
+  - the Android STT 429 classification
+  - the local-STT "Transcription failed" toast
+  - the in-app offline path's unsanitised text
+  - `strip_prompt_fragments` deleting standalone punctuation from real speech (found by this
+    pass's own measurement)
+
+  **They are in the spec frontmatter only**; homing them in `docs/backlog.md` is the conductor's.
+- *Carried* from the 2026-09-21 log, not re-litigated: 9 rows (one patch, five defers, three
+  rejects).
+- *Rejected*, each with its reason in the triage log:
+  - AC wording "same drop", the Design Notes cost claim and the Review Findings header
+    arithmetic: the fix is to edit this build's spec.
+  - B4's real Whisper request: no off-device instrument can execute it.
+  - The offline fixture's schema: not met in everyday use; the reshape is more than a direct
+    correction.
+  - The post-cleanup punctuation residue (three lenses): it needs an LLM answer made of nothing
+    but a stockphrase; the fix is a second guard on both platforms, outside the chain Andi's
+    decision scoped.
+  - Null `content` becoming `"null"`: rare; the fix adds a branch.
+  - `nativeStripStockphraseGhosts` read failure, and `nativeTranscribe`'s early returns:
+    unreachable in practice.
+  - A cleanup failure plus a clipboard throw showing the degrade toast: two simultaneous
+    failures, one not producible.
+  - The metrics-thread race: only one counter increment is lost.
+  - Six `false`: literal D2 "no row" ×2 (the binding ADR row reads `kein „"-Eintrag`); vectors
+    edited outside `wire` (the closure rows require it); the status mismatch (in-flight state);
+    the Kotlin test "checking wording" (`jni_returns` is asserted in Rust); the AUTO restart
+    (unchanged from baseline).
+
+**Follow-up review recommendation: `false`.** Patched this pass by entry verdict: high 0,
+medium 2, low 10.
+- This run entered at `in-review`, not as a re-dispatched `done`, so the first-pass count
+  applies, and two patched mediums would make it `true`.
+- But no specific unverified risk can be named. Both medium patches are test locks, a fixture
+  case and a source tripwire. Each was inverted RED (G6/G8, G7), and neither changes production
+  behaviour.
+- The only production edit is the skip arms' log text, whose delivered-text neighbour
+  `spec_process_audio_delivers_a_ghosted_transcript_minus_the_ghost` stays green.
+- The residuals that remain (below) predate this pass and have been reviewed twice.
+
+**Verification performed** (by this session, on the patched tree):
+- `cd src-tauri && cargo test --lib`: **780 passed, 0 failed** (779 at `ce97725`, +1 from the
+  new tripwire test). Re-run after the last inversion revert: 780 again.
+- Device-free JVM gate (`:app:testUniversalDebugUnitTest --rerun-tasks` after syncing
+  `android/kotlin-src` and `android/kotlin-test`): **29 suites / 275 tests, 0 failures, 0
+  errors, 0 skipped**. The count is unchanged: the new fixture cases have a Rust reader only,
+  and the Kotlin edits are comments. Counted from the result XML.
+- Inversions: **G6, G7, G8 all RED**, appended as batch six. G6 narrows the predicate to ASCII
+  (RED on the Cyrillic case). G8 narrows it to `is_alphabetic` (RED on `"42"`). G7 hands the raw
+  text back in `nativeTranscribe`'s `None` arm; it went RED on the assertion, not on a compile
+  error. Each reverted; `git diff` confirmed no inversion edit survived.
+- Measured with a throwaway probe, then reverted:
+  - Cyrillic, CJK, Greek, Hangul, Kana and digit-only transcripts all survive the chain today,
+    under the de, en and auto hints.
+  - The pre-13-2 Android chain turns `"[Musik]!"` and `"Gross- und Kleinschreibung!"` into `"!"`
+    (no echo, not blank, `is_hallucination` false).
+- `npm run build`: not run, because no `src/` file is touched.
+
+**What no number here claims.** Both gates decide logic, wiring and structure on Linux only.
+`nativeTranscribe`'s `None` arm is now pinned by a source tripwire, not executed. No APK and no
+Windows build was made; every H+ step in `verdict.md` is still open.
+
+**Residual risks.**
+- **A punctuation-only residue from the POST-cleanup ghost strip is still delivered** on both
+  platforms. Rejected as low; recorded in `verdict.md` and in the fixture's DOES NOT PIN.
+- **`processAudio`'s `handler.post` body (D4/D5 wiring) stays source-read**, as the two previous
+  passes named.
+- **This spec's own older sections carry statements the review found stale.** They were left as
+  written, because the rule forbids fixing a finding by editing this build's spec:
+  - the Review Findings header's counts
+  - the Group 10 AC's "same drop" (the terminal is the same; the label is not)
+  - Design Notes' "went from dropped silently" (true on Desktop only) and its cost claim
+  - Verification's "E1 -- Windows" (follow `verdict.md`: E1 on the Xiaomi)
+  - the previous block's "two later review-patch commits" (one commit, `1fde508`)
+- **`conductor/13-2` is unpushed** (`ce97725` plus this pass's commit). Not pushed by this run.
+
+### Decisions
+
+- **Patches were applied by this session, not by the step-03 implementation subagent.**
+  Alternative: a fresh implementation subagent. Chosen because the step routes to "apply the
+  patches yourself" when the full-route subagent cannot be re-engaged, and that subagent
+  belonged to the interrupted session.
+- **The `None → ""` arm was pinned with a scoped source tripwire, not by making
+  `guard_transcript_for_jni` return `String`.** Alternative: change the helper's return type so
+  executing tests see `""`. Chosen because the tripwire follows the shipped
+  `composition_contract` pattern, adds no public surface and leaves the helper's callers
+  untouched. The cost is a string match on android-gated code, which inversion G7 shows is
+  load-bearing.
+- **Surviving cases were chosen as one non-Latin sentence and one digit-only transcript.**
+  Alternative: one case per script. Chosen because each case catches exactly one plausible
+  narrowing (ASCII: G6; alphabetic: G8); more scripts would add no new failure mode.
+- **R10 was kept and marked `duplicate_of: R3`, not deleted.** Alternative: drop the row and
+  count 54. Chosen because the row is the follow-up review's provenance record; the totals now
+  say 56 rows / 55 distinct.
+- **The run ledger `RUN-2026-09-21-13-2.md` was not touched**, although a lens asked for a
+  Group 10 entry. It is the conductor's file, booked after this run halts.
+- **`strip_prompt_fragments` deleting standalone punctuation tokens was recorded, not fixed.** It
+  was found by this pass's own probe (`"3 + 4 = 7"` → `"3 4 7"`). It exists at
+  `baseline_revision`, no audit row names it, and the intent fences off re-opening guard
+  verdicts. Recorded under the pre-existing defect rule as a frontmatter `deferred` item.

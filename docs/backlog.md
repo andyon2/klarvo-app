@@ -1723,7 +1723,7 @@ plus ein Fund aus dem Bau. Alle fuenf sind Vorbestand, keiner ist von 13-2 verur
   zwischen `## Verification` und `## Auto Run Result` ein woertliches `</content>` / `</invoke>` aus der
   ersten Planungssitzung. Kosmetisch; die Datei ist jetzt historischer Beleg. (low)
 
-### FOUND 2026-09-21 — `is_prompt_echo` verglich gegen den Wortstrom, nicht gegen die Reihenfolge (Bau 13-2, nur notiert)
+### FOUND 2026-09-21 — Guard-Kette: der Fragment-Strip muss VOR dem Ghost-Strip laufen, weil der deutsche Hinweis eine Blocklist-Phrase enthaelt (Bau 13-2, nur notiert)
 
 Gemessen beim Bau von 13-2, nicht behoben und von keiner Audit-Zeile benannt: der deutsche
 Standard-Hinweis (`stt::STT_HINT_DE`) enthaelt woertlich den `STOCKPHRASE_BLOCKLIST`-Eintrag
@@ -1790,16 +1790,20 @@ vom Follow-up-Review 2026-09-21, das sechs davon unabhaengig bestaetigt hat.
   Vorbestand, 13-2 hat sie verbreitert. Fix ist ein geteilter Test-Helper ueber sechs Dateien.
   `android/kotlin-test/com/klarvo/voice/`. (low)
 
-### FOUND 2026-09-21 — Follow-up-Review zu 13-2: offene Entscheidung + acht Tripwires
+### FOUND 2026-09-21 — Follow-up-Review zu 13-2: eine offene Entscheidung — ENTSCHIEDEN 2026-09-22 (Option a, siehe DECIDED direkt darunter)
 
-`bmad-code-review` ueber `4e4bc00..d1b7953` (vier Lenses). Eine Entscheidung liegt bei Andi, im Spec
-unter `### Review Findings` als unchecked:
+`bmad-code-review` ueber `4e4bc00..d1b7953` (vier Lenses). Eine Entscheidung lag bei Andi, im Spec
+unter `### Review Findings` damals unchecked (inzwischen abgehakt). Die 17 Patches desselben Reviews
+stehen im Spec, nicht hier:
 
 - **Der Pre-Guard-Ghost-Strip laesst einen Rest aus reiner Interpunktion stehen, der keine
   Halluzination mehr ist.** Gemessen: `strip_stockphrase_ghosts("[Musik]!") == "!"` und
   `is_hallucination("!") == false`, waehrend `is_hallucination("[Musik]!") == true`. Eine Aufnahme,
   die nur aus einer Stockphrase plus einem anderen Satzzeichen besteht, wird seit 13-2 auf beiden
-  Plattformen als `"!"` eingefuegt und in `history.db` geschrieben -- vorher fiel sie ganz weg.
+  Plattformen als `"!"` eingefuegt und in `history.db` geschrieben. Auf Desktop fiel sie vorher ganz
+  weg; auf Android wurde sie schon vor 13-2 als `"!"` geliefert (Korrektur des Review-Passes
+  2026-09-22, gemessen: die alte JNI-Kette strippte den Ghost nach dem Echo-Check, und
+  `nativeIsHallucination("!")` ist `false`).
   Androids `deliveredText.isBlank()` faengt das nicht: `"!"` ist nicht blank. Beide Fix-Kandidaten
   aendern ein Guard-URTEIL, was 13-2 ausdruecklich nicht durfte, und der Trim zu weiten ist NICHT
   sicher (frisst das legitime `?` aus `"Wie geht es dir? [Musik]"`). Sicherer Ort waere die Kette:
@@ -1816,7 +1820,8 @@ Antwort auf die offene Entscheidung direkt darueber. Quelle:
 Andi waehlt **Option (a)**: in `pipeline::guard_transcript` zaehlt ein Rest ohne
 `char::is_alphanumeric`-Zeichen als „nichts erkannt" und faellt weg — als **dritte**
 `PostSttSkip`-Variante (`NothingRecognized`) mit eigener `log::info!`-Zeile, nicht als Blocklist-Treffer.
-Abgelehnt: (b) stehenlassen und nur notieren (der Defekt ist kein Vorbestand, 13-2 hat ihn erzeugt);
+Abgelehnt: (b) stehenlassen und nur notieren (der Defekt ist kein Vorbestand, 13-2 hat ihn erzeugt --
+auf Desktop; auf Android bestand er schon vorher, siehe Korrektur im FOUND-Eintrag darueber);
 (c) den Trim von `strip_stockphrase_ghosts` auf alle Satzzeichen weiten (frisst das legitime `?` aus
 `"Wie geht es dir? [Musik]"` — der Trim bleibt ausdruecklich unveraendert).
 

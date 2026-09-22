@@ -1,9 +1,9 @@
 {
-  "_note": "Grouped by BATCH, each with the tree it was measured at. The first pass presented one total over 'the shipped tree', but R1-R8 had been measured mid-build, before the last two Rust tests existed (their evidence lines say '767 filtered out' where the later ones say 768). Review finding. The Rust batch below is a RE-RUN against the current tree; no row here is older than the code it claims to pin.",
+  "_note": "Grouped by BATCH, each with the tree it was measured at. The first pass presented one total over 'the shipped tree', but R1-R8 had been measured mid-build, before the last two Rust tests existed (their evidence lines say '767 filtered out' where the later ones say 768). Review finding. The Rust batch below is a RE-RUN against the current tree; no row here is older than the code it claims to pin. Review pass 2026-09-22: every batch header now names the COMMIT it was measured at -- 'current tree' stopped being true the moment the next pass moved the gates. R10 (the last rust row) re-measures R3's break against the same test; it is kept as the provenance record the follow-up review wrote, so the rows number one more than the distinct breaks.",
   "batches": [
     {
       "name": "rust",
-      "measured_at": "current tree (cargo test --lib: 774 passed) — re-run 2026-09-21 after the review round",
+      "measured_at": "tree at commit 9efda74 (cargo test --lib: 774 passed) - re-run 2026-09-21 after the review round; the last row (R10) was re-run 2026-09-21 by the follow-up review on the 777-test tree (776 filtered out)",
       "inversions": [
         {
           "inversion": "guard_transcript runs the ghost strip BEFORE the fragment strip",
@@ -87,13 +87,14 @@
           ]
         },
         {
-          "inversion": "the same break, measured against the wrapper-agreement test",
+          "inversion": "guard_transcript_for_jni hands a DROPPED transcript back as text instead of None -- the same break as R3 (third row), re-measured by the follow-up review; not a distinct inversion",
           "file": "src-tauri/src/stt/groq_jni.rs",
           "filter": "spec_jni_guard_wrapper_agrees_with_the_desktop_chain",
           "RED": true,
           "evidence": [
-            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 767 filtered out; finished in 0.00s"
-          ]
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 776 filtered out; finished in 0.00s"
+          ],
+          "duplicate_of": "R3"
         }
       ]
     },
@@ -391,7 +392,7 @@
     },
     {
       "name": "review_round",
-      "measured_at": "current tree (cargo test --lib: 774 passed; JVM 29 suites / 268 tests)",
+      "measured_at": "tree at commit 9efda74 (cargo test --lib: 774 passed; JVM 29 suites / 268 tests)",
       "inversions": [
         {
           "inversion": "guard_hint_for_jni ignores customPrompt (B4's Android half goes inert)",
@@ -524,7 +525,7 @@
     },
     {
       "name": "group_10_punctuation_residue",
-      "measured_at": "current tree (cargo test --lib: 779 passed; JVM 29 suites / 275 tests) - 2026-09-22, the follow-up review's [Decision] finding built as Group 10",
+      "measured_at": "tree at commit ce97725 (cargo test --lib: 779 passed; JVM 29 suites / 275 tests) - 2026-09-22, the follow-up review's [Decision] finding built as Group 10",
       "inversions": [
         {
           "inversion": "guard_transcript's residue predicate is inverted (alphanumeric text is dropped, a punctuation-only residue survives)",
@@ -580,6 +581,44 @@
             "BUILD FAILED in 7s"
           ],
           "compile_error": false
+        }
+      ]
+    },
+    {
+      "name": "review_pass_2026_09_22",
+      "measured_at": "review-pass tree on top of commit ce97725 (cargo test --lib: 780 passed; JVM 29 suites / 275 tests) - 2026-09-22, the build-auto review pass over Group 10",
+      "inversions": [
+        {
+          "inversion": "guard_transcript's residue predicate is narrowed to its ASCII form (c.is_ascii_alphanumeric()) - every non-Latin-script dictation would be dropped as NothingRecognized",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_guard_drops_a_punctuation_only_residue",
+          "RED": true,
+          "evidence": [
+            "assertion `left == right` failed: \"Привет, как дела?\" / left: Some(\"NothingRecognized\") / right: None",
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 779 filtered out; finished in 0.00s",
+            "G1 only ever INVERTED the predicate; before the two surviving cases (Cyrillic, digits-only) were added, this narrowing left every test green."
+          ]
+        },
+        {
+          "inversion": "guard_transcript's residue predicate is narrowed to char::is_alphabetic - a digits-only dictation (\"42\", \"14:30\") would be dropped as NothingRecognized",
+          "file": "src-tauri/src/pipeline.rs",
+          "filter": "spec_guard_drops_a_punctuation_only_residue",
+          "RED": true,
+          "evidence": [
+            "assertion `left == right` failed: \"42\" / left: Some(\"NothingRecognized\") / right: None",
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 779 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "inversion": "nativeTranscribe's None arm hands the raw transcript back (to_jstring(&mut env, &text)) instead of the empty string - every echo, blocklist hit and punctuation residue would be delivered on Android",
+          "file": "src-tauri/src/stt/groq_jni.rs",
+          "filter": "spec_jni_hands_a_dropped_transcript_back_as_the_empty_string",
+          "RED": true,
+          "evidence": [
+            "panicked at src/stt/groq_jni.rs: a dropped transcript must reach Kotlin as the empty string",
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 779 filtered out; finished in 0.00s",
+            "The arm is android-gated and compiled by neither gate; before this tripwire the break was green everywhere."
+          ]
         }
       ]
     }

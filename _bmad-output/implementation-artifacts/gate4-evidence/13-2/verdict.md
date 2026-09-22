@@ -13,9 +13,9 @@ structure on Linux only.
 | Gate | Command | Result |
 |---|---|---|
 | baseline | `cd src-tauri && cargo test --lib` at `4e4bc00` | **749 passed, 0 failed** — the number the spec predicted |
-| Rust | `cd src-tauri && cargo test --lib` | **779 passed, 0 failed** (+30 over baseline; 777 before the 2026-09-22 Group 10 pass, +2 from it) |
-| JVM (device-free) | `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` in `src-tauri/gen/android`, after syncing `android/kotlin-src` + `android/kotlin-test` | **29 suites / 275 tests, 0 failures, 0 errors, 0 skipped** (baseline 25 / 217; 274 before the Group 10 pass, +1 from it) |
-| inversions | 10 Rust + 18 Kotlin + 8 matrix-audit + 12 review-round + 5 Group 10 | **53/53 RED**, in five batches each naming the tree it was measured at — see `code-inversion-report.md` |
+| Rust | `cd src-tauri && cargo test --lib` | **780 passed, 0 failed** (+31 over baseline; 777 before the 2026-09-22 Group 10 pass, +2 from it, +1 from the review pass that followed it) |
+| JVM (device-free) | `./gradlew :app:testUniversalDebugUnitTest --rerun-tasks` in `src-tauri/gen/android`, after syncing `android/kotlin-src` + `android/kotlin-test` | **29 suites / 275 tests, 0 failures, 0 errors, 0 skipped** (baseline 25 / 217; 274 before the Group 10 pass, +1 from it; the review pass added fixture cases, no JVM test) |
+| inversions | 10 Rust + 18 Kotlin + 8 matrix-audit + 12 review-round + 5 Group 10 + 3 review pass | **56 rows / 55 distinct inversions, all RED** (R10 re-measures R3's break), in six batches each naming the commit it was measured at — see `code-inversion-report.md` |
 | `npm run build` | not run | no `src/` file is touched by this story |
 
 `git status` after the last revert carries only this story's intended changes; no
@@ -61,10 +61,13 @@ inversion edit survived.
 
 The follow-up review's one `[Decision]` finding, answered by Andi as **option (a)**.
 This story's own pre-guard ghost strip (B3) turns `"[Musik]!"` into `"!"`, and
-`is_hallucination("!")` is `false` — so a capture that is nothing but a stockphrase plus
-one other punctuation mark went from "dropped silently" (pre-13-2) to "pasted into the
-user's field and written to history". Android's `deliveredText.isBlank()` guard does not
-catch it either: `"!"` is not blank.
+`is_hallucination("!")` is `false` — so on **Desktop** a capture that is nothing but a
+stockphrase plus one other punctuation mark went from "dropped silently" (pre-13-2) to
+"pasted into the user's field and written to history". On **Android** the hole is older:
+the pre-13-2 JNI chain already ghost-stripped it to `"!"` after its echo check, and
+Kotlin's `nativeIsHallucination("!")` is `false` (measured by the 2026-09-22 review
+pass) — so the decision closes a pre-existing Android hole as well.
+`deliveredText.isBlank()` does not catch it: `"!"` is not blank.
 
 `pipeline::guard_transcript` now drops a post-strip residue carrying no
 `char::is_alphanumeric` character, as a **third** `PostSttSkip`
@@ -161,22 +164,31 @@ Named, not implied:
   by the fixture read on both sides and by `process_audio` itself, and there is no device
   step for Andi. What he would notice if it were wrong is the opposite case — a real
   dictation disappearing — and that is pinned by every surviving vector in
-  `guard-chain-vectors.json` plus the `"Wie geht es dir? [Musik]"` case.
+  `guard-chain-vectors.json` plus the `"Wie geht es dir? [Musik]"` case, and (since the
+  2026-09-22 review pass) a Cyrillic and a digits-only case. Two limits of the rule, both
+  recorded rather than fixed: it lives in the **pre-cleanup** chain only, so a cleanup
+  answer that the post-cleanup ghost strip reduces to punctuation is still delivered on
+  both platforms (it needs a real transcript that the LLM turns into nothing but a
+  stockphrase); and Android's `None → ""` step is android-gated, pinned by a source
+  tripwire (inversion G7), not by execution.
 
 ## H+ reproduction, as the spec named it before the build
 
-Unchanged from the spec's Verification section. The test provider drives D2, D3, D9 and
-D10 from Settings → Advanced → Expert mode → System, no computer attached; B2 is the
-`Klarvo, Kubernetes` dictionary on the Xiaomi; B3 a known ghost phrase on both devices;
-B4 the "Technical" preset with identical audio; D4/D5/D11 the Xiaomi; **E1 the Xiaomi and E2
-Windows** -- corrected by the follow-up review (2026-09-21). The pre-build spec and this list both
-said "E1/E2 Windows", but everything story 13-2 built for E1 is in `KlarvoOverlayService`
-(`shouldInstallPreviewFlush` taking the stored `sttProvider`, plus the flush-time re-check); the
-desktop half (`pipeline::preview_flush_should_install`) already shipped and this story did not touch
-it. A Windows E1 check would verify code that was never changed. The run ledger
-(`RUN-2026-09-21-13-2.md`) recorded the correction at the spec gate and it was not carried into the
-artifacts until now;
-B1-Android a dictation into a blocklisted app followed by a look at History.
+From the spec's Verification section, with one correction (E1, below). The test provider
+drives D2, D3, D9 and D10 from Settings → Advanced → Expert mode → System, no computer
+attached; B2 is the `Klarvo, Kubernetes` dictionary on the Xiaomi; B3 a known ghost phrase
+on both devices; B4 the "Technical" preset with identical audio; D4/D5/D11 the Xiaomi;
+B1-Android a dictation into a blocklisted app followed by a look at History; **E1 the
+Xiaomi and E2 Windows**.
+
+The E1 correction was made by the follow-up review (2026-09-21). The pre-build spec and this
+list both said "E1/E2 Windows", but everything story 13-2 built for E1 is in
+`KlarvoOverlayService` (`shouldInstallPreviewFlush` taking the stored `sttProvider`, plus the
+flush-time re-check); the desktop half (`pipeline::preview_flush_should_install`) already
+shipped and this story did not touch it. A Windows E1 check would verify code that was never
+changed. The run ledger (`RUN-2026-09-21-13-2.md`) recorded the correction at the spec gate;
+it had not been carried into the artifacts until then. The spec's own Verification section
+still says "E1 -- Windows"; this list is the one to follow.
 
 **Android install: `scripts/android-install-debug.sh <ip:port> --full` is mandatory.**
 This story adds a native symbol (`nativeStripStockphraseGhosts`); a stale

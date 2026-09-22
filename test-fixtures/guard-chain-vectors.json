@@ -196,7 +196,7 @@
     "id": "GUARD-PUNCTUATION-RESIDUE-001",
     "surface": "stt",
     "scenario": "a stockphrase ghost plus one further punctuation mark",
-    "description": "The hole story 13-2 opened and Andi closed on 2026-09-22. The new pre-guard ghost strip (B3 / D-H7) turns `\"[Musik]!\"` into `\"!\"`, because strip_stockphrase_ghosts trims only `.`, `,` and space; is_hallucination(\"!\") is false, because only the EMPTY string counts as junk there. So a capture that is nothing but a ghost plus one other punctuation mark went from 'dropped silently' (pre-13-2) to 'pasted into the user's field and written to history' -- and Android's deliveredText.isBlank() guard does not catch it either, because `\"!\"` is not blank. Measured by the follow-up review over the shipped functions, recorded here as `rust_before_the_residue_check`. PINS: the residue is dropped by the shared chain (the third PostSttSkip, NothingRecognized -- not the blocklist, because calling a punctuation residue a blocklist hit would be a lie in the log), and the drop reaches Kotlin as the empty string. Also pins the case the decision protects: `\"Wie geht es dir? [Musik]\"` keeps its `?`, which is why option (c) -- widening the trim to all punctuation -- was rejected. DOES NOT PIN: the blocklist's membership, or what strip_stockphrase_ghosts' own trim removes (unchanged by this decision).",
+    "description": "The hole Andi closed on 2026-09-22. The new pre-guard ghost strip (B3 / D-H7) turns `\"[Musik]!\"` into `\"!\"`, because strip_stockphrase_ghosts trims only `.`, `,` and space; is_hallucination(\"!\") is false, because only the EMPTY string counts as junk there. On Desktop story 13-2 opened it: a capture that is nothing but a ghost plus one other punctuation mark went from 'dropped silently' (the pre-13-2 blocklist saw the unstripped text) to 'pasted into the user's field and written to history'. On Android it was older: the pre-13-2 JNI chain already ghost-stripped `\"[Musik]!\"` to `\"!\"` after its echo check and Kotlin's nativeIsHallucination(\"!\") is false (measured 2026-09-22), and deliveredText.isBlank() does not catch it either, because `\"!\"` is not blank. Measured by the follow-up review over the shipped functions, recorded here as `rust_before_the_residue_check`. PINS: the residue is dropped by the shared chain (the third PostSttSkip, NothingRecognized -- not the blocklist, because calling a punctuation residue a blocklist hit would be a lie in the log), and the drop reaches Kotlin as the empty string. Also pins the cases the decision protects: `\"Wie geht es dir? [Musik]\"` keeps its `?`, which is why option (c) -- widening the trim to all punctuation -- was rejected; and a transcript whose only letters are non-Latin script, or which is only digits, survives -- the predicate is Unicode `char::is_alphanumeric`, not its ASCII form. DOES NOT PIN: the blocklist's membership, what strip_stockphrase_ghosts' own trim removes (unchanged by this decision), or a punctuation-only residue left by the POST-cleanup ghost strip (the rule lives in the pre-cleanup chain only).",
     "input": {
       "transcript": "[Musik]!",
       "dictionary_terms": "",
@@ -228,6 +228,20 @@
         "text": "Wie geht es dir?",
         "skip_before_the_residue_check": null,
         "note": "unchanged by the decision, and the reason the trim was NOT widened: a widened trim would eat this legitimate question mark"
+      },
+      {
+        "transcript": "Привет, как дела?",
+        "skip": null,
+        "text": "Привет, как дела?",
+        "skip_before_the_residue_check": null,
+        "note": "letters outside ASCII are letters: an ASCII-only predicate would drop every Cyrillic, Greek or CJK dictation (review pass 2026-09-22, measured with the German hint)"
+      },
+      {
+        "transcript": "42",
+        "skip": null,
+        "text": "42",
+        "skip_before_the_residue_check": null,
+        "note": "a digits-only dictation is something recognised: the predicate is alphanumeric, not alphabetic (review pass 2026-09-22)"
       }
     ],
     "kotlin": {

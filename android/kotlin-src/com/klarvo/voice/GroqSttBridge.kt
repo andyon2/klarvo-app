@@ -19,8 +19,9 @@ package com.klarvo.voice
  *   parse (`SttError::ResponseFormat`). NOT retried — story 13-2 / D9 / D-M5.
  * - `"__ERROR_NETWORK:<message>__"` — network failure. Caller may retry.
  * Empty string on unexpected failure, and also when the shared guard chain
- * dropped the transcript (prompt echo / hallucination blocklist) — the caller's
- * existing blank-transcript branch is the shipped ending for that.
+ * dropped the transcript (prompt echo / hallucination blocklist / a residue with
+ * no letter or digit left after the strips, e.g. `"[Musik]!"` -> `"!"`) — the
+ * caller's existing blank-transcript branch is the shipped ending for that.
  *
  * ## Retry semantics (preserved from transcribeWithRetry)
  * The Kotlin retry wrapper (transcribeWithRetry in KlarvoOverlayService) continues to

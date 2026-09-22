@@ -755,13 +755,16 @@ pub(crate) fn silence_skip(
     None
 }
 
-/// Reason to skip the pipeline *after* transcription, when the transcript is a
-/// Whisper hallucination rather than real speech. `None` means "proceed".
+/// Reason to skip the pipeline *after* transcription, when what the guards see
+/// is not real speech — an echo, a hallucination, or nothing left to deliver.
+/// `None` means "proceed".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PostSttSkip {
     /// Transcript is an echo of the conditioning prompt.
     PromptEcho,
-    /// Transcript matches the known-hallucination blocklist.
+    /// `is_hallucination` says junk: a known-hallucination phrase, or — since
+    /// the pre-guard ghost strip (B3 / D-H7) — the EMPTY string a pure
+    /// stockphrase ghost strips to (`GUARD-STOCKPHRASE-DROP-001`).
     Blocklist,
     /// Nothing was recognised: what the strips left behind carries no
     /// alphanumeric character at all, so there is no word in it to deliver.
@@ -773,8 +776,12 @@ pub enum PostSttSkip {
     /// so `"[Musik]!"` becomes `"!"`, and `is_hallucination("!")` is `false`
     /// because only the EMPTY string counts as junk there. Without this variant
     /// a capture that is nothing but a stockphrase plus one other punctuation
-    /// mark is pasted into the user's field and written to history, where before
-    /// story 13-2 the whole thing was dropped silently.
+    /// mark is pasted into the user's field and written to history. On Desktop
+    /// that was a regression — before story 13-2 the blocklist saw the
+    /// unstripped `"[Musik]!"` and dropped it whole. On Android it was older:
+    /// the pre-13-2 JNI chain already ghost-stripped to `"!"` (measured
+    /// 2026-09-22: no echo, not blank, `is_hallucination("!")` false), so this
+    /// variant closes a hole Android had before the story as well.
     ///
     /// Decided by Andi 2026-09-22 (follow-up review, option (a)): the residue is
     /// settled here in the chain and **not** by widening
@@ -1598,7 +1605,11 @@ pub async fn process_audio(
     if guard.text != raw_text {
         log::debug!("[pipeline] guard chain rewrote the transcription (ghost/prompt fragments)");
     }
-    let raw_text = guard.text;
+    // The skip arms log the transcript as Whisper returned it, not what the
+    // strips left: since the pre-guard ghost strip, a pure ghost reaches the
+    // blocklist as "" and a ghost-plus-punctuation as "!", and the production
+    // log level (Info) does not record the `raw transcription` debug line
+    // above — so the arm's own line is the only place the dropped text shows.
     match guard.skip {
         Some(PostSttSkip::PromptEcho) => {
             log::info!(
@@ -1618,13 +1629,15 @@ pub async fn process_audio(
             // ("[Musik]!" -> "!"). Its own arm, not the blocklist's, so the log
             // says which of the three reasons fired.
             log::info!(
-                "[pipeline] nothing recognized — only punctuation survived the guards, skipping: {raw_text:?}"
+                "[pipeline] nothing recognized — only punctuation survived the guards ({:?}), skipping: {raw_text:?}",
+                guard.text
             );
             emit(PipelineEvent::idle());
             return ProcessOutcome::Stopped { stt_error: false, audio_path: None };
         }
         None => {}
     }
+    let raw_text = guard.text;
 
     // --- LLM step ---
     // Command Mode still requires an LLM call even offline, so a present
@@ -6519,16 +6532,28 @@ mod tests {
             "if an earlier guard started catching it, this vector is measuring the wrong thing"
         );
 
-        // The second measured case, and the case the decision protects.
+        // The second measured case, the case the decision protects, and the
+        // cases the predicate must never catch: a transcript whose only
+        // letters are non-Latin script, and one made only of digits. Without
+        // those two, narrowing `char::is_alphanumeric` to its ASCII form would
+        // silently drop every Russian, Greek or CJK dictation (and "42") on
+        // both platforms with this test green — review pass 2026-09-22.
         let cases = v["additional_cases"]
             .as_array()
             .expect("additional_cases must be an array");
-        assert_eq!(cases.len(), 2, "both recorded cases must be driven");
+        assert_eq!(cases.len(), 4, "every recorded case must be driven");
         for case in cases {
             let text = case["transcript"].as_str().expect("transcript");
             let got = guard_transcript(text, &hint);
             assert_eq!(skip_name(got.skip), case["skip"].as_str(), "{text:?}");
             assert_eq!(got.text, gstr(case, &["text"]), "{text:?}");
+            // … and through the wrapper Android reaches the chain by.
+            let expected_jni = if case["skip"].is_null() { Some(got.text.clone()) } else { None };
+            assert_eq!(
+                crate::stt::groq_jni::guard_transcript_for_jni(text, &hint),
+                expected_jni,
+                "{text:?}: the JNI wrapper must agree with the chain"
+            );
 
             let stripped = strip_prompt_fragments(text, &hint);
             let deghosted = strip_stockphrase_ghosts(&stripped);

@@ -270,32 +270,6 @@ class KlarvoOverlayService : Service() {
         }
 
         /**
-         * Decides the Step-4 delivery (Story 7-10, AC2) — the Kotlin twin of the
-         * desktop `pipeline::deliver_text` branch.
-         *
-         * When cleanup failed, the raw transcript goes to the clipboard ONLY: it
-         * is never inserted into the focused field, so filler-laden text cannot
-         * appear (or, on a desktop-style auto-send, be submitted) behind the
-         * user's back. Q5: the "Copied: …" toast is suppressed on that path so
-         * the single combined degrade toast is the newest one — on HyperOS the
-         * newest toast wins.
-         *
-         * `llmCleanupFailed` is an EXPLICIT flag, not `degradeStatusMsg != null`:
-         * that message is also set when the fallback provider *succeeded*
-         * ("⚠ Cleanup-Anbieter gewechselt"), which is not a failure.
-         *
-         * Q4 (desktop parity): only true cleanup failures reach here. "No LLM key
-         * configured" keeps today's paste, and a silent local-MNN failure is out
-         * of scope (backlog).
-         *
-         * Extracted as a pure function because Step 4 itself needs a live
-         * Service, a ClipboardManager and an AccessibilityService — the repo's
-         * established seam pattern ([BankingGuard.shouldBlockPaste],
-         * [sanitizePreviewChunk]). **The full integration path — real clipboard
-         * write, real accessibility paste — is covered by the on-device smoke,
-         * not by this function's unit test.**
-         */
-        /**
          * Step 4a, **before** the paste: may this text be inserted at all?
          *
          * Split out of [decideDelivery] by story 13-2 because the rest of the
@@ -333,6 +307,29 @@ class KlarvoOverlayService : Service() {
          * ends in DONE. That is the shipped clipboard-delivery ending and no
          * audit row re-opens it (Desktop's twin, `DoneClipboard`, is likewise a
          * terminal state rather than an error).
+         *
+         * Story 7-10 (AC2), the origin of this decision — the Kotlin twin of the
+         * desktop `pipeline::deliver_text` branch. When cleanup failed, the raw
+         * transcript goes to the clipboard ONLY: it is never inserted into the
+         * focused field, so filler-laden text cannot appear (or, on a
+         * desktop-style auto-send, be submitted) behind the user's back. Q5: the
+         * "Copied: …" toast is suppressed on that path so the single combined
+         * degrade toast is the newest one — on HyperOS the newest toast wins.
+         *
+         * `llmCleanupFailed` is an EXPLICIT flag, not `degradeStatusMsg != null`:
+         * that message is also set when the fallback provider *succeeded*
+         * ("⚠ Cleanup-Anbieter gewechselt"), which is not a failure.
+         *
+         * Q4 (desktop parity): only true cleanup failures reach here. "No LLM key
+         * configured" keeps today's paste, and a silent local-MNN failure is out
+         * of scope (backlog).
+         *
+         * Extracted as a pure function because Step 4 itself needs a live
+         * Service, a ClipboardManager and an AccessibilityService — the repo's
+         * established seam pattern ([BankingGuard.shouldBlockPaste],
+         * [sanitizePreviewChunk]). **The full integration path — real clipboard
+         * write, real accessibility paste — is covered by the on-device smoke,
+         * not by this function's unit test.**
          */
         fun decideDelivery(
             llmCleanupFailed: Boolean,
@@ -2056,10 +2053,14 @@ class KlarvoOverlayService : Service() {
         val recorder = audioRecorder ?: return
         val config = cachedConfig ?: return
         // Story 13-2 (E1 / D-H9): re-checked AT FLUSH TIME, not only at
-        // install time, exactly as `pipeline::flush_preview_delta` does -- the
-        // config can change between starting a recording and the first pause.
-        // With a stored `local` STT provider no byte may leave the device, key
-        // or no key.
+        // install time, mirroring `pipeline::flush_preview_delta`. With a
+        // stored `local` STT provider no byte may leave the device, key or no
+        // key. Unlike Desktop, which re-locks the live config here, this reads
+        // the same `cachedConfig` snapshot the install decision read (taken at
+        // recording start), so it is defence in depth for this flush path, NOT
+        // a live re-read: a provider switch made mid-recording is not seen
+        // until the next recording (review 2026-09-21: a per-flush disk read on
+        // the pause path was judged more than a direct correction).
         if (config.sttProvider == LOCAL_PROVIDER_ID) {
             KlarvoLogger.d(TAG, "[preview] offline STT stored -- flush suppressed, nothing uploaded")
             return
@@ -2459,9 +2460,11 @@ class KlarvoOverlayService : Service() {
             pendingWavFile?.delete()
 
             // A blank transcript is also what the shared guard chain returns
-            // when it drops the text as a prompt echo or a blocklist match
-            // (`stt::groq_jni::guard_transcript_for_jni`), so this one branch
-            // is the shipped ending for every "nothing recognised" outcome.
+            // when it drops the text -- as a prompt echo, a blocklist match, or
+            // a residue with no letter or digit left after the strips
+            // (`stt::groq_jni::guard_transcript_for_jni`, all three arrive as
+            // ""), so this one branch is the shipped ending for every "nothing
+            // recognised" outcome.
             if (transcript.isBlank()) {
                 handler.post {
                     // Story 13-2 (D11 / D-M14): silent, like Desktop.

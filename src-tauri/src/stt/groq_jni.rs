@@ -305,7 +305,9 @@ fn read_jstring(env: &mut JNIEnv, arg: JString, name: &str) -> Option<String> {
 /// `GroqSttBridge.nativeTranscribe` must change in the SAME commit — a one-sided
 /// edit, or a stale `libklarvo_lib.so`, misbinds silently instead of throwing.
 ///
-/// Returns: transcribed text, or an empty string on any error.
+/// Returns: transcribed text, or an empty string on any error — and also when
+/// the shared guard chain dropped the transcript (prompt echo, blocklist, or a
+/// residue with no letter or digit left; see [`guard_transcript_for_jni`]).
 ///
 /// Error codes embedded in the return string for distinguishable failures:
 /// - `"__ERROR_EMPTY_AUDIO__"` — WAV decoded to zero bytes. NOT retryable.
@@ -892,6 +894,43 @@ mod composition_contract {
         assert!(
             !body.contains("guard_transcript_for_jni(&text, prompt"),
             "the pre-13-2 feed is back: the guards must never see the built prompt"
+        );
+    }
+
+    /// Every guard drop reaches Kotlin as the empty string — the claim all
+    /// three `PostSttSkip` reasons (and `GUARD-*-001`'s `jni_returns: ""`)
+    /// rest on.
+    ///
+    /// `guard_transcript_for_jni` returning `None` is asserted by executing
+    /// tests, but the `None -> ""` step is an arm of the android-gated
+    /// `nativeTranscribe` that no gate compiles. Handing the transcript back
+    /// there (`to_jstring(&mut env, &text)`) would deliver every echo, every
+    /// blocklist hit and every punctuation residue on Android with both gates
+    /// green. Scoped to the match that follows the chain call, up to the next
+    /// outer `Err(` arm, so a second occurrence elsewhere cannot satisfy it.
+    /// Review pass 2026-09-22 (verification-gap).
+    #[test]
+    fn spec_jni_hands_a_dropped_transcript_back_as_the_empty_string() {
+        let body = native_transcribe_body();
+        let chain = body
+            .find("match guard_transcript_for_jni(&text, &hint) {")
+            .expect("nativeTranscribe must match on the shared chain's verdict");
+        let arms_end = body[chain..]
+            .find("Err(")
+            .map(|i| chain + i)
+            .expect("the transcribe match must continue with its error arm");
+        let arms = &body[chain..arms_end];
+
+        let some = arms
+            .find("Some(cleaned) => to_jstring(&mut env, &cleaned),")
+            .expect("a surviving transcript is handed back as the guarded text");
+        let none = arms
+            .find("None => to_jstring(&mut env, \"\"),")
+            .expect("a dropped transcript must reach Kotlin as the empty string");
+        assert!(some < none, "both arms belong to the chain's match (some@{some}, none@{none})");
+        assert!(
+            !arms.contains("to_jstring(&mut env, &text)"),
+            "the raw transcript must never be handed back past the guard chain"
         );
     }
 
